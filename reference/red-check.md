@@ -6,7 +6,7 @@ Check flakiness first: a flake is outside these three states, and the closing ru
 
 **1. Your diff caused it.** Fix the diff.
 
-**2. Your change deliberately staled the check's assumption** — the case right after a structural change, where the check asserts something your change changed on purpose. Fix the check in the same PR, and name the staled assumption and why your change staled it, in both the implementer's report and the PR description. That repair is a gate change, and a diff touching CI cannot be vouched for by CI, so merge check 1 is the only check it gets (`reference/code-review-prompt.md`).
+**2. Your change deliberately staled the check's assumption** — the case right after a structural change, where the check asserts something your change changed on purpose. Fix the check in the same PR, and name the staled assumption and why your change staled it, in both the implementer's report and the PR description. That repair is a gate change, and a diff touching CI cannot be vouched for by CI, so merge check 1 is the only check that *vouches for* it — both checks still run, and green CI still gates (`reference/code-review-prompt.md`).
 
 **3. Neither** — the red is not your diff's doing, and never yours to work around:
 

@@ -21,7 +21,7 @@ Explicitly exempt — write nothing: refactors that don't change meaning, object
 5. **Verification** — the end-to-end check that proves it works; the task's done-check derives from this; the verification must be something a machine can judge.
 6. **Failure detection & rollback** *(conditional)* — required only when the change touches a shared or public interface, a schema, or anything expensive to undo; state how a partial failure is detected and how to return safely to the previous state.
 
-The orchestrator uses its centralized design craft binding in `reference/orchestrator.md` to
+The orchestrator uses its design-craft skills in `reference/worker.md` to
 settle the design and brief its writer. A worker writes the repository artifact in its assigned
 lane; return here for admission, contents and accepted-design handoff.
 
@@ -31,7 +31,7 @@ lane; return here for admission, contents and accepted-design handoff.
 
 - **File by default**: `docs/specs/YYYY-MM-DD-<kebab-title>.md` in the target repo; an adopted repository's established convention may supply another location. The date prefix keeps parallel branches from colliding over sequence numbers (the problem ADR numbering solves with a verify-then-claim check — specs avoid it entirely).
 - **Status header**, first line under the title: `Status: draft | accepted | committed | abandoned`. Accepted = survived the pre-code challenge; committed = implemented and merged; abandoned = decided against. **Specs are never deleted** — an abandoned spec is a road not taken, worth remembering; the corpus is a second decision log alongside the repository's ADR log.
-- **Review = the existing pre-code challenge, run by the main session before implementation**: a clean reviewer that did not write the spec tries to poke holes in it before any implementation starts. `reference/orchestrator.md`'s Dispatching to an executor section owns what clean requires and how to dispatch it. Nothing new is added on top.
+- **Review = the existing pre-code challenge, run by the main session before implementation**: a clean reviewer that did not write the spec tries to poke holes in it before any implementation starts. `reference/orchestrator.md`'s Dispatching to a worker section owns how to dispatch it. Nothing new is added on top.
 - **Flow**: the main session commissions the draft in the task's worker lane and runs the pre-code challenge BEFORE authorizing implementation — the header flips to `Status: accepted` when nothing blocking remains. Before the implementation continuation, ensure that accepted blob is reachable in the repository, publish its blob SHA on the issue, and link the accepted spec as the worker's handoff. The spec file travels in the worker's implementation PR, which sets `Status: committed` before check 1 — the status describes the state at merge (no post-merge edit of a protected main). A spec whose decision must be settled long before building starts can instead merge alone in its own small PR at `accepted`; the implementation PR later flips it to `committed` as part of its reviewed diff.
 - **Relation to ADRs**: an architecture-touching change still gets its ADR — the ADR records *the decision and its why* (one page, forever); the spec records *the design* (options, interfaces, verification). Link them; neither replaces the other.
 

@@ -38,7 +38,7 @@ Anchored for the two roles, routed for helpers, one statement on the dispatch pa
 |---|---|
 | worker | `gpt-6.1-sol` at `high` |
 | reviewer | `gpt-6.1-sol` at `high` |
-| arbitration (a genuine dilemma, an irreversible judgment) | `gpt-6-astra` at `max` |
+| arbitration (a genuine dilemma, an irreversible judgment, an architecture-level acceptance) | `gpt-6-astra` at `max` |
 | helper — decides a merge or a design | `gpt-6-astra` at `high` |
 | helper — ordinary judgment | `gpt-6.1-sol` at `high` |
 | helper — mechanical work | `gpt-6-luna` at `max` |

@@ -60,4 +60,4 @@ handoff, summary, or status on the issue, in the PR description, or in a comment
 
 This page governs what may be added *inside* the repo. For a write outside it, use
 `reference/out-of-repo-writes.md`; for the final working-tree inventory, use
-your role page's The tree you hand back section.
+your role page's tree-accounting section (`reference/worker.md`'s Evidence and delivery).

@@ -55,7 +55,16 @@ Run every job CI would have run from that worktree, unfiltered and to completion
 
 **A partial run is never check 2.** If a job can't run locally — it needs secrets, a live service, another OS, a GPU — you have no fallback for that job. Wait for the platform, make the job runnable (a seeded fixture, a container, a documented local mode, in its own PR), or take it to the human. Never merge on the subset that happened to be runnable and call it evidence.
 
-**Unblocking a protected main is the human's call, not yours.** With the required check never reporting, the PR sits at "Expected — waiting for status to be reported" and the merge button is dead — for admins too, because "Do not allow bypassing" is on. Do NOT drop the required check, untick the bypass setting, edit the ruleset, or push to main directly. Name the PR to the human and ask; the human either removes the cause (top up minutes, make the repo public) or waives the check, and protection is restored in the same session the merge lands. An agent that switches the gate off to get past it has done more damage than the unverified merge. Where protection doesn't apply (free-plan private repos) the gate is convention-only — the same evidence and the same audit are owed all the same. `reference/orchestrator.md`'s Branch protection section owns how the guard recognizes GitHub's plan-limit response and records the unavailable server-side gate.
+**Unblocking a protected main is the human's call, not yours.** With the required check never reporting, the PR sits at "Expected — waiting for status to be reported" and the merge button is dead — for admins too, because "Do not allow bypassing" is on. Do NOT drop the required check, untick the bypass setting, edit the ruleset, or push to main directly. Name the PR to the human and ask; the human either removes the cause (top up minutes, make the repo public) or waives the check, and The merge still goes through the one entry point. `guard merge` refuses green CI, so the fallback names its evidence instead:
+
+```sh
+scripts/guard merge --repo OWNER/REPO --pr NUMBER --project CHECKOUT \
+  --ci-fallback <the published CI-FALLBACK comment URL>
+```
+
+That flag does not weaken the gate: it refuses unless a `CI-FALLBACK` comment is already published on the PR and is the one named. The comment is what the reviewer saw, and what the later audit searches closed PRs for.
+
+protection is restored in the same session the merge lands. An agent that switches the gate off to get past it has done more damage than the unverified merge. Where protection doesn't apply (free-plan private repos) the gate is convention-only — the same evidence and the same audit are owed all the same. `reference/orchestrator.md`'s Branch protection section owns how the guard recognizes GitHub's plan-limit response and records the unavailable server-side gate.
 
 **Evidence first, then check 1.** As with ordinary green-PR admission, evidence precedes review. Under the fallback, run the suite and post the evidence *before* check 1, and hand that comment to the reviewer with the diff — an impartial clean reader auditing the run is the closest available substitute for an impartial runner. If check 1 sends the diff back, or the rebase moves, redo the run: the last evidence on the PR must come from the tree that actually merged.
 

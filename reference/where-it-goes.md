@@ -71,7 +71,7 @@ session asks the human:
 the branch. **"Inside the project" means the repository you are working in — a disposable worktree is
 not a durable place**: a worktree is deleted when its task ends, and a gitignored path in one is
 invisible to `git status --porcelain -uall`. A kept file whose only durable copy is inside the
-worktree is disclosed and resolved before teardown under your role page's The tree you hand back section, and every
+worktree is disclosed and resolved before teardown under your role page's tree-accounting section (`reference/worker.md`'s Evidence and delivery), and every
 durable write outside the repo is disclosed under `reference/out-of-repo-writes.md`; those pages own
 what the disclosure says and when. What this rule decides is the case they cannot: if it must
 outlive the task and the only place you have is a worktree — **or any other destination that does not

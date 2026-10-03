@@ -43,7 +43,11 @@ PR: https://github.com/{repo_of(project)}/pull/{number}
 Issue: https://github.com/{repo_of(project)}/issues/{issue}
 Head: {head_sha}
 Architecture-level: {'YES' if architecture else 'NO'}
-Packet integrity: pins, diff forms and slots checked; none withheld.
+CI-FALLBACK: {args.ci_fallback or 'NONE'}
+Packet integrity: this assembler pins the head, the base and the reported checks.
+Any slot it could not produce is listed here rather than withheld. It does not run
+the repository's diff capture; a ground about a missing diff form is the reviewer's
+to raise.
 
 ## Issue body (verbatim)
 {issue_body}
@@ -62,12 +66,42 @@ Packet integrity: pins, diff forms and slots checked; none withheld.
 
 
 def main():
-    parser = argparse.ArgumentParser(prog='review-packet', description=__doc__)
+    parser = argparse.ArgumentParser(
+        prog='review-packet', description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""Flag contracts
+  assemble N --issue M --architecture-level yes|no --output DIR
+      Build the packet for head N. Admits only a head whose observed checks pass, and refuses an
+      assembly race. What it pins: the head SHA, the base, the reported checks, the issue body and
+      the PR body. What it cannot produce is reported in the packet's Packet integrity section for
+      Floor 1 to judge — never withheld. The one thing it refuses on is a reviewer contract that
+      differs from the shipped one.
+  start N --issue M ... [--model M --effort E] [--ci-fallback URL]
+      Reserve the round as a PR comment before the reviewer runs, so an unpublished verdict is a
+      visible reservation. --model/--effort route check 1 (pass them here, not later: a mismatched
+      identity line is recorded invalid and burns the round). --ci-fallback carries a published
+      CI-FALLBACK comment into the reviewer's fallback slot; every other review leaves it NONE.
+  publish N --issue M --attempt COMMENT --verdict FILE
+      Replace the reservation with `## Merge check 1 — round N` and the unedited verdict. Partial or
+      oversized output never becomes a verdict.
+  fail N --issue M --attempt COMMENT --reason TEXT
+      Mark a reservation failed where no verdict can exist: its start stopped before dispatch, or its
+      run was reconciled lost and retained no output.
+  rule N --issue M --decision continue|merge-as-is|rewrite|abandon|change-route --reason TEXT
+      Record the orchestrator's ruling. Directional or human-touchpoint rulings require durable human
+      authorization. Notes alone never justify another round.
+  status N --issue M
+      Rounds consumed, the next step, and the command for the reservation in hand. Returned verdicts
+      consume rounds; a process that returned no verdict does not.
+
+Record association
+  A returned verdict stays attached to the reviewed head. A changed head re-runs check 1 unless one
+  of the two narrow exceptions in `reference/orchestrator.md` applies.""")
     parser.add_argument('action', choices=['assemble', 'start', 'status', 'publish', 'fail', 'rule'])
     parser.add_argument('number', type=int)
     parser.add_argument('--issue', type=int, required=True)
     parser.add_argument('--architecture-level', dest='arch', choices=['yes', 'no'])
     parser.add_argument('--output', type=Path)
+    parser.add_argument('--ci-fallback', dest='ci_fallback')
     parser.add_argument('--model')
     parser.add_argument('--effort')
     parser.add_argument('--attempt', type=int)
@@ -82,9 +116,16 @@ def main():
 
     if args.action == 'status':
         rows = [c for c in comments(project, number) if 'Merge check 1' in (c.get('body') or '')]
-        print(json.dumps({'rounds': len(rows), 'next': 'accepted' if rows else 'awaiting-verdict',
-                          'attempts': [{'round': int(m.group(1)), 'comment_id': c['id']}
-                                       for c in rows for m in [HEADING.search(c['body'])] if m]},
+        attempts = [{'round': int(m.group(1)), 'comment_id': c['id']}
+                    for c in rows for m in [HEADING.search(c['body'])] if m]
+        print(json.dumps({'rounds': len(rows),
+                          'next': 'accepted' if rows else 'awaiting-verdict',
+                          'attempts': attempts,
+                          'next_command': (f'scripts/review-packet publish {number} --issue {issue} '
+                                           f'--attempt {attempts[-1]["comment_id"]} --verdict <file>'
+                                           if attempts else
+                                           f'scripts/review-packet start {number} --issue {issue} '
+                                           '--architecture-level no --output <scratch>')},
                          indent=2))
         return
 
@@ -92,9 +133,13 @@ def main():
         require(args.attempt, 'publish and fail need --attempt')
         body = (args.verdict.read_text() if args.verdict else
                 (args.reason or 'no reviewer verdict exists'))
+        target = [c for c in comments(project, number) if c['id'] == args.attempt]
+        require(target, f'no reservation comment {args.attempt} on PR {number}')
+        match = HEADING.search(target[0].get('body') or '')
+        round_number = int(match.group(1)) if match else 1
         run('gh', 'api', '-X', 'PATCH', f'repos/{repo}/issues/comments/{args.attempt}',
-            '-f', body=(f'## Merge check 1 — round 1\n\n{body}' if args.action == 'publish'
-                        else f'## Merge check 1 — round 1 — failed\n\n{args.reason}'),
+            '-f', body=(f'## Merge check 1 — round {round_number}\n\n{body}' if args.action == 'publish'
+                        else f'## Merge check 1 — round {round_number} — failed\n\n{args.reason}'),
             cwd=project)
         print(json.dumps({'kind': args.action, 'attempt': args.attempt}, indent=2))
         return

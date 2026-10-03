@@ -22,7 +22,10 @@ every dispatched worker receives `reference/worker.md` before acting.
 This method governs the GitHub collaboration layer—issue, lane, PR, review, and integration—and
 nothing below your role. Your own subagents may research, check a diff, or parallelize task-local
 work; never use the orchestrator's `scripts/dispatch` or `scripts/review-packet` for them. Each
-takes the model its work needs from the `Helpers:` line of your brief. You remain
+takes the model **and effort** its work needs from the `Helpers:` line of your brief — `gpt-6-astra`
+at `high` when its conclusion decides a merge or a design, `gpt-6.1-sol` at `high` for ordinary
+judgment, `gpt-6-luna` at `max` for mechanical work. Where a spawn takes no effort control at all,
+it inherits yours. You remain
 the lane's one accountable author and return one PR.
 
 ### Never

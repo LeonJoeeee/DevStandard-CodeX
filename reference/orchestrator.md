@@ -209,10 +209,10 @@ subagent tool, and takes the model its work needs:
 | Ordinary judgment (research, checking) | `gpt-6.1-sol` at `high` |
 | Mechanical (scans, first-pass triage, evidence gathering, fixed-field extraction, lists, format conversion) | `gpt-6-luna` at `max` |
 
-A helper's effort inherits its caller's when the spawn takes no effort control. Every role that can
-spawn a helper is told this where it already reads: dispatch reads this table into each packet, and
-the worker-mechanics section of `reference/worker.md` carries the same rule. Keep this table's cell
-form.
+A helper's effort is the one its row gives; where a spawn takes no effort control at all it
+inherits its caller's. Every role that can spawn a helper is told this where it already reads:
+dispatch reads this table into each packet's `Helpers:` line, and `reference/worker.md`'s Helpers
+paragraph carries the same rule. Keep this table's cell form.
 
 Bulk repetitive work — building a retrieval index or a knowledge graph, batch extraction and
 tagging — is not agent work: run a script against a cheap model endpoint, named in the needing
@@ -383,9 +383,10 @@ removed, matches whole words, and never parses grammar or reads file content or 
 names. It refuses three things: a worker's `merge`, the orchestrator's `gh pr merge`, which points
 here, and a reviewer's `gh api` write flags (`-X`, `--method`, `-f`, `-F`, `--input`). One rule
 stands beside them until `guard protection --apply` makes it GitHub's refusal instead—a worker
-`push` that also names `main` or `master`. Everything else is admitted, a local merge, a tag, a
-release build, a force-push, branch and worktree deletion and a recursive `rm` included, because a
-word stays only where the act is irreversible and no other layer stops it. It guards the ordinary
+`push` that also names `main` or `master`. Everything else is admitted: outside the worker role a
+local merge is too, and a tag, a release build, a force-push, branch and worktree deletion and a
+recursive `rm` are admitted for every role — because a word stays only where the act is irreversible
+and no other layer stops it. It guards the ordinary
 case only—obfuscation, interpreter bodies, runtime data, spawned tools, and MCP actions lie outside
 it—so the merge guard, server protection, and available OS sandbox carry the remaining hard layers.
 

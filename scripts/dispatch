@@ -40,7 +40,37 @@ def slug(text, limit=48):
 
 
 def main():
-    parser = argparse.ArgumentParser(prog='dispatch', description=__doc__)
+    parser = argparse.ArgumentParser(
+        prog='dispatch', description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""Flag contracts
+  issue --purpose {worker,reviewer} --base REF
+      A new lane: one branch, one worktree under .codex-method/worktrees/, one brief. Requires the
+      worktree root to be gitignored (the pre-creation ignore check).
+  --continue --brief FILE [--pr N]
+      Resume a lane; --brief is required and must exist. The record is fetched again on every launch.
+  --adopt --base REF --branch B --worktree W [--pr N]
+      Take over an existing branch and worktree instead of creating them. Needs a purpose.
+  --reconcile-lost /exact/recorded/scratch/brief.txt --reason TEXT --evidence URL
+      Resolve one lost run on originating-host inspection. Preconditions: the path must be the
+      exact recorded scratch path, absolute, and an existing file; --reason and --evidence are
+      required. It resolves one run without inventing an exit or output. If inspection is
+      unavailable, remain blocked.
+  --cleanup --pr N
+      Teardown after integration. Requires the integrated PR (matched by its URL on the lane
+      record), a stopped executor, and no tracked, untracked, ignored or sole-copy leftovers.
+      Remove the worktree before its branch, then prune.
+  --model / --effort
+      Override the anchored role row for this dispatch only.
+  --wait
+      Keep the invoking tool call alive until the run returns. Only the supervisor's completion
+      marker reports an observed exit. Retain the brief, output and completion marker until cleanup.
+
+What it writes
+  .codex-method/lanes/<issue>.json — the lane record (branch, worktree, base, purpose, model,
+      effort, brief, PR URL). Read back by --cleanup.
+  <scratch>/native-spawn.json — the native-worker receipt: subagent type, model, effort, the full
+      brief, conversation-history forking disabled, and the instruction to record the returned
+      handle on the issue. Hand it to Codex's native spawn; the dispatcher launches nothing.""")
     parser.add_argument('issue', type=int, nargs='?')
     parser.add_argument('--purpose', choices=['worker', 'reviewer'])
     parser.add_argument('--base', default='origin/main')
@@ -62,12 +92,14 @@ def main():
     args = parser.parse_args()
 
     project = resolved(args.project, 'project')
-    repo = json.loads(run('gh', 'repo', 'view', '--json', 'nameWithOwner'))['nameWithOwner']
+    repo = json.loads(run('gh', 'repo', 'view', '--json', 'nameWithOwner', cwd=project))['nameWithOwner']
 
     if args.cleanup:
         require(args.issue and args.pr, 'cleanup needs --pr and an issue number')
         record = json.loads((project / '.codex-method' / 'lanes' / f'{args.issue}.json').read_text())
-        require(record.get('pr') == str(args.pr), 'cleanup needs the integrated PR')
+        recorded = record.get('pr') or ''
+        require(recorded.endswith(f'/pull/{args.pr}') or recorded == str(args.pr),
+                'cleanup needs the integrated PR')
         worktree = Path(record['worktree'])
         require(not worktree.exists() or not (worktree / '.git').exists()
                 and not (worktree / '.git').is_file(),
@@ -89,13 +121,20 @@ def main():
                           'evidence': args.evidence}, indent=2))
         return
 
-    require(args.issue and args.purpose, 'an issue number and --purpose are required')
+    require(args.issue, 'an issue number is required')
+    require(args.purpose or args.adopt, '--purpose is required (worker or reviewer)')
     issue = args.issue
+    args.purpose = args.purpose or 'worker'
+
+    project = resolved(args.project, 'project')
+    repo = json.loads(run('gh', 'repo', 'view', '--json', 'nameWithOwner', cwd=project))['nameWithOwner']
 
     model, effort = route_setting(args.purpose, args.model, args.effort)
     issue_body = run('gh', 'issue', 'view', str(issue), '--json', 'number,title,body,state',
                      cwd=project)
     issue_data = json.loads(issue_body)
+    issue_comments = json.loads(run('gh', 'issue', 'view', str(issue), '--json', 'comments',
+                                    cwd=project)).get('comments') or []
     require(issue_data['state'] == 'open', f'issue {issue} is not open')
     title = slug(issue_data['title'])
     branch = args.branch or f'task/{issue}-{title}'
@@ -130,6 +169,11 @@ Issue body (verbatim):
 ----- BEGIN ISSUE BODY -----
 {issue_data['body']}
 ----- END ISSUE BODY -----
+
+Ordered record (every non-dispatch comment, with author and date):
+{chr(10).join(f"- {c.get('createdAt', '')} {c.get('author', {}).get('login', 'unknown')}: {c.get('body', '')[:400]}" for c in issue_comments) or '- none'}
+
+Read `reference/worker.md` in full before acting; it is your operating contract for this task.
 
 {('Review packet (verbatim):' + chr(10) + packet) if packet else ''}
 Role: {args.purpose}. Model: {model} at {effort}.

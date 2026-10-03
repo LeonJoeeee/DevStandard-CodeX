@@ -32,10 +32,25 @@ page = Path(sys.argv[1])
 part, parts_declared, cap = int(sys.argv[2]), int(sys.argv[3]), int(sys.argv[4])
 role = sys.argv[5]
 data = page.read_bytes()
-total = max(1, (len(data) + cap - 1) // cap)
+def split_points(data, cap):
+    """Every part boundary, snapped back to a character start so parts concatenate exactly."""
+    points, pos = [0], cap
+    while pos < len(data):
+        while pos > 0 and (data[pos] & 0xC0) == 0x80:
+            pos -= 1
+        if pos <= points[-1]:
+            pos = points[-1] + 1
+        points.append(pos)
+        pos += cap
+    points.append(len(data))
+    return points
+
+
+points = split_points(data, cap)
+total = max(1, len(points) - 1)
 if part > total:
     raise SystemExit(0)
-chunk = data[(part - 1) * cap: part * cap]
+chunk = data[points[part - 1]:points[part]]
 marker = f'--- codex-method part {part} of {total} ---'
 if part == 1 and total > 1:
     preamble = (f'codex-method operating context: reference/{role}.md (part 1 of {total})\n'
@@ -50,5 +65,5 @@ else:
     preamble = f'codex-method operating context: reference/{role}.md\n{marker}\n'
 payload = preamble.encode() + chunk
 print(json.dumps({"hookSpecificOutput": {
-    "hookEventName": "SessionStart", "additionalContext": payload.decode()}}))
+    "hookEventName": "SessionStart", "additionalContext": payload.decode("utf-8")}}))
 PY

@@ -53,7 +53,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CODEX_PLUGIN_ROOT}/hooks/pre-tool-use\"",
+            "command": "\"${CODEX_PLUGIN_ROOT}/hooks/pre-tool-use\" --role orchestrator",
             "timeout": 30
           }
         ]

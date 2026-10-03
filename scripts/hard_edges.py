@@ -70,7 +70,8 @@ def anchored_roles(root=None):
 def helper_rows(root=None):
     """The helper table's rows as (work, model, effort)."""
     text = page(root)
-    rows = HELPER_ROW.findall(text.split("Helpers' work", 1)[-1] if "Helpers' work" in text else text)
+    require("Helpers' work" in text, 'the dispatch page states no helper table header')
+    rows = HELPER_ROW.findall(text.split("Helpers' work", 1)[1])
     require(rows, 'the dispatch page states no helper table')
     return [(work.strip(), model, effort) for work, model, effort in rows]
 
@@ -125,20 +126,34 @@ def merged_result(base, head):
     return f'merged-result / {base} / {head}'
 
 
-def protection_check(repo, branch, checks=()):
-    """Read the branch protection the method expects; a free-plan private repo records the plan limit."""
+def protection_check(repo, branch):
+    """The five settings the method expects; a free-plan private repo records the plan limit.
+
+    A readable protection object is not enough: each documented setting is read and named, so a
+    silent loosening is a refusal rather than a pass.
+    """
     require(repo and branch, 'a repository and branch are required')
     try:
-        run('gh', 'api', f'repos/{repo}/branches/{branch}/protection')
+        out = run('gh', 'api', f'repos/{repo}/branches/{branch}/protection')
     except Refusal as error:
         text = str(error)
-        if '404' in text or '403' in text:
-            raise Refusal(
-                'GitHub did not return readable protection state; this response does not '
-                'establish that protection is unavailable, so the server-side gate cannot be '
-                f'skipped. GitHub returned: {text}')
-        raise
-    return True
+        if '404' in text and 'private' in text:
+            return {'state': 'unavailable', 'reason': 'plan limit'}
+        raise Refusal(
+            'GitHub did not return readable protection state; this response does not establish '
+            f'that protection is unavailable, so the server-side gate cannot be skipped. {text}')
+    body = json.loads(out) if out.strip() else {}
+    checks = body.get('required_status_checks') or {}
+    observed = {
+        'strict_up_to_date': bool(checks.get('strict')),
+        'admin_enforced': bool((body.get('enforce_admins') or {}).get('enabled')),
+        'no_forced_updates': body.get('allow_force_pushes') is False,
+        'no_deletions': body.get('allow_deletions') is False,
+        'merge_queue_off': 'merge_queue' not in body or body.get('merge_queue') in (None, {}),
+    }
+    missing = [name for name, ok in observed.items() if not ok]
+    require(not missing, f'branch protection is missing: {", ".join(missing)}')
+    return {'state': 'expected', **observed}
 
 
 def filled(value, name):
@@ -169,7 +184,7 @@ def inside(child, ancestor):
 def base_advanced(repo, base_ref, head):
     """True when the base moved ahead of the head's recorded base."""
     out = run('gh', 'api', f'repos/{repo}/compare/{base_ref}...{head}')
-    return out and json.loads(out).get('behind_by', 0) > 0
+    return bool(out) and json.loads(out).get('behind_by', 0) > 0
 
 
 def round_check(comments, head):

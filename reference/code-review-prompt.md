@@ -4,7 +4,7 @@ Use the shipped `scripts/review-packet start` to commission an ordinary review f
 current sources. It fills the fenced contract below, admits only a reported green PR head, calls
 `scripts/dispatch`, and publishes the whole returned verdict with its round number. The commands and
 the recovery path are in `reference/orchestrator.md`'s **Review packets** section;
-`reference/orchestrator.md`'s Guarded operations section holds the round-accounting contract behind
+`reference/orchestrator.md`'s Review packets section holds the round-accounting contract behind
 them — the counted rounds and the orchestrator's rulings. `assemble` produces the same packet
 without dispatching or publishing. The structured packet keeps contract slots separate from quoted
 evidence; the fence below governs how the reviewer judges both.
@@ -19,7 +19,7 @@ accepted-spec blob SHA (`SHA` or `NONE`); the CI-configuration paths the diff to
 **Post the verdict on the PR the moment it comes back** — whole, before the fix round and before the merge. A reviewer you spawned returns to *you* and to nobody else; unpublished, the review dies with your session. **You are reading this at dispatch, which is not when the act falls due** — so the prompt below makes the reviewer close with the instruction, and it reaches you inside the verdict. **Title the comment `## Merge check 1 — round N`** so the record is greppable and a pre-merge check can find it. Publishing after the merge is a repair: say so in a header giving both times — when you posted it and when the PR merged.
 
 **Before commissioning check 1 or any re-review**, compare the worktree against its pre-write baseline
-under the role pages' The tree you hand back section and put both `git status --porcelain -uall` snapshots in the PR.
+under `reference/orchestrator.md`'s The tree you hand back section, and `reference/worker.md`'s Evidence and delivery section and put both `git status --porcelain -uall` snapshots in the PR.
 This also covers a main session reviewing its own short-branch PR, which never passes through Taking
 delivery.
 
