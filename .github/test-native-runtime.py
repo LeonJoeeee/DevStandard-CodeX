@@ -94,13 +94,18 @@ def validate_request(request, role, full_role):
         require(full_role and full_role in carried, 'reviewer did not receive the full review role')
 
 
-def catalog(request):
+def advertised_tools(request):
+    """Retain the actual wire catalog, including the code-mode input item."""
     supplied = list(request.get('tools', []))
     for item in request.get('input', []):
         if item.get('type') == 'additional_tools':
             supplied.extend(item.get('tools', []))
+    return supplied
+
+
+def catalog(request):
     found = {}
-    for tool in supplied:
+    for tool in advertised_tools(request):
         if tool.get('type') == 'namespace':
             for member in tool.get('tools', []):
                 found[member['name']] = (tool['name'], member)
@@ -237,8 +242,9 @@ payload_text = sys.stdin.read()
 payload = json.loads(payload_text)
 settings = json.loads((Path(__file__).parent / 'fixture-observer.json').read_text())
 ungated = (payload.get('agent_type') == 'runtime_readonly_control'
-           and payload.get('tool_name') == 'Bash'
-           and payload.get('tool_input', {}).get('command') == settings['control_command'])
+           and payload.get('tool_name') in ('Bash', 'exec_command')
+           and payload.get('tool_input', {}).get('command',
+               payload.get('tool_input', {}).get('cmd')) == settings['control_command'])
 if ungated:
     code, out, err = 0, '', ''
 else:
@@ -435,10 +441,13 @@ class ResponsesFixture:
         return tool_call(request, name, args, call_id)
 
     def shell(self, request, command, call_id, workdir=None):
-        args = {'cmd': command, 'login': False, 'max_output_tokens': 1000}
+        args = {'cmd': command, 'max_output_tokens': 1000, 'yield_time_ms': 30000}
         if workdir:
             args['workdir'] = str(workdir)
-        return self.call(request, 'exec_command', args, call_id)
+        # exec is the advertised custom JavaScript tool; exec_command is nested
+        # only. Print output itself so cwd verification still compares whole lines.
+        source = 'const r = await tools.exec_command(' + json.dumps(args) + '); text(r.output);'
+        return self.call(request, 'exec', source, call_id)
 
     def spawn(self, request, role, **extra):
         agent_type, message = {
@@ -459,7 +468,7 @@ class ResponsesFixture:
         index = self.counts[role]
         self.counts[role] += 1
         if index == 0:
-            (self.scratch / (role + '.tools.json')).write_text(json.dumps(request.get('tools', []), indent=2))
+            (self.scratch / (role + '.tools.json')).write_text(json.dumps(advertised_tools(request), indent=2))
             if role == 'root':
                 self.spawn_fields = validate_spawn_schema(request)
         if role == 'root':
@@ -469,10 +478,13 @@ class ResponsesFixture:
                 return self.shell(request, 'pwd', 'worker_lane_pwd', self.project / 'worker-lane')
             if index == 1:
                 return self.shell(request, 'pwd', 'worker_session_pwd')
+            if index == 2:
+                return self.shell(request, 'git merge fixture-never-merge', 'worker_merge', self.project)
         elif role == 'reviewer':
             if index == 0:
                 patch = '*** Begin Patch\n*** Add File: reviewer-patch.txt\n+harmless fixture\n*** End Patch'
-                return self.call(request, 'apply_patch', patch, 'reviewer_patch')
+                source = 'const r = await tools.apply_patch(' + json.dumps(patch) + '); text(r);'
+                return self.call(request, 'exec', source, 'reviewer_patch')
             if index == 1:
                 return self.shell(request, 'touch reviewer-shell.txt', 'reviewer_shell', self.project)
             if index == 2:
@@ -480,7 +492,7 @@ class ResponsesFixture:
                                   'reviewer_remote', self.project)
         elif role == 'control' and index == 0:
             return self.shell(request, self.control_command, 'control_write')
-        require(index == {'worker': 2, 'reviewer': 3, 'control': 1}[role],
+        require(index == {'worker': 3, 'reviewer': 3, 'control': 1}[role],
                 role + ': unexpected continuation after final')
         return self.final(role)
 
@@ -548,27 +560,48 @@ class ResponsesFixture:
         hook_log = self.project / 'hook-payloads.jsonl'
         require(hook_log.exists(), 'installed plugin hook did not run')
         records = [json.loads(line) for line in hook_log.read_text().splitlines()]
-        denied = []
+        denied, reviewer_calls, worker_denied = [], [], []
         for record in records:
             payload = record['payload']
-            if payload.get('agent_type') != 'method_reviewer':
-                continue
-            require(payload.get('agent_id'), 'reviewer hook has no native child identity')
+            role = payload.get('agent_type')
             tool = payload.get('tool_name')
+            inputs = payload.get('tool_input') or {}
+            command = inputs.get('command', inputs.get('cmd', ''))
+            shell_tool = tool in ('Bash', 'exec_command')
+            worker_merge = (role == 'method_worker' and shell_tool
+                            and command == 'git merge fixture-never-merge')
+            if role != 'method_reviewer' and not worker_merge:
+                continue
+            require(payload.get('agent_id'), role + ' hook has no native child identity')
+            if worker_merge:
+                call_id = 'worker_merge'
+            elif tool == 'apply_patch':
+                call_id = 'reviewer_patch'
+            else:
+                require(shell_tool, 'unexpected reviewer hook tool: ' + str(tool))
+                commands = {'touch reviewer-shell.txt': 'reviewer_shell',
+                            shlex.quote(str(self.fake)) + ' issue comment 1 --body fixture': 'reviewer_remote'}
+                require(command in commands, 'unexpected reviewer hook command: ' + str(command))
+                call_id = commands[command]
             reason = record['stderr'] if record['exit_code'] == 2 else ''
             if record['exit_code'] == 0 and record['stdout'].strip():
                 output = json.loads(record['stdout']).get('hookSpecificOutput', {})
                 if output.get('hookEventName') == 'PreToolUse' and output.get('permissionDecision') == 'deny':
                     reason = output.get('permissionDecisionReason', '')
-            require(reason.strip(), 'reviewer hook did not return a blocking denial for ' + str(tool))
-            require('refused' in self.outputs.get({'apply_patch': 'reviewer_patch'}.get(tool,
-                    'reviewer_remote' if ' issue comment ' in payload.get('tool_input', {}).get('command', '')
-                    else 'reviewer_shell'), ''), 'blocking denial did not reach native tool output')
+            require(reason.strip(), role + ' hook did not return a blocking denial for ' + str(tool))
+            require('refused' in self.outputs.get(call_id, ''),
+                    call_id + ': blocking denial did not reach native tool output')
             require(record['plugin_root'] and str(self.scratch) in record['plugin_root'],
                     'hook did not bind fixture PLUGIN_ROOT')
-            denied.append(tool)
-        require(Counter(denied) == Counter({'apply_patch': 1, 'Bash': 2}),
+            if worker_merge:
+                worker_denied.append(tool)
+            else:
+                denied.append(tool)
+                reviewer_calls.append(call_id)
+        require(Counter(reviewer_calls) == Counter({'reviewer_patch': 1, 'reviewer_shell': 1,
+                                                   'reviewer_remote': 1}),
                 'did not observe the three actual reviewer hook denials: ' + repr(denied))
+        require(len(worker_denied) == 1, 'did not observe the actual worker merge hook denial')
         require(sum(record['ungated_control'] for record in records) == 1,
                 'exact ungated per-role sandbox control was not observed')
         return {'native_handles': self.handles, 'provider_requests_by_role': dict(self.counts),
@@ -576,6 +609,7 @@ class ResponsesFixture:
                 'canonical_targets': 'actual send_message accepted each returned task_name',
                 'fresh_reviewer_full_role': True, 'worker_explicit_lane_cwd': True,
                 'child_session_cwd': str(self.project), 'reviewer_denials': denied,
+                'worker_merge_denials': worker_denied,
                 'unknown_fields': 'actual V2 handler rejected cwd and fork_context',
                 'mailbox_completion': 'worker, reviewer, control completion delivered to root',
                 'per_role_readonly': 'UNSUPPORTED: exact ungated child write succeeded with parent permissions'}
