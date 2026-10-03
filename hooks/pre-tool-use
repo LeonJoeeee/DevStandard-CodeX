@@ -1,20 +1,26 @@
 #!/usr/bin/env python3
 """The role hook.
 
-Reads a shell command's own text, with quoted strings and here-document bodies removed, and matches
-whole words. It refuses four things and admits everything else, because a word stays only where the
-act is irreversible and no other layer stops it. The merge guard and branch protection carry the
-rest.
+Reads a shell command's own text, strips here-document bodies and command substitutions, strips
+quoted **prose** (a quoted run containing whitespace) while keeping a quoted single word, since
+`git "merge"` is live argv and `rg "git merge"` is a search pattern. Matches whole words, without
+case sensitivity. It refuses only acts that are irreversible and that no other layer stops.
 """
 import json
 import re
+import shlex
 import sys
+
+NATIVE_PAYLOAD = False
 
 
 def strip_noise(text):
-    """Drop quoted strings and here-document bodies; keep the command's own words."""
+    """Here-doc bodies and command substitution go; quoted prose goes; quoted single words stay."""
     text = re.sub(r"<<-?\s*'?(\w+)'?\n.*?\n\1", ' ', text, flags=re.S)
-    text = re.sub(r"'[^']*'|\"[^\"]*\"|`[^`]*`", ' ', text)
+    text = re.sub(r"`[^`\n]*`", ' ', text)
+    text = re.sub(r"'[^'\n]*'|\x22[^\x22\n]*\x22",
+                  lambda m: ' ' if any(c.isspace() for c in m.group(0)[1:-1]) else m.group(0)[1:-1],
+                  text)
     return text
 
 
@@ -22,13 +28,77 @@ def whole(word, text):
     return re.search(rf'(?<![\w-]){re.escape(word)}(?![\w-])', text) is not None
 
 
+def git_commands(text):
+    """Recognize ordinary git argv, including directory options; not a shell interpreter."""
+    text = re.sub(r"<<-?\s*'?(\w+)'?\n.*?\n\1", ' ', text, flags=re.S)
+    try:
+        lexer = shlex.shlex(text.replace('\n', ';'), posix=True, punctuation_chars=';&|')
+        lexer.whitespace_split = True
+        tokens = list(lexer)
+    except ValueError:
+        return []
+    segments, current = [], []
+    for token in tokens + [';']:
+        if token and all(c in ';&|' for c in token):
+            if current:
+                segments.append(current)
+            current = []
+        else:
+            current.append(token)
+    commands = []
+    for argv in segments:
+        if argv[0] == 'command':
+            argv = argv[1:]
+        if not argv or argv[0].rsplit('/', 1)[-1].lower() != 'git':
+            continue
+        index = 1
+        while index < len(argv) and argv[index].startswith('-'):
+            option = argv[index]
+            index += 2 if option in ('-C', '-c', '--git-dir', '--work-tree', '--namespace', '--config-env') else 1
+        if index < len(argv):
+            commands.append((argv[index].lower(), argv[index + 1:]))
+    return commands
+
+
+def git_write(command, args):
+    if command in {'add', 'commit', 'push', 'merge', 'rebase', 'reset', 'checkout', 'switch',
+                   'clean', 'restore', 'cherry-pick', 'revert', 'stash', 'fetch', 'pull',
+                   'am', 'apply', 'worktree', 'update-ref'}:
+        return True
+    if command == 'branch':
+        mutations = ('-d', '-D', '-m', '-M', '-c', '-C', '--delete', '--move', '--copy',
+                     '-f', '--force', '-u', '--edit-description', '--set-upstream-to', '--unset-upstream')
+        return (any(arg.split('=')[0] in mutations for arg in args)
+                or bool(args and not args[0].startswith('-')))
+    if command == 'tag':
+        return bool(args and (args[0] not in ('--list', '-l') or '-d' in args or '--delete' in args))
+    if command == 'config':
+        reads = {'--get', '--get-all', '--get-regexp', '--get-urlmatch', '--list', '-l',
+                 'get', 'list'}
+        return bool(args and not any(arg in reads for arg in args)
+                    and (len([arg for arg in args if not arg.startswith('-')]) != 1
+                         or any(arg in ('--unset', '--unset-all', '--add', '--replace-all',
+                                        '--remove-section', '--rename-section', '--edit', '-e',
+                                        'set', 'unset', 'edit', 'remove-section', 'rename-section')
+                                for arg in args)))
+    if command == 'remote':
+        return bool(args and args[0] in ('add', 'remove', 'rm', 'rename', 'set-url', 'set-head', 'prune', 'update'))
+    return False
+
+
 def deny(role, what, instead):
-    print(f'refused ({role}): {what}', file=sys.stderr)
-    print(instead, file=sys.stderr)
-    sys.exit(1)
+    reason = f'refused ({role}): {what}. {instead}'
+    if NATIVE_PAYLOAD:
+        print(json.dumps({'hookSpecificOutput': {
+            'hookEventName': 'PreToolUse', 'permissionDecision': 'deny',
+            'permissionDecisionReason': reason}}))
+        sys.exit(0)
+    print(reason, file=sys.stderr)
+    sys.exit(2)
 
 
 def main():
+    global NATIVE_PAYLOAD
     role = 'orchestrator'
     argv = sys.argv[1:]
     while argv:
@@ -43,29 +113,92 @@ def main():
         raw = ''
     try:
         payload = json.loads(raw)
-        text = payload.get('tool_input', {}).get('command', '') if isinstance(payload, dict) else ''
     except Exception:
+        payload = None
+    NATIVE_PAYLOAD = isinstance(payload, dict)
+    tool = ''
+    inputs = {}
+    if NATIVE_PAYLOAD:
+        native_role = payload.get('agent_type')
+        # Host payload identity outranks compatibility --role arguments. Main omits identity.
+        roles = {'method_worker': 'worker', 'method_helper': 'worker',
+                 'method_reviewer': 'reviewer', 'method_review_helper': 'reviewer'}
+        if native_role:
+            if native_role not in roles:
+                deny(native_role, 'unqualified child role', 'Use an installed method role.')
+            role = roles[native_role]
+        elif payload.get('agent_id'):
+            deny('unknown', 'child role is missing', 'Use an installed method role.')
+        else:
+            role = 'orchestrator'
+        tool = payload.get('tool_name', '').split('.')[-1]
+        inputs = payload.get('tool_input') or {}
+        if not isinstance(inputs, dict):
+            deny(role, 'unrecognized tool input', 'Supply the native structured tool input.')
+        text = inputs.get('command', inputs.get('cmd', ''))
+    else:
         text = raw
+    if role == 'reviewer':
+        if tool.lower() in ('apply_patch', 'write', 'edit', 'multiedit', 'write_file', 'edit_file'):
+            deny(role, 'a reviewer is read-only', 'Return a verdict; publication is the caller\'s job.')
+        if tool == 'spawn_agent' and (inputs.get('agent_type') != 'method_review_helper'
+                                      or inputs.get('fork_turns') != 'none'):
+            deny(role, 'reviewer helpers must keep the reviewer role and fresh context',
+                 'Spawn method_review_helper with fork_turns="none".')
+    if not isinstance(text, str):
+        deny(role, 'unrecognized command', 'Supply the native command string.')
+    git_argv = git_commands(text)
     text = strip_noise(text)
     lower = text.lower()
 
+    # The REST merge endpoints merge a PR or write a merge commit straight onto a branch. Neither
+    # goes through the guard, so neither is admitted for anyone.
+    if ('/merge' in lower and whole('gh', text)) or re.search(r'\bpulls/\d+/merge\b', lower):
+        deny(role, 'a merge goes through the guard',
+             'Run: scripts/guard merge --repo OWNER/REPO --pr NUMBER --project CHECKOUT --execute')
+
+    # The guard is the merge entry point; only the orchestrator runs it with --execute.
+    if whole('guard', text) and whole('merge', text) and ('--execute' in lower or whole('execute', lower)):
+        if role != 'orchestrator':
+            deny(role, 'only the orchestrator executes a merge',
+                 'Return a PR with evidence and let the orchestrator run the guard.')
+
     if role == 'worker':
-        if whole('merge', text) and whole('git', text):
+        if any(command == 'merge' for command, _ in git_argv):
             deny(role, 'a worker never merges',
                  'Push the PR and let the orchestrator run scripts/guard merge.')
-        if whole('push', text) and (whole('main', text) or whole('master', text)):
+        if whole('push', lower) and (
+                any(whole(w, lower) for w in ('main', 'master'))
+                or '--all' in lower or '--mirror' in lower or '--prune' in lower
+                or '*' in text):
             deny(role, 'a worker never pushes main or master',
                  'Push your task branch only.')
 
-    if whole('merge', text) and whole('pr', text) and whole('gh', text):
+    if role == 'reviewer':
+        # Ordinary shell paths only: this is a policy hook, not a shell interpreter or an
+        # OS-per-child security boundary. Scripts and runtime-built operations remain residuals.
+        if (any(git_write(command, args) for command, args in git_argv)
+                or re.search(r'(^|[;&|]\s*)\s*(?:rm|mv|cp|touch|mkdir|rmdir|tee|truncate|chmod|chown)\b', lower)
+                or re.search(r'(?<![<])>{1,2}(?![&])', text)
+                or re.search(r'\b(?:sed\s+.*(?:-i\b|--in-place)|perl\s+.*-\w*i)', text)
+                or re.search(r'\bgh\s+(?:pr|issue|release|repo)\s+'
+                             r'(?:create|edit|comment|close|reopen|merge|delete|upload|fork|rename)\b', lower)):
+            deny(role, 'a reviewer is read-only', "Return a verdict; publication is the caller's job.")
+        if whole('gh', text) and whole('api', text):
+            if any(flag in text for flag in ('--method', '--input', '--raw-field', '--field', '-f', '-F')):
+                deny(role, 'a reviewer is read-only',
+                     "Return a verdict; publication is the caller's job.")
+            match = re.search(r'-X\s+(\S+)', text)
+            if match and match.group(1).upper() not in ('GET', 'HEAD'):
+                deny(role, 'a reviewer is read-only',
+                     "Return a verdict; publication is the caller's job.")
+            if '-X' in text and not re.search(r'-X\s+(GET|HEAD)', text):
+                deny(role, 'a reviewer is read-only',
+                     "Return a verdict; publication is the caller's job.")
+
+    if whole('gh', text) and whole('pr', text) and whole('merge', lower):
         deny(role, 'the orchestrator merges through the guard',
              'Run: scripts/guard merge --repo OWNER/REPO --pr NUMBER --project CHECKOUT --execute')
-
-    if role == 'reviewer':
-        write_flags = ('--method', '--input', '-X')
-        if whole('gh', text) and whole('api', text) and any(flag in text for flag in write_flags):
-            deny(role, 'a reviewer is read-only',
-                 'Return a verdict; publication is the caller\'s job.')
 
     sys.exit(0)
 

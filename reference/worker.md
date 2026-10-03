@@ -24,8 +24,8 @@ nothing below your role. Your own subagents may research, check a diff, or paral
 work; never use the orchestrator's `scripts/dispatch` or `scripts/review-packet` for them. Each
 takes the model **and effort** its work needs from the `Helpers:` line of your brief — `gpt-6-astra`
 at `high` when its conclusion decides a merge or a design, `gpt-6.1-sol` at `high` for ordinary
-judgment, `gpt-6-luna` at `max` for mechanical work. Where a spawn takes no effort control at all,
-it inherits yours. You remain
+judgment, `gpt-6-luna` at `max` for mechanical work. Use the qualified V2 spawn with explicit effort; if that setting or the requested model
+is unavailable, return the limitation without silent substitution. You remain
 the lane's one accountable author and return one PR.
 
 ### Never
@@ -46,16 +46,15 @@ returned to the orchestrator; recording it does not authorize it. An irreversibl
 the human's authorization in words, never inferred from urgency, and a worker still returns it to
 the orchestrator rather than acting.
 
-The role hook refuses one worker word—`merge`, in `git merge` or `gh pr merge`—and a `push` that
-also names `main` or `master`; everything else you run is admitted. A refusal is a reminder, not
-authority to evade the operation: return it under §6, or, if only inert text triggered it, put that
-text in a file and pass the file.
+The native role hook and its threat boundary are defined in
+`reference/orchestrator.md`'s The role hook section. A refusal returns under §6; it is never
+authority to evade the operation.
 
 ## 2. Receiving the task
 
 Require the packet's `Issue`, `Branch`, `Worktree`, `Named base`,
 `Role references resolve from`, `Executor`, `Record language`, and `Commit trailer`, plus its
-clearly delimited verbatim issue body and every non-dispatch-record comment with author and date.
+clearly delimited verbatim issue body and every comment with author and date.
 Return a missing, placeholder, or too-vague value before starting. Expect `PR` only with `--pr`;
 `Inputs and expected output` or `Continuation brief` appears only with `--brief` and is required on
 continuation.
@@ -77,8 +76,8 @@ the plugin root named in the packet and project paths from the assigned worktree
 ### Recover the binding
 
 If you cannot restate the Issue, Bounds, Done-check, Branch, Worktree, or this page's Never list,
-stop task work. Where a harness carries this page itself, the page survives compaction and the
-dynamic packet does not, so what you recover is the packet. Your harness page, delivered with this
+stop task work. Where a harness carries this page itself, recover the exact role and dynamic packet, rather than trusting a compaction summary. No
+claim that the native role or packet survives every compaction is assumed. Your harness page, delivered with this
 one, says how you recover your binding, what you may spawn, and what your sandbox is.
 
 ## 3. Before the first write
@@ -89,9 +88,12 @@ one, says how you recover your binding, what you may spawn, and what your sandbo
 2. Validate the assigned lane: the resolved top level equals the recorded worktree, git-dir differs
    from common-dir, the current branch equals the packet, and the named base resolves. A mismatch
    stops; do not adapt or create another lane.
-3. Copy only untracked inputs named by the project's `AGENTS.md` allowlist. No list means no copy.
+3. Copy only nonconfidential untracked inputs named by the project's `AGENTS.md` allowlist.
+   No list means no copy. Never copy secrets or credentials to make a lane work.
 4. Before installs, tests, or task-generated writes, inspect existing changes with
-   `git status --porcelain -uall`. Publish and account for the baseline where the issue requires it.
+   `git status --porcelain -uall`. Retain and publish the actual PREWRITE baseline and DELIVERY snapshot in the PR.
+   If the historical baseline was not captured, disclose its absence; a new prospective
+   baseline does not repair the missing history.
    Install dependencies and run the baseline suite. An unrelated installation, runtime, or test
    failure stops and returns to the orchestrator.
 5. Before adding documentation read `reference/in-repo-writes.md`; before choosing any concrete
@@ -103,7 +105,7 @@ one, says how you recover your binding, what you may spawn, and what your sandbo
 ## 4. Doing the work
 
 Implement the accepted design in this lane. Make the decisions it leaves within Bounds and disclose
-material choices in the PR. Update every document the change invalidates in the same diff. A PRD or
+material choices and remaining correctness/scope doubts that do not trigger a stop in the PR. Update every document the change invalidates in the same diff. A PRD or
 architecture expansion returns before implementation. `AGENTS.md` accepts only commands,
 environment gotchas, worktree copy-list entries, and a record-language declaration under
 `reference/repo-agents-md.md`.
@@ -114,7 +116,8 @@ for omitted requirements, unintended files, dead code, and unfinished changes.
 
 ### Execution craft
 
-codex-method assumes superpowers is installed on the host running this worker. These are this role's
+codex-method requires the upstream superpowers plugin installed and discoverable in Codex
+(`README.md` gives installation and qualification limits). These are this role's
 bindings; the dispatcher's brief carries the same list and you receive it there.
 
 <!-- BEGIN WORKER SKILLS -->
@@ -187,7 +190,8 @@ task-branch form is `git push --force-with-lease origin <branch>`. A changed hea
 needs the orchestrator's current guarded path and applicable review.
 
 **No CI run:** repair a workflow your diff broke; otherwise report the absence on the PR and return
-it — only the merging session may establish `reference/ci-cannot-run.md`'s fallback.
+it — only the merging session owns the fallback design in `reference/ci-cannot-run.md`;
+its shipped CLI route remains unqualified and blocks.
 
 **Main is red:** return the observation; the orchestrator's recovery outranks new work. Once main is
 green, your own task resumes with the ordinary current-base check.

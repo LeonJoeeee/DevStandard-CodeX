@@ -21,7 +21,7 @@ Explicitly exempt — write nothing: refactors that don't change meaning, object
 5. **Verification** — the end-to-end check that proves it works; the task's done-check derives from this; the verification must be something a machine can judge.
 6. **Failure detection & rollback** *(conditional)* — required only when the change touches a shared or public interface, a schema, or anything expensive to undo; state how a partial failure is detected and how to return safely to the previous state.
 
-The orchestrator uses its design-craft skills in `reference/worker.md` to
+The orchestrator uses its centralized design craft binding in `reference/orchestrator.md` to
 settle the design and brief its writer. A worker writes the repository artifact in its assigned
 lane; return here for admission, contents and accepted-design handoff.
 

@@ -121,30 +121,6 @@ def verdict_shape(text, head, identity=None):
     return None
 
 
-def recovery_ruling(ruling, head):
-    """A trusted continuation ruling must carry recovery evidence for this accepted head.
-
-    The ruling publisher verifies a base advance or records the orchestrator's guard-refusal
-    attestation. Consumers use that same durable decision; they never infer recovery from Notes.
-    """
-    if not ruling or ruling.get('decision') != 'continue' or ruling.get('head') != head:
-        return False
-    recovery = ruling.get('recovery')
-    if not isinstance(recovery, dict) or recovery.get('head') != head:
-        return False
-    if recovery.get('kind') == 'behind-base':
-        base = recovery.get('base')
-        return isinstance(base, str) and bool(SHA.fullmatch(base)) and base != head
-    if recovery.get('kind') == 'guard-refusal':
-        reason = recovery.get('reason')
-        return isinstance(reason, str) and bool(reason.strip())
-    return False
-
-
-# The synchronized release manifests: the two Claude ones since the Codex host went (#459).
-MANIFESTS = ('.claude-plugin/plugin.json', '.claude-plugin/marketplace.json')
-
-
 def pinned_git(project, env=None):
     """Read-only git reader returning raw bytes; env is pinned by sanitizing callers."""
     def git(*args):
@@ -152,50 +128,6 @@ def pinned_git(project, env=None):
         require(result.returncode == 0, 'cannot read pinned version diff: ' + result.stderr.decode(errors='replace'))
         return result.stdout
     return git
-
-
-def manifest_bump(project, base, head, path, env=None):
-    """One manifest's pinned pair differs only in its declared version line; give [old, new]."""
-    git = pinned_git(project, env)
-    before, after = [git('show', pin + ':' + path) for pin in (base, head)]
-    old_lines, new_lines = before.splitlines(keepends=True), after.splitlines(keepends=True)
-    if len(old_lines) != len(new_lines):
-        return None
-    changed = [(old, new) for old, new in zip(old_lines, new_lines) if old != new]
-    if len(changed) != 1:
-        return None
-    matches = [re.fullmatch(rb'([ \t]*"version"[ \t]*:[ \t]*)("[^"\r\n]*")([ \t]*,?[ \t]*(?:\r?\n)?)', line)
-               for line in changed[0]]
-    if not all(matches) or matches[0][1] != matches[1][1] or matches[0][3] != matches[1][3]:
-        return None
-    try:
-        documents = [json.loads(blob) for blob in (before, after)]
-        values = [doc['plugins'][0]['version'] if path == '.claude-plugin/marketplace.json' else doc['version']
-                  for doc in documents]
-        if values != [json.loads(match[2]) for match in matches] or values[0] == values[1]:
-            return None
-    except (ValueError, KeyError, IndexError, TypeError):
-        return None
-    return values
-
-
-def version_only(project, base, head, env=None):
-    """Prove the complete pinned diff is only the synchronized manifest version lines."""
-    if not (SHA.fullmatch(base) and SHA.fullmatch(head)):
-        return False  # Unpinned ends the proof, never the review: an ordinary packet is assembled.
-    paths = [path.encode() for path in MANIFESTS]
-    raw = pinned_git(project, env)('diff', '--no-ext-diff', '--no-textconv', '--no-renames',
-                                   '--raw', '-z', base, head)
-    entries = raw.rstrip(b'\0').split(b'\0')
-    if len(entries) != 2 * len(MANIFESTS) or set(entries[1::2]) != set(paths):
-        return False
-    for header in entries[::2]:
-        fields = header.split()
-        if (len(fields) != 5 or fields[0] not in (b':100644', b':100755')
-                or fields[0][1:] != fields[1] or fields[4] != b'M'):
-            return False
-    versions = [manifest_bump(project, base, head, path, env) for path in MANIFESTS]
-    return bool(versions[0]) and all(version == versions[0] for version in versions)
 
 
 # CI configuration is what a CI run reads as its own definition: the workflow files, plus the gate

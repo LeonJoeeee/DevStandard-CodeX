@@ -72,16 +72,21 @@ lane otherwise looks exactly like one still running.
 | Human message | Restate it under §4, then discuss the result and why, report a problem, update an issue, or adjust direction. |
 | Problem appears | Follow "When a problem appears" below; report the research result, propose what to do, and wait. |
 | Issues meeting "Ready and the issue" below | Dispatch each in an isolated lane; cut overlap, never concurrency, then return. |
-| Worker delivery | Treat it as a claim; process exit is not acceptance. Inspect the PR and take ownership of unreported checks. |
+| Worker delivery | Treat it as a claim; native completion is not acceptance. Inspect the PR and take ownership of unreported checks. |
 | Green PR | Take deliveries one at a time: if main moved, continue the lane owner for the rebase first. Then start a clean acceptance review on that head with the current-source packet assembler. |
 | Verdict | Publish it whole immediately; judge Goal and both Floors, then integrate or decide continuation. |
 | Conflict after delivery | Assign resolution to the available lane owner; verify changed content and re-review substantive differences. |
 | Irreversible action | Stop and ask the human; "Guarded operations" owns integration commands and their limits. |
 | Red main | Freeze new dispatch and follow §5. |
-| Idle | Sweep issue, PR, check, executor, and worktree records; report material progress. |
+| Idle | Sweep issue, PR, check, native-handle, and worktree records; report material progress. |
 
-Continue fixes in the same lane and do not overlap a live executor. Delivery with unreported checks
-transfers their coordination to you under "Driving a PR to green."
+Continue fixes in the same lane and do not overlap a live child. On a worker refusal, inspect the
+exact act, target, refusal, next step and clean-point snapshot; perform an already-authorized act
+through your own admitted path, then send its result and the refreshed continuation brief with
+native `followup_task` to the retained stopped handle. Start fresh only after establishing the
+old child is stopped and its context cannot be recovered. If your own admitted path is refused,
+report the limit to the human; never bypass it. `reference/harness-codex.md` owns native mechanics.
+Delivery with unreported checks transfers their coordination to you under "Driving a PR to green."
 
 ## 3. The work in order
 
@@ -102,7 +107,9 @@ solving. Then research without waiting. Answer four questions:
 
 Store useful research in a durable task record and report it to the human—posting is not reporting.
 Propose an action and wait. Tree-bound research is dispatched work; out-of-tree research uses a
-read-only helper with no lane and no PR. Choose work by value and the human's direction.
+read-only native helper with no lane and no PR. Choose work by value and the human's direction.
+Give an open-ended goal its intended boundary and default; the reviewer judges that contract
+rather than growing an unlimited edge-case inventory.
 
 ### Ready and the issue
 
@@ -130,7 +137,11 @@ PR.
 Durable product definition uses `reference/prd.md`, shared structure
 `reference/architecture.md`, and costly-to-reverse decisions `reference/adr.md`. Use
 `reference/design-spec.md` to settle consequential unresolved interface, design, or reversal
-choices when agreement is needed; it owns exemptions and handoff. CI and release setup and aging
+choices when agreement is needed; it owns exemptions and handoff. Commission a fresh independent
+nonediting challenge for consequential unsettled design before implementation; its author cannot
+challenge their own design. Supply the question, alternatives, acceptance checks, and pinned
+evidence without conversation history, resolve blocking grounds, and publish the answer on the
+issue. Use the native design-review helper under `reference/harness-codex.md`. CI and release setup and aging
 pipeline dependencies use `reference/ci-pipelines.md`. Scale founding artifacts to the task.
 
 ### Worktree lifecycle
@@ -158,24 +169,33 @@ branch/path through `git worktree list`; never invent a second task identity to 
 stale registration.
 
 A new worktree carries tracked files only. Copy untracked inputs solely from the allowlist in the
-project's `AGENTS.md`; no list means no copy. Share documented dependency caches where suitable and
+project's `AGENTS.md`; no list means no copy. Do not copy secrets or credentials into lanes. Share documented dependency caches where suitable and
 parameterize parallel runtime names. The worker owns its baseline and initial test under its role
 page.
 
 ### Dispatching to a worker
 
-Use the shipped dispatcher (Python 3.9+, `git`, authenticated `gh`) from the target checkout; it
+Use the shipped dispatcher (Python 3.11+, `git`, authenticated `gh`) from the target checkout; it
 assembles the whole brief from the issue's ordered record and the current role source.
 
-**Dispatched work goes to this host's own built-in subagent.** There is no cross-host executor and
-no second vendor's agent: `scripts/dispatch` prepares a Codex native-worker receipt, and the
-caller hands it to Codex's native spawn with conversation-history forking disabled, then records
-the returned handle. The dispatcher observes no handle, so record each returned handle on the
-issue: that record is the evidence one finished. A live worker still blocks reuse.
+**Dispatched work goes to Codex's own built-in subagent.** `scripts/dispatch` prepares a
+native receipt; the caller invokes it with the V2 native tool and records the actual handle on
+the issue. Read `reference/harness-codex.md` for the exact schema, inherited cwd and permission
+limits, role installation, continuation, and binding recovery. Worktree instructions are not
+per-child OS isolation; a fresh nonediting reviewer is not an OS read-only child.
+
+#### When it is not there
+
+If the requested model or native capability is missing, unauthenticated, refused, or errors,
+name the exact limitation and preserve the pending lane. An explicit authorized alternative is
+usable only if it preserves the same role, fresh-context independence, evidence and nonediting
+properties. Disclose the departure and its settings; the dispatcher never substitutes silently.
+With no qualifying alternative, gating review or design challenge remains blocked, never lowered.
+No vendor process or quota-balancing route is part of this method.
 
 #### Model and effort
 
-The method has three agents. The human picks the orchestrator's model by hand. The worker and the
+The main session defaults to `gpt-6.1-sol` at `high`; the human may explicitly choose its model. The worker and the
 reviewer are anchored: model and effort are fixed for the role, not routed per task.
 
 | Role | Model at effort |
@@ -189,15 +209,14 @@ informs the decision and does not make it: a genuine dilemma or irreversible jud
 the human. With a PR, commission it through the reviewer path:
 
 ```sh
-<plugin>/scripts/review-packet start 124 --issue 123 --architecture-level no --output <session-scratch> --model gpt-6-astra --effort max
+<plugin>/scripts/review-packet start 124 --issue 123 --architecture-level no --output <session-scratch> --host-version 0.159.2 --model gpt-6-astra --effort max
 ```
 
-Before a PR exists, run a fresh, history-free Codex process from the checkout with the question and
-its evidence on stdin, and post the captured answer on the issue as the durable record:
-
-```sh
-codex exec --ephemeral -s read-only -m gpt-6-astra -c model_reasoning_effort='"max"' -o <session-scratch>/answer.md - < <session-scratch>/question.md
-```
+Before a PR exists, commission a fresh native `method_review_helper` with
+`fork_turns="none"`, `gpt-6-astra`, and `reasoning_effort="max"`. Supply a self-contained question,
+real alternatives, decision bounds and pinned evidence. Its nonediting contract and ordinary-path
+hook are the same as a design challenge's; return and publish the whole answer on the issue.
+The answer informs the decision; it grants no human authorization or merge authority.
 
 A helper — a one-off subagent any role spawns for its own task — is neither anchored role and never
 goes through `scripts/dispatch` or `scripts/review-packet`. It always uses Codex's own native
@@ -209,8 +228,7 @@ subagent tool, and takes the model its work needs:
 | Ordinary judgment (research, checking) | `gpt-6.1-sol` at `high` |
 | Mechanical (scans, first-pass triage, evidence gathering, fixed-field extraction, lists, format conversion) | `gpt-6-luna` at `max` |
 
-A helper's effort is the one its row gives; where a spawn takes no effort control at all it
-inherits its caller's. Every role that can spawn a helper is told this where it already reads:
+A helper's effort is the one its row gives; the qualified V2 call supplies it explicitly. Every role that can spawn a helper is told this where it already reads:
 dispatch reads this table into each packet's `Helpers:` line, and `reference/worker.md`'s Helpers
 paragraph carries the same rule. Keep this table's cell form.
 
@@ -221,19 +239,20 @@ not a model.
 
 A gating review never runs below the tier that produced the work. Work that returns stuck changes
 one thing per attempt: add missing context, raise effort, raise the model, cut the task smaller,
-then take a genuine dilemma or irreversible judgment to the human. Effort is set on a spawn that
-takes one; a project's `AGENTS.md`, the issue, or an explicit `--model` or `--effort` flag overrides
-an anchor for that dispatch.
+then take a genuine dilemma or irreversible judgment to the human. Use explicit model and effort
+in the native call. An authorized issue setting or explicit `--model` or `--effort` overrides
+the anchor for that dispatch; `AGENTS.md` remains inside its operational-content fence.
+An unavailable model or quota is a reported limitation, never an implicit substitute.
 
 #### Fixed dispatcher
 
 ```sh
-<plugin>/scripts/dispatch 123 --purpose worker --base origin/main
-<plugin>/scripts/dispatch 123 --purpose worker --continue --brief <continuation-file>
-<plugin>/scripts/dispatch 123 --purpose worker --continue --pr 124 --brief <continuation-file>
-<plugin>/scripts/dispatch 123 --adopt --base origin/main --branch <existing-branch> --worktree <existing-worktree> --pr 124
-<plugin>/scripts/dispatch 123 --purpose reviewer --packet <complete-review-packet>
-<plugin>/scripts/dispatch 123 --cleanup --pr 124
+<plugin>/scripts/dispatch 123 --purpose worker --base origin/main --host-version 0.159.2
+<plugin>/scripts/dispatch 123 --purpose worker --continue --host-version 0.159.2 --brief <continuation-file>
+<plugin>/scripts/dispatch 123 --purpose worker --continue --host-version 0.159.2 --pr 124 --brief <continuation-file>
+<plugin>/scripts/dispatch 123 --host-version 0.159.2 --purpose worker --adopt --base origin/main --branch <existing-branch> --worktree <existing-worktree> --pr 124
+<plugin>/scripts/dispatch 123 --purpose reviewer --host-version 0.159.2 --packet <complete-review-packet>
+<plugin>/scripts/dispatch 123 --cleanup --pr 124 --host-version 0.159.2 --native-status <actual-list-agents-capture>
 ```
 
 Fetch the named base first. New identities default deterministically to `task/ISSUE-TITLE` and
@@ -241,33 +260,30 @@ Fetch the named base first. New identities default deterministically to `task/IS
 continuation requires `--brief`. `--help` carries the remaining flag contracts, and refuses rather
 than guessing when one is missing.
 
-For a process executor inside a bounded tool invocation, use `--wait` and keep that same invocation
-alive until it returns. Only the supervisor's completion marker reports an observed exit; `--help`
-carries the marker, lock and PID semantics and what to retain until lane cleanup. Read the returned
-output itself.
-
-Reconcile a lost run explicitly, on originating-host inspection and durable evidence whose
-preconditions `--help` states:
-
-```sh
-<plugin>/scripts/dispatch 123 --reconcile-lost /exact/recorded/scratch/brief.txt --reason 'Originating-host inspection and result' --evidence https://github.com/owner/repo/issues/123#issuecomment-ID
-```
-
-It resolves one run without inventing an exit or output. If inspection is unavailable, remain
-blocked. A live or uncertain worker never permits a second writer or cleanup.
+A receipt prepares a child rather than launching one. Pass it unchanged to native V2 spawn,
+record the returned handle with `--record-spawn <actual-spawn-capture>`, and observe native
+completion with `--record-status <actual-list-agents-capture>` on that issue. Also publish
+the actual handle/lane identity on the issue. These captures are actual host observations,
+not hand-written attestations; the CLI cannot authenticate or stop a native child. Continue the same stopped child through
+native `followup_task` with the refreshed brief. `dispatch --continue` instead prepares a
+fresh native child identity; it does not resume the retained handle. Use that fresh route only
+under the harness page's recovery rule. A live or uncertain child blocks reuse and cleanup.
 
 #### What it returns
 
-The process output file is the worker's return channel; keep briefs and outputs in session scratch
-and publish durable evidence on the issue or PR. Git author credentials do not identify the
-executor, so the dispatch packet supplies the required commit trailer; review output names its
-reviewer.
+The native child's whole final message is the return channel. Retain the brief and handle record
+through cleanup, and publish durable evidence on the issue or PR. Git author credentials do not
+identify the child, so the dispatch packet supplies the required commit trailer; a review names
+its exact role, model, effort and reviewed head.
 
 ### Acceptance and integration
 
 #### The tree you hand back
 
-Inspect existing changes before edits and account for retained artifacts at delivery. Task state
+Capture actual PREWRITE status before the first write and actual DELIVERY status after the final
+repository-touching command; publish both with tree accounting before review. If a historical
+capture is missing, disclose it. A prospective repair baseline cannot fabricate the missing past.
+Account for retained artifacts at delivery. Task state
 belongs on the issue or PR, not an invented handoff file. Anything the repository maintains is
 committed; disposable artifacts are removed only when their ownership and disposability are known.
 Preserve unintegrated work and sole durable copies.
@@ -292,44 +308,63 @@ alone defines judging: Goal and both Floors decide readiness. Record failed atte
 
 ```sh
 <plugin>/scripts/review-packet assemble 124 --issue 123 --architecture-level no --output <session-scratch>
-<plugin>/scripts/review-packet start 124 --issue 123 --architecture-level no --output <session-scratch>
+<plugin>/scripts/review-packet start 124 --issue 123 --architecture-level no --output <session-scratch> --host-version 0.159.2
 # Gating review on the arbitration tier
-<plugin>/scripts/review-packet start 124 --issue 123 --architecture-level no --output <session-scratch> --model gpt-6-astra --effort max
+<plugin>/scripts/review-packet start 124 --issue 123 --architecture-level no --output <session-scratch> --host-version 0.159.2 --model gpt-6-astra --effort max
 <plugin>/scripts/review-packet status 124 --issue 123
 <plugin>/scripts/review-packet rule 124 --issue 123 --decision continue --reason '<blocking goal gap or missing evidence>'
 ```
 
-Assembly admits only a head whose observed checks pass and refuses an assembly race; `--help`
-carries what it pins, captures and requires. A pin, diff form or slot it cannot produce is reported
-in the packet's `## Packet integrity` section for Floor 1 to judge, never withheld. Under a declared
-check-2 fallback, `--ci-fallback <comment URL>` carries the published `CI-FALLBACK` comment into the
-reviewer's fallback slot; every other review leaves it `NONE`. A returned verdict replaces its
-reservation and remains attached to the reviewed head; partial or oversized output never becomes a
-verdict.
+`start` requires the observed host version and current installed roles, reserves an attempt,
+and returns an `instruction` path containing the complete native call. Pass that JSON unchanged
+to native spawn: a fresh `method_reviewer`, `fork_turns="none"`, and the receipt's exact model and
+effort. Record the actual returned handle on the issue, observe completion, capture its unedited
+whole verdict, then publish with `review-packet publish`. `status` verifies the retained instruction
+bytes before returning that path; it does not attest a stopped child or authorize a second spawn.
+Use `--help` for the exact receipt and attempt flags.
 
-Returned verdicts consume rounds, including malformed and Floor-failing responses; a process that
-returned no verdict does not. `review-packet` counts them and warns past the recorded cap; nothing
-refuses on the count. Rule when another round would be pointless — findings of the same shape round
-after round, which the reviewer reports as non-convergence — rather than when a number is reached.
-Floor 1 returns the lane for real evidence. Floor 2 stops the lane and goes to the human, never a fix
-round. A `merge-as-is` ruling may settle Goal No but cannot waive either Floor. Notes alone never
-justify another round. Use `review-packet rule` for `continue`, `merge-as-is`, `rewrite`, `abandon`,
-or `change-route`; directional or human-touchpoint rulings require durable human authorization.
+Assembly admits a reported green current head and refuses races. The packet pins head, base,
+issue record, current contract and evidence; unavailable evidence is named for Floor 1 rather than
+fabricated. Supplied PREWRITE and DELIVERY captures are kept; missing captures are reported. The
+CI-fallback method is in `reference/ci-cannot-run.md`, but the shipped CLI refuses that route as
+unqualified. Do not treat a named comment as a waiver.
 
-A reservation may be marked failed where no reviewer verdict can exist: its start stopped before
-dispatch, or its run was reconciled lost and retained no output. On restart use `status`, which
-names the command for the reservation in hand; recover publication from retained output rather
-than launching another reviewer.
+One local ledger in the shared git directory,
+`codex-method/reviews/OWNER/REPO/PR.json`, binds the reservation id/token, head/base, reviewer
+identity, author, packet SHA, raw verdict SHA and exact published comment SHA. Start, publish,
+status and guard use the same parser and receipt. The remote `codex-method-attempt-v2` envelope
+is metadata, not authorization. A missing local receipt blocks acceptance; it is not regenerated
+from a remote marker. The envelope's token is a correlation identifier, not a secret or
+proof of authorization; the local receipt and exact publication establish association.
+Before a remote mutation, the ledger durably records its intended bytes and previous receipt.
+If the response is lost, use `status` to recover the exact comment association, never repeat the
+mutation. Missing, ambiguous, or changed remote bytes leave the outcome pending and block a
+new reservation, replacement verdict, or failed/no-output claim. Keep the whole retained output.
+
+Every returned verdict consumes a round, including malformed or Floor-failing responses. A failed
+attempt with no verdict consumes none; record that failure with evidence. A latest pending attempt
+blocks a new start. Recover publication of an existing return before launching another reviewer.
+`status` reports the attempt's next action. Partial or oversized output cannot establish readiness.
+
+The recorded count is a warning rather than a hard stop. Decide continuation from blocking goal
+gaps and convergence, never from Notes. An accepted head with only Notes cannot start another
+round. Floor 1 returns the lane for real evidence. Floor 2 stops the lane and goes to the human,
+never a fix round. A `merge-as-is` ruling cannot waive either Floor and does not substitute for
+this guard's exact-head accepted receipt. Record `continue`, `merge-as-is`, `rewrite`, `abandon`,
+or `change-route` on the issue; directional or human-touchpoint rulings require durable human
+authorization. `review-packet rule` refuses to fabricate that authority and is not a ruling
+publisher. Rule explicitly when repeated findings show the work is not converging.
 
 #### Two narrow exceptions to re-running check 1
 
-A changed head re-runs check 1 by default; the Merge and rebase proof below is a separate path. Two
-older cases stay the merging session's call, never a worker's, and never because a reviewer is
-unavailable, slow, or costly. First: on a verdict of Goal Yes with both Floors passing, a Note's own
-replacement text, quoted by the reviewer in its own fenced block, applied byte-identical as a new
-commit with nothing else in the diff. Second: a ground against something outside the merged tree —
-most commonly the PR description — closed by editing that artifact alone, leaving the reviewed SHA
-unchanged. Publish both SHAs and disclose the exception on the PR; any doubt re-runs check 1.
+A changed head re-runs check 1 by default. The source method allowed two narrow merging-session
+exceptions: a Goal Yes / both Floors Pass Note's own fenced replacement applied byte-identically
+with nothing else changed, and an external artifact correction with the reviewed SHA unchanged.
+These principles remain recorded; neither unavailable reviewers nor cost justify an exception.
+The shipped guard does not wire changed-head acceptance reuse. A changed commit, including a
+quoted Note correction, therefore requires a fresh accepted receipt. Editing an external artifact
+with the same SHA must preserve the reviewed contract and evidence; disclose both identities and
+any correction on the PR, and re-review whenever substantive claims changed.
 
 ### Guarded operations
 
@@ -348,47 +383,74 @@ the orchestrator to integrate:
 
 Use the absolute installed path as the first command word, with no Python wrapper,
 directory-changing prefix, shell composition, or redirection. The guard requires an open PR into the
-current default branch, current-base ancestry, a latest whole Goal Yes / both Floor Pass verdict for
-that head, and the CI result below, and it refuses if the PR head or the base head moved while it
+current default branch, current-base ancestry, a latest locally receipted whole Goal Yes / both Floor Pass verdict for
+that exact head and base, and the CI result below, and it refuses if the PR head or the base head moved while it
 verified; `--help` carries the record-association and API preconditions it applies. It reads no
-branch protection, because GitHub enforces that gate server-side at the merge itself. One
+branch protection, because GitHub enforces that gate server-side at the merge itself. It re-fetches base and head before execution and uses
+`gh pr merge --match-head-commit`; it never automatically deletes the remote branch. One
 orchestrator owns a PR. The review packet's architecture-level input travels in the PR description
 or review record (`architecture-level: true|false` / `architecture: YES|NO`).
 
-After main moves under an accepted head, continue the lane owner for the rebase and the bump alone;
-the dispatcher admits that on the acceptance, so it needs no ruling and consumes no review round.
-Then supply `--old-base FULL_SHA --old-head FULL_SHA` for the accepted record and the guard proves
-the rebase changed no content; `--help` carries the replay rules and the one version-field
-exemption. Any other difference needs full review; conflicts go to a resolver.
+After main moves under an accepted head, assign the lane owner a rebase continuation, resolve
+conflicts in that lane, rerun final checks, and commission check 1 for the new head. The source's
+stronger reuse property required proof of conflict-free replay and identity of every PR-changed
+byte and mode, with only synchronized monotonic version fields exempted, plus green merged-result
+CI. That acceptance-proof capability is deferred; do not claim `compare` establishes it.
 
-Inspect the mechanical half with:
+The diagnostic command compares patch/tree equality only and grants no acceptance reuse:
 
 ```sh
 <plugin>/scripts/guard compare --project CHECKOUT --old-base OLD_BASE --old-head OLD_HEAD --base NEW_BASE --head NEW_HEAD
 ```
 
 The second layer is green CI for the actual integration identity,
-`merged-result / BASE_SHA / HEAD_SHA`, plus no failed check elsewhere on the head. Silence is never
+`merged-result / BASE_SHA / HEAD_SHA`, produced by the GitHub Actions app (id `15368`),
+plus no failed check elsewhere on the head. Silence is never
 green; a check nothing requires and that has not finished is not a failure.
 `reference/ci-pipelines.md` owns the template; installing the plugin does not install target CI.
 
 Two checks guard integration: independent Goal/Floor review, then green CI for the integrated
-result against current main. Neither substitutes for the other. Reuse acceptance only when reviewed
-substance is unchanged; otherwise review again.
+result against current main. Neither substitutes for the other. The source allows acceptance reuse only when reviewed
+substance is proved unchanged; the shipped route requires the exact accepted head and base.
 
 #### The role hook
 
-The role hook reads a shell command's own text, with quoted strings and here-document bodies
-removed, matches whole words, and never parses grammar or reads file content or non-shell tool
-names. It refuses three things: a worker's `merge`, the orchestrator's `gh pr merge`, which points
-here, and a reviewer's `gh api` write flags (`-X`, `--method`, `-f`, `-F`, `--input`). One rule
-stands beside them until `guard protection --apply` makes it GitHub's refusal instead—a worker
-`push` that also names `main` or `master`. Everything else is admitted: outside the worker role a
-local merge is too, and a tag, a release build, a force-push, branch and worktree deletion and a
-recursive `rm` are admitted for every role — because a word stays only where the act is irreversible
-and no other layer stops it. It guards the ordinary
-case only—obfuscation, interpreter bodies, runtime data, spawned tools, and MCP actions lie outside
-it—so the merge guard, server protection, and available OS sandbox carry the remaining hard layers.
+The package-level PreToolUse hook uses the host's actual `agent_type` and returns structured
+denials. Role TOML cannot install its own hook. Workers and worker helpers obey the worker
+boundary; reviewers and review helpers obey the nonediting boundary. Unknown role payloads cannot
+be treated as proof that a reviewer restriction ran.
+
+The hook scans ordinary shipped tool paths and shell command text. Quoted prose containing
+whitespace, here-document bodies and backtick bodies are stripped; quoted single argv words remain
+active. It recognizes roles from `agent_type`; an unknown type or an identified child missing its
+type is denied. Unrecognized structured input is denied rather than guessed.
+
+- For every role, direct PR/branch REST merge endpoints and `gh pr merge` route to `guard merge`.
+  Only the orchestrator may execute `guard merge`.
+- Workers and worker helpers cannot run `git merge`, or push a named `main`/`master`, all branches,
+  mirror/prune updates, or wildcard ref targets. Push only the assigned branch.
+- Reviewers and review helpers cannot use ordinary edit tools (`apply_patch`, Write/Edit variants),
+  shell filesystem mutations (`rm`, `mv`, `cp`, `touch`, `mkdir`, `rmdir`, `tee`, `truncate`,
+  `chmod`, `chown`), output redirection, or in-place `sed`/`perl`.
+- Reviewer git mutation paths (`add`, `commit`, `push`, `merge`, `rebase`, `reset`, `checkout`,
+  `switch`, `clean`, `restore`, `cherry-pick`, `revert`, `stash`, `fetch`, `pull`, `am`, `apply`,
+  `worktree`) and ordinary `gh` PR/issue/release/repo create/edit/comment/close/reopen/merge/delete/
+  upload/fork/rename paths are denied. `gh api` field/input flags and non-GET/HEAD method writes
+  are denied. Review helpers must be `method_review_helper` with `fork_turns="none"`.
+
+The source command scanner is case-insensitive for command words and intentionally incomplete.
+
+Benign inert-text false positives may use a file argument only when the operation itself is
+permitted. An actual refusal is returned through the escalation path, never re-spelled to evade it.
+
+This is ordinary-path enforcement, not a malicious same-credential boundary. Obfuscation,
+interpreter bodies, runtime-built operations, a compromised host, arbitrary MCP writes and hostile
+filesystem edits are outside the threat model. Children inherit parent cwd and permissions; no
+per-child OS read-only guarantee is claimed. The guard's local receipt verifies shipped lifecycle
+records, not a filesystem controlled by a malicious peer. GitHub protection, exact-head merge
+checks, and the inherited host sandbox are separate layers. Do not attach write-capable servers
+on the assumption that the role hook makes them read-only. Full hook rules live here; other pages
+point here rather than inventing another refusal list.
 
 #### Branch protection
 
@@ -400,8 +462,9 @@ The read-only expected-state check is:
 
 It requires strict up-to-date checks, admin enforcement, no forced updates, no deletions, and no
 merge queue — the queue stays off because it would merge a server-built commit no check-1 reviewer
-or guard saw. A free-plan private repository's exact plan-limit response records protection as
-unavailable; any other read failure refuses. This is the only command that reads the gate: run it at
+or guard saw. Unreadable protection or active rules refuse; this implementation has no
+plan-limit waiver. Report the exact platform limitation rather than treating an error as proof
+that protection is unnecessary. This is the only command that reads the gate: run it at
 founding and whenever protection may have changed, since `guard merge` relies on GitHub enforcing it
 rather than re-reading it. Human/main-session provisioning adds `--apply` and at least one repeated
 `--check NAME`; no names refuses rather than clearing required contexts. Change protection only
@@ -410,20 +473,25 @@ reach.
 
 ### Cleanup and release
 
-After integration run `scripts/dispatch --cleanup ISSUE --pr NUMBER`; routine integrated-lane
+After integration run `scripts/dispatch ISSUE --cleanup --pr NUMBER --host-version 0.159.2
+--native-status <actual-list-agents-capture>`; routine integrated-lane
 teardown needs no separate authorization record. Cleanup runs outside the lane and requires the
-integrated PR's branch and exact head, a stopped executor, and no tracked, untracked, ignored, or
+integrated PR's branch and exact head, a stopped native child, and no tracked, untracked, ignored, or
 sole-copy leftovers. Sweep by PR state, never ancestry: squash/rebase integration makes
 `git branch --merged` unreliable.
 
 Before teardown, inspect `git status --porcelain -uall` and base-relative commits. Preserve
 unintegrated work and sole durable copies; discarding either requires the human's explicit words.
 Remove the worktree before its branch, then prune. The agent that integrates the PR owns cleanup;
-workers leave lanes in place.
+workers leave lanes in place. Automated cleanup also requires local ancestor integration before
+nonforced branch deletion; a squash/rebase merged lane that cannot meet that predicate stays
+preserved for explicit ownership and disposition. PR state remains the discovery authority;
+this conservative cleanup refusal is not a reason to invent another lane or delete its commits.
 
 The version bump rides the change PR, with the semver call in its description; disagreement is a
 Note. An unavoidable bare bump confined to all synchronized declared fields needs no issue or check
-1—CI lockstep is its review—but still uses the guard.
+1 in the source method—CI lockstep is its review. This guard has no version-only waiver;
+use ordinary check 1 and an exact accepted receipt for every shipped merge.
 
 Release only under the human's words or a standing delegation they granted. A major release needs
 explicit direction. Keep release manifests in lockstep at the next version above current main,
@@ -448,6 +516,20 @@ clause — before or instead of its number, because a number indexes the record 
 nothing. This holds for progress reports and ordinary conversation; text written for the record keeps
 the number, where it is the precise reference.
 
+### Requirements and design craft
+
+<!-- BEGIN ORCHESTRATOR SKILLS -->
+- `superpowers:brainstorming` — settle requirements, project structure, or consequential design
+  before implementation, then return to this role's handover and design-challenge flow.
+<!-- END ORCHESTRATOR SKILLS -->
+
+The upstream superpowers plugin must be installed and discoverable in Codex. Read the triggered
+skill's `SKILL.md`; the accepted human task and this role govern conflicts. Ignore skill execution
+menus and skill-to-skill handoff instructions. Put requirements and accepted design in admitted
+project documents; keep implementation planning in task scratch or the PR description. A missing
+required binding returns the exact dependency gap; neither a role name nor Claude frontmatter
+installs a Codex skill. `README.md` gives the dependency path and qualification limits.
+
 ## 5. Exceptional events
 
 ### Red-main recovery
@@ -456,8 +538,9 @@ Freeze dispatch and restore green first. Choose the quickest safe restoration, n
 still takes ordinary review and CI. If no offending commit identifies the cause, use
 `reference/ci-pipelines.md`.
 
-**No CI run:** use `reference/ci-cannot-run.md`; only the merging session declares a fallback, and
-no release ships under it. Slow, queued, flaky, and red runs do not qualify.
+**No CI run:** use `reference/ci-cannot-run.md` for trigger/evidence and the unqualified CLI
+boundary. Only the merging session owns a qualifying fallback; the shipped route waits for CI.
+No release ships under it. Slow, queued, flaky, and red runs do not qualify.
 
 **Architecture disagreement or expansion:** record decisions that change accepted scope and return
 them for human direction. No separate architecture-integration sign-off exists.
@@ -469,7 +552,8 @@ action.
 **Direct edits:** before writing, read project operations, architecture, and relevant decisions;
 inspect existing changes; admit documentation through `reference/in-repo-writes.md`; and place files
 through `reference/where-it-goes.md`. Update invalidated guidance, keep task state on the issue/PR,
-and drive checks and bot findings as the PR owner. `AGENTS.md` accepts only commands, environment
+and drive checks and bot findings as the PR owner. Worker execution craft is optional for
+the orchestrator's small direct edits. `AGENTS.md` accepts only commands, environment
 gotchas, worktree copy-list entries, and record-language declarations.
 
 **Repositories, secrets, and language:** references resolve from the plugin root. Another repository
@@ -477,3 +561,4 @@ requires an explicit handoff before changes. Never invent an outside-project des
 commit or publish secrets; establish an authorized destination for confidential data, persistent
 state, and release deliverables, and a durable home before destroying a sole copy. Code,
 documentation, and GitHub records use English unless root `AGENTS.md` declares otherwise.
+For established non-English records and canonical translations, read `reference/repo-agents-md.md`.

@@ -1,194 +1,264 @@
 #!/usr/bin/env python3
-"""Assemble, start, publish and rule on check-1 review packets.
+"""Assemble the current contract and manage one recorded native review attempt.
 
-A bespoke review prompt is forbidden: `start` reserves the round as a PR comment before the
-reviewer runs, so an unpublished verdict is a visible reservation rather than nothing at all.
+The local integrating-session receipt and the GitHub comment are both required.
+A marker alone is never a verdict. This command does not launch a CLI executor.
 """
 import argparse
+from copy import deepcopy
 import json
-import re
-import subprocess
+import runpy
 import sys
-import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / 'scripts'))
-from hard_edges import (Refusal, api, arbitration_settings, filled, helper_line, require,  # noqa: E402
-                        resolved, round_check, run)
-from review_packet import DECISION_LABELS, decisions  # noqa: E402
-
-HEADING = re.compile(r'^## Merge check 1 — round (\d+)', re.M)
-ATTEMPT = re.compile(r'"attempt":\s*"?(\d+)"?')
+from hard_edges import Refusal, anchored_roles, api, helper_line, require, resolved, run  # noqa: E402
+from review_packet import (FORMAT, UNPINNED, ci_configuration_paths, issue_contract, predicate,
+                           render, template)  # noqa: E402
+from review_state import (associated, digest, envelope, finish_pending, ledger_path, locked, new_attempt,
+                          publish, recover_pending, save, status, write_pending)  # noqa: E402
 
 
 def repo_of(project):
     return json.loads(run('gh', 'repo', 'view', '--json', 'nameWithOwner', cwd=project))['nameWithOwner']
 
 
-def comments(project, number):
-    return api(f'repos/{repo_of(project)}/issues/{number}/comments') or []
+def comments(repo, number):
+    pages = api(f'repos/{repo}/issues/{number}/comments', '--paginate', '--slurp') or []
+    return [comment for page in pages for comment in page]
 
 
-def packet_text(project, issue, number, architecture, output):
-    head = run('gh', 'pr', 'view', str(number), '--json', 'headRefOid', cwd=project)
-    head_sha = json.loads(head)['headRefOid']
+def pr_of(project, number):
+    return json.loads(run('gh', 'pr', 'view', str(number), '--json',
+                          'title,body,headRefOid,baseRefName,baseRefOid', cwd=project))
+
+
+def packet_text(project, issue, number, architecture, output, model, effort,
+                convention_base=None, accepted_spec='NONE', pre_write=None, delivery=None):
+    repo = repo_of(project)
+    pr = pr_of(project, number)
+    head, base = pr['headRefOid'], pr['baseRefOid']
     checks = json.loads(run('gh', 'pr', 'checks', str(number), '--json', 'name,bucket', cwd=project))
+    require(checks, 'no reported checks; silence is not a green head')
     failing = [c['name'] for c in checks if c['bucket'] not in ('pass', 'neutral', 'skipped')]
-    require(not failing, f'checks not green on {head_sha}: {failing}')
-    body = json.loads(run('gh', 'pr', 'view', str(number), '--json', 'title,body', cwd=project))
+    require(not failing, f'checks not green on {head}: {failing}')
     issue_body = json.loads(run('gh', 'issue', 'view', str(issue), '--json', 'body', cwd=project))['body']
-    text = f"""# Review packet
-PR: https://github.com/{repo_of(project)}/pull/{number}
-Issue: https://github.com/{repo_of(project)}/issues/{issue}
-Head: {head_sha}
-Architecture-level: {'YES' if architecture else 'NO'}
-CI-FALLBACK: {args.ci_fallback or 'NONE'}
-Packet integrity: this assembler pins the head, the base and the reported checks.
-Any slot it could not produce is listed here rather than withheld. It does not run
-the repository's diff capture; a ground about a missing diff form is the reviewer's
-to raise.
-
-## Issue body (verbatim)
-{issue_body}
-
-## PR title and body (verbatim)
-{body['title']}
-
-{body['body']}
-
-## Checks
-{chr(10).join(f"- {c['name']}: {c['bucket']}" for c in checks)}
-"""
+    contract = issue_contract(issue_body)
+    issue_comments = comments(repo, issue)
+    pr_comments = comments(repo, number)
+    identity = f'Codex, {model} at {effort}, read-only'
+    gaps = []
+    captures = []
+    for form in ('--name-status', '--stat', None):
+        argv = ['git', 'diff', '--no-ext-diff', '--no-textconv', '--no-renames']
+        if form:
+            argv.append(form)
+        argv.extend([base, head])
+        try:
+            result = run(*argv, cwd=project)
+            captures.append({'command': ' '.join(argv), 'exit': 0, 'output': result})
+        except Refusal as error:
+            gaps.append(f'pinned diff {form or "patch"}: {error}')
+    try:
+        ci_paths = ci_configuration_paths(project, base, head)
+    except ValueError as error:
+        ci_paths = [UNPINNED]
+        gaps.append(f'CI configuration: {error}')
+    slots = {'REVIEW_BASE_SHA': base, 'HEAD_SHA': head,
+             'CONVENTION_BASE_SHA': convention_base or UNPINNED,
+             'ACCEPTED_SPEC_BLOB_SHA': accepted_spec,
+             'ARCHITECTURE_LEVEL_FLAG': 'YES' if architecture else 'NO',
+             'CI_CONFIGURATION_PATHS': '\n'.join(ci_paths) if ci_paths else 'NONE',
+             'CI_FALLBACK_COMMENT_OR_NONE': 'NONE',
+             'COMPLETE_PR_DESCRIPTION': pr['body'] or '(empty)',
+             'ISSUE_GOAL_STATEMENT': contract['goal'], 'ISSUE_BOUNDS': contract['bounds'],
+             'ISSUE_DONE_CHECK': contract['done-check'], 'REVIEWER_IDENTITY': identity}
+    unit, gap = predicate()
+    if unit and not gap:
+        slots['IN_REPO_WRITES_PREDICATE'] = unit
+    packet = {'template': template(), 'slots': slots, 'issue_body': issue_body, 'format': FORMAT,
+              'integrity_gaps': gaps, 'pr_comments': pr_comments}
+    if accepted_spec != 'NONE':
+        try:
+            packet['accepted_spec_contents'] = run('git', 'cat-file', 'blob', accepted_spec, cwd=project)
+        except Refusal as error:
+            gaps.append(f'accepted spec blob: {error}')
+    snapshots = {}
+    for name, path in [('pre-write', pre_write), ('delivery', delivery)]:
+        if path:
+            snapshots[name] = Path(path).read_text()
+        else:
+            gaps.append(f'{name} worktree status: not supplied; current status cannot establish past state')
+    text = render(packet, identity)
+    text += '\n\n## Ordered issue comments (whole historical evidence)\n' + json.dumps(issue_comments, indent=2)
+    text += ('\n\n## Ordered PR comments (whole historical evidence; acceptance requires local receipts)\n'
+             + json.dumps(pr_comments, indent=2))
+    text += '\n\n## Pinned diff captures\n' + json.dumps(captures, indent=2)
+    text += '\n\n## Supplied worktree status captures\n' + json.dumps(snapshots, indent=2)
+    text += '\n\n## Observed checks\n' + json.dumps(checks, indent=2)
+    before = (head, base, pr['body'])
+    after = pr_of(project, number)
+    require(before == (after['headRefOid'], after['baseRefOid'], after['body']),
+            'PR head, base or description moved while assembling; assemble again')
     Path(output).mkdir(parents=True, exist_ok=True)
     (Path(output) / 'packet.md').write_text(text)
-    return text, head_sha
+    (Path(output) / 'packet.json').write_text(json.dumps(packet, indent=2) + '\n')
+    return text, head, base, identity
+
+
+def remote_comment(project, repo, number, issue, ledger, intended, body, previous=None):
+    path = ledger_path(project, repo, number)
+    write_pending(path, ledger, intended, body, previous)
+    endpoint = (f'repos/{repo}/issues/comments/{previous["comment_id"]}' if previous else
+                f'repos/{repo}/issues/{number}/comments')
+    try:
+        response = api(endpoint, '-X', 'PATCH' if previous else 'POST', '-f', 'body=' + body)
+        return finish_pending(ledger, response)
+    except (Refusal, ValueError, OSError) as error:
+        raise Refusal(f'{error}; durable pending intent retained in {path}. '
+                      f'Run review-packet status {number} --issue {issue} --project {project} '
+                      'to recover exact remote bytes. Do not repeat the mutation or launch a reviewer.')
+
+
+def reconcile(project, repo, number, ledger, history):
+    if recover_pending(ledger, history):
+        # A later refusal (for example fail after a recovered return) must not undo recovery.
+        save(ledger_path(project, repo, number), ledger)
+
+
+def prepare_native(project, output, installer, attempt, text, model, effort):
+    import tomllib
+
+    role = tomllib.loads(installer['role_files']()['method_reviewer.toml'])['developer_instructions']
+    directory = output.resolve() / attempt['token']
+    directory.mkdir()
+    brief = text + '\n\n' + helper_line(ROOT)
+    (directory / 'review-brief.md').write_text(brief)
+    request = {'task_name': f'issue_{attempt["issue"]}_reviewer_{attempt["token"][:12]}',
+               'message': (role + f'\n\nRole references resolve from: {ROOT}\n'
+                           f'Use workdir={project} on every command. Judge the packet\'s immutable '
+                           'git pins, never treat uncommitted checkout contents as the reviewed tree.\n\n'
+                           + brief),
+               'agent_type': 'method_reviewer', 'fork_turns': 'none',
+               'model': model, 'reasoning_effort': effort}
+    instruction = directory / 'native-spawn.json'
+    save(instruction, request)
+    attempt['native_instruction'] = str(instruction)
+    attempt['native_instruction_sha256'] = digest(instruction.read_text())
+    attempt['packet_path'] = str(directory / 'review-brief.md')
+    return instruction
+
+
+def native_instruction(attempt):
+    instruction = Path(attempt['native_instruction'])
+    require(digest(instruction.read_text()) == attempt['native_instruction_sha256'],
+            'native instruction differs from the reserved receipt; retain it and do not launch')
+    return str(instruction)
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        prog='review-packet', description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""Flag contracts
-  assemble N --issue M --architecture-level yes|no --output DIR
-      Build the packet for head N. Admits only a head whose observed checks pass, and refuses an
-      assembly race. What it pins: the head SHA, the base, the reported checks, the issue body and
-      the PR body. What it cannot produce is reported in the packet's Packet integrity section for
-      Floor 1 to judge — never withheld. The one thing it refuses on is a reviewer contract that
-      differs from the shipped one.
-  start N --issue M ... [--model M --effort E] [--ci-fallback URL]
-      Reserve the round as a PR comment before the reviewer runs, so an unpublished verdict is a
-      visible reservation. --model/--effort route check 1 (pass them here, not later: a mismatched
-      identity line is recorded invalid and burns the round). --ci-fallback carries a published
-      CI-FALLBACK comment into the reviewer's fallback slot; every other review leaves it NONE.
-  publish N --issue M --attempt COMMENT --verdict FILE
-      Replace the reservation with `## Merge check 1 — round N` and the unedited verdict. Partial or
-      oversized output never becomes a verdict.
-  fail N --issue M --attempt COMMENT --reason TEXT
-      Mark a reservation failed where no verdict can exist: its start stopped before dispatch, or its
-      run was reconciled lost and retained no output.
-  rule N --issue M --decision continue|merge-as-is|rewrite|abandon|change-route --reason TEXT
-      Record the orchestrator's ruling. Directional or human-touchpoint rulings require durable human
-      authorization. Notes alone never justify another round.
-  status N --issue M
-      Rounds consumed, the next step, and the command for the reservation in hand. Returned verdicts
-      consume rounds; a process that returned no verdict does not.
-
-Record association
-  A returned verdict stays attached to the reviewed head. A changed head re-runs check 1 unless one
-  of the two narrow exceptions in `reference/orchestrator.md` applies.""")
+    parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('action', choices=['assemble', 'start', 'status', 'publish', 'fail', 'rule'])
     parser.add_argument('number', type=int)
     parser.add_argument('--issue', type=int, required=True)
     parser.add_argument('--architecture-level', dest='arch', choices=['yes', 'no'])
     parser.add_argument('--output', type=Path)
-    parser.add_argument('--ci-fallback', dest='ci_fallback')
     parser.add_argument('--model')
     parser.add_argument('--effort')
+    parser.add_argument('--host-version', help='observed native host version; required for start')
+    parser.add_argument('--convention-base')
+    parser.add_argument('--accepted-spec', default='NONE')
+    parser.add_argument('--pre-write-status', type=Path)
+    parser.add_argument('--delivery-status', type=Path)
     parser.add_argument('--attempt', type=int)
     parser.add_argument('--verdict', type=Path)
-    parser.add_argument('--decision')
+    parser.add_argument('--decision', choices=['continue','merge-as-is','rewrite','abandon','change-route'])
     parser.add_argument('--reason')
-    parser.add_argument('--project', type=Path, default=ROOT)
+    parser.add_argument('--project', type=Path, default=Path.cwd())
     args = parser.parse_args()
-    project = resolved(args.project, 'project')
-    number, issue = args.number, args.issue
-    repo = repo_of(project)
-
-    if args.action == 'status':
-        rows = [c for c in comments(project, number) if 'Merge check 1' in (c.get('body') or '')]
-        attempts = [{'round': int(m.group(1)), 'comment_id': c['id']}
-                    for c in rows for m in [HEADING.search(c['body'])] if m]
-        print(json.dumps({'rounds': len(rows),
-                          'next': 'accepted' if rows else 'awaiting-verdict',
-                          'attempts': attempts,
-                          'next_command': (f'scripts/review-packet publish {number} --issue {issue} '
-                                           f'--attempt {attempts[-1]["comment_id"]} --verdict <file>'
-                                           if attempts else
-                                           f'scripts/review-packet start {number} --issue {issue} '
-                                           '--architecture-level no --output <scratch>')},
-                         indent=2))
-        return
-
-    if args.action in ('publish', 'fail'):
-        require(args.attempt, 'publish and fail need --attempt')
-        body = (args.verdict.read_text() if args.verdict else
-                (args.reason or 'no reviewer verdict exists'))
-        target = [c for c in comments(project, number) if c['id'] == args.attempt]
-        require(target, f'no reservation comment {args.attempt} on PR {number}')
-        match = HEADING.search(target[0].get('body') or '')
-        round_number = int(match.group(1)) if match else 1
-        run('gh', 'api', '-X', 'PATCH', f'repos/{repo}/issues/comments/{args.attempt}',
-            '-f', body=(f'## Merge check 1 — round {round_number}\n\n{body}' if args.action == 'publish'
-                        else f'## Merge check 1 — round {round_number} — failed\n\n{args.reason}'),
-            cwd=project)
-        print(json.dumps({'kind': args.action, 'attempt': args.attempt}, indent=2))
-        return
-
+    if args.action in ('assemble', 'start'):
+        require(args.output and args.arch, 'assemble/start require --output and --architecture-level')
+    if args.action == 'publish':
+        require(args.attempt and args.verdict, 'publish requires --attempt and --verdict')
+    if args.action == 'fail':
+        require(args.attempt and args.reason, 'fail requires --attempt and --reason; no verdict may exist')
     if args.action == 'rule':
-        require(args.decision and args.reason, 'rule needs --decision and --reason')
-        run('gh', 'issue', 'comment', str(issue),
-            '-b', f'**Ruling:** `{args.decision}` — {args.reason}', cwd=project)
-        print(json.dumps({'decision': args.decision}, indent=2))
+        require(args.decision and args.reason, 'rule requires --decision and --reason')
+        raise Refusal('directional rulings belong on the issue with their authority; no flag fabricates it')
+    project = resolved(args.project, 'project')
+    installer = None
+    if args.action == 'start':
+        dispatcher = runpy.run_path(str(ROOT / 'scripts/dispatch'))
+        installer = dispatcher['qualify'](project, args.host_version)
+    repo = repo_of(project)
+    number, issue = args.number, args.issue
+    if args.action == 'status':
+        with locked(project, repo, number) as ledger:
+            history = comments(repo, number)
+            reconcile(project, repo, number, ledger, history)
+            result = status(ledger, history)
+            if ledger['attempts'] and ledger['attempts'][-1]['state'] == 'reserved':
+                current = ledger['attempts'][-1]
+                if current.get('native_instruction'):
+                    result['instruction'] = native_instruction(current)
+                    result['notice'] = ('Prepared only. Inspect the actual native handle record first; '
+                                        'an active or uncertain reviewer never permits another spawn.')
+                result['next_command'] = (f'review-packet publish {number} --issue {current["issue"]} --attempt '
+                                          f'{current["comment_id"]} --verdict <file>')
+        print(json.dumps(result, indent=2))
         return
-
-    require(args.output, 'assemble and start need --output')
-    architecture = args.arch == 'yes' if args.arch else False
-    text, head = packet_text(project, issue, number, architecture, args.output)
+    if args.action in ('publish', 'fail'):
+        with locked(project, repo, number) as ledger:
+            history = comments(repo, number)
+            reconcile(project, repo, number, ledger, history)
+            targets = [a for a in ledger['attempts'] if a.get('comment_id') == args.attempt]
+            require(len(targets) == 1, 'no locally recorded reservation for this comment; never infer one from text')
+            attempt = targets[0]
+            require(attempt['issue'] == issue, 'attempt belongs to a different issue')
+            associated(attempt, history)
+            intended = deepcopy(attempt)
+            if args.action == 'publish':
+                raw = args.verdict.read_bytes().decode('utf-8')
+                body = publish(intended, raw)
+            else:
+                require(attempt['state'] == 'reserved', 'a returned verdict cannot become a failed/no-output attempt')
+                intended['state'] = 'failed'
+                body = envelope(intended, args.reason)
+            attempt = remote_comment(project, repo, number, issue, ledger, intended, body, attempt)
+        print(json.dumps({'kind': args.action, 'attempt': args.attempt, 'state': attempt['state'],
+                          'defect': attempt.get('defect')}, indent=2))
+        return
+    default_model, default_effort = {r[0]: r[1:] for r in anchored_roles(ROOT)}['reviewer']
+    model, effort = args.model or default_model, args.effort or default_effort
+    text, head, base, identity = packet_text(project, issue, number, args.arch == 'yes', args.output,
+                                            model, effort, args.convention_base, args.accepted_spec,
+                                            args.pre_write_status, args.delivery_status)
     if args.action == 'assemble':
-        print(json.dumps({'kind': 'packet', 'head': head, 'file': str(args.output / 'packet.md')},
-                         indent=2))
+        print(json.dumps({'kind':'packet','head':head,'base':base,'file':str(args.output / 'packet.md')}, indent=2))
         return
-
-    model, effort = args.model, args.effort or arbitration_settings(ROOT)[1]
-    if not model:
-        from hard_edges import anchored_roles
-        rows = {r[0]: (r[1], r[2]) for r in anchored_roles(ROOT)}
-        model, effort = rows['reviewer']
-    required = '\n'.join(DECISION_LABELS)
-    body = f"""## Merge check 1 — round {len([c for c in comments(project, number) if 'Merge check 1' in (c.get('body') or '')]) + 1}
-
-<!-- codex-method-review-v1 -->
-Reviewer model and effort: `{model}` at `{effort}` (read-only).
-
-The packet follows. Judge Goal and both Floors; post the whole verdict on this PR.
-
-{helper_line(ROOT)}
-
-{chr(10).join(required)}
-
-{chr(10) * 2}{text}
-"""
-    posted = run('gh', 'api', '-X', 'POST', f'repos/{repo}/issues/{number}/comments',
-                 '-f', body=body, cwd=project)
-    comment_id = json.loads(posted)['id']
-    print(json.dumps({'kind': 'reservation', 'comment_id': comment_id, 'head': head,
-                      'model': model, 'effort': effort,
-                      'verdict_file': str(args.output / 'verdict.md')}, indent=2))
+    author = api('user')['login']
+    with locked(project, repo, number) as ledger:
+        # Verify older receipts before allocating another; history never consists of headings alone.
+        history = comments(repo, number)
+        reconcile(project, repo, number, ledger, history)
+        status(ledger, history)
+        attempt = new_attempt(ledger, issue, head, base, identity, author, text)
+        prepare_native(project, args.output, installer, attempt, text, model, effort)
+        body = envelope(attempt, 'Reviewer reserved; native invocation and whole returned verdict pending.')
+        attempt = remote_comment(project, repo, number, issue, ledger, attempt, body)
+    print(json.dumps({'kind':'reservation','comment_id':attempt['comment_id'],'head':head,'base':base,
+                      'model':model,'effort':effort,'identity':identity,
+                      'packet':attempt['packet_path'], 'instruction':native_instruction(attempt),
+                      'verdict_file':str(args.output / 'verdict.md'),
+                      'notice':'Prepared only. Call native spawn_agent with the exact instruction, '
+                               'record its actual handle on the issue, observe completion, and publish '
+                               'the whole returned verdict. This command launches no executor.'}, indent=2))
 
 
 if __name__ == '__main__':
     try:
         main()
-    except Refusal as refusal:
-        print(f'review-packet refused: {refusal}', file=sys.stderr)
+    except (Refusal, ValueError, OSError) as error:
+        print(f'review-packet refused: {error}', file=sys.stderr)
         sys.exit(1)

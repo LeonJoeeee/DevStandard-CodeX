@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The orchestrator's merge entry point. Workers never merge, release, or apply protection."""
+"""The integrating session's merge entry point; verification is read-only by default."""
 import argparse
 import json
 import sys
@@ -7,41 +7,22 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / 'scripts'))
-from hard_edges import (Refusal, api, merged_result, protection_check, require, resolved,  # noqa: E402
-                        round_check, run)
-from review_packet import decisions  # noqa: E402
+from hard_edges import Refusal, api, merged_result, protection_check, require, resolved, run  # noqa: E402
+from review_state import accepted  # noqa: E402
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        prog='guard', description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""Flag contracts
-  merge --repo OWNER/REPO --pr N --project CHECKOUT [--execute] [--ci-fallback URL]
-      Record-association and API preconditions: an open PR into the current default branch; a latest
-      whole Goal Yes / both Floor Pass verdict whose reviewed SHA equals the head it is judged for;
-      green merged-result / BASE_SHA / HEAD_SHA; no failed check on the head. It re-reads the PR after
-      verifying and refuses if the head or base moved while it verified — run it again.
-      --execute is the only flag that merges. Without it this is read-only.
-      --ci-fallback is the one route that exists when CI cannot run: it refuses unless a published
-      CI-FALLBACK comment is on the PR and is the one named. It does not waive the verdict.
-  compare --project CHECKOUT --old-base S --old-head S --base S --head S
-      The mechanical half of the rebase proof: the patch of the accepted pair against the patch of
-      the new pair, plus whether the trees are identical. Use it to supply `--old-base`/`--old-head`
-      to merge; a content difference needs full review, and conflicts go to a resolver.
-  protection --repo OWNER/REPO --branch main [--apply --check NAME ...]
-      Read-only expected state: strict up-to-date checks, admin enforcement, no forced updates, no
-      deletions, no merge queue. A free-plan private repository's plan-limit response records
-      protection as unavailable; any other read failure refuses. --apply's payload reaches exactly
-      the required-check contexts named on the command line and those five settings; with no --check
-      names it refuses rather than clearing the required contexts.""")
-    parser.add_argument('action', choices=['merge', 'compare', 'protection'])
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('action', choices=['merge','compare','protection'])
     parser.add_argument('--repo')
     parser.add_argument('--pr', type=int)
     parser.add_argument('--branch', default='main')
-    parser.add_argument('--project', type=Path, default=ROOT)
+    parser.add_argument('--project', type=Path, default=Path.cwd())
     parser.add_argument('--execute', action='store_true')
     parser.add_argument('--check', action='append', dest='checks')
-    parser.add_argument('--ci-fallback', dest='ci_fallback')
+    parser.add_argument('--ci-app-id', type=int, default=15368,
+                        help='required integration-check producing app (GitHub Actions by default)')
+    parser.add_argument('--ci-fallback', help='unqualified fallback always blocks; never a check waiver')
     parser.add_argument('--apply', action='store_true')
     parser.add_argument('--old-base')
     parser.add_argument('--old-head')
@@ -49,90 +30,77 @@ def main():
     parser.add_argument('--head')
     args = parser.parse_args()
     project = resolved(args.project, 'project')
-
     if args.action == 'protection':
         require(args.repo, 'protection needs --repo')
         if args.apply:
-            require(args.checks, '--apply needs at least one --check NAME')
-            payload = {
-                'required_status_checks': {'strict': True, 'contexts': args.checks},
-                'enforce_admins': True,
-                'required_pull_request_reviews': None,
-                'restrictions': None,
-                'allow_force_pushes': False,
-                'allow_deletions': False,
-                'required_linear_history': False,
-            }
-            run('gh', 'api', '-X', 'PUT',
-                f'repos/{args.repo}/branches/{args.branch}/protection',
-                '-f', f'{"json payload is supplied on stdin"}', cwd=project, input=None) \
-                if False else run('gh', 'api', '-X', 'PUT',
-                                  f'repos/{args.repo}/branches/{args.branch}/protection',
-                                  '--input', '-', cwd=project,
-                                  input=json.dumps(payload))
-            print(json.dumps({'action': 'protection', 'branch': args.branch,
-                              'checks': args.checks, 'applied': True}, indent=2))
-            return
-        state = protection_check(args.repo, args.branch)
-        print(json.dumps({'action': 'protection', 'branch': args.branch, **state}, indent=2))
+            from protection import protection_apply
+            state = protection_apply(args.repo, args.branch, args.checks, cwd=project)
+        else:
+            state = protection_check(args.repo, args.branch)
+        print(json.dumps({'action':'protection','branch':args.branch, **state}, indent=2))
         return
-
     if args.action == 'compare':
-        require(all([args.old_base, args.old_head, args.base, args.head]), 'compare needs all four SHAs')
-
-        def patch(base, head):
-            return run('git', 'diff', base, head, cwd=project)
-
-        patches_identical = patch(args.old_base, args.old_head) == patch(args.base, args.head)
-        trees_identical = (run('git', 'diff', '--quiet', args.old_head, args.head, cwd=project) or '') == ''
-        changed = run('git', 'diff', '--stat', args.old_head, args.head, cwd=project).strip()
-        print(json.dumps({'action': 'compare', 'patches_identical': patches_identical,
-                          'trees_identical': trees_identical,
-                          'content_change': changed or 'none'}, indent=2))
+        require(all([args.old_base,args.old_head,args.base,args.head]), 'compare needs all four SHAs')
+        old = run('git','diff','--no-ext-diff','--no-textconv',args.old_base,args.old_head,cwd=project)
+        new = run('git','diff','--no-ext-diff','--no-textconv',args.base,args.head,cwd=project)
+        changed = run('git','diff','--no-ext-diff','--no-textconv','--name-only',
+                      args.old_head,args.head,cwd=project)
+        print(json.dumps({'action':'compare','patches_identical':old==new,
+                          'trees_identical':not changed, 'changed_paths':changed.splitlines(),
+                          'acceptance_reused':False}, indent=2))
         return
-
     require(args.repo and args.pr, 'merge needs --repo and --pr')
+    require(not args.ci_fallback,
+            'CI fallback is not qualified at this boundary; retain evidence and wait, never waive CI')
+    repo = api(f'repos/{args.repo}')
+    default = repo['default_branch']
     pr = api(f'repos/{args.repo}/pulls/{args.pr}')
     require(pr['state'] == 'open', 'the PR is not open')
-    require(pr['base']['ref'] == args.branch, f'the PR does not target {args.branch}')
-    head, base = pr['head']['sha'], pr['base']['sha']
-    comments = api(f'repos/{args.repo}/issues/{args.pr}/comments') or []
-    verdict = round_check(comments, head)
-    require(verdict, f'no whole verdict on head {head}')
-    text = decisions(verdict['body'])
-    require('### Goal verdict\nYes' in text, 'the latest verdict is not Goal Yes')
-    require('1. Evidence-backed completion claim: Pass' in text
-            and '2. Authorization and scope: Pass' in text, 'a Floor is not Pass')
-    checks = api(f'repos/{args.repo}/commits/{head}/check-runs') or {'check_runs': []}
-    named = {run_['name']: run_['conclusion'] for run_ in checks.get('check_runs', [])}
-    integration = merged_result(base, head)
-    if args.ci_fallback:
-        # check 2 cannot run. The only legal substitute is a published CI-FALLBACK comment, which
-        # the reviewer saw through `review-packet start --ci-fallback`; nothing else satisfies this.
-        posted = [c for c in comments if 'CI-FALLBACK' in (c.get('body') or '')]
-        require(posted, 'no published CI-FALLBACK comment on this PR; the fallback has no evidence')
-        require(any(args.ci_fallback in (c.get('body') or '') for c in posted),
-                'the published CI-FALLBACK comment is not the one named by --ci-fallback')
-        print(json.dumps({'action': 'merge', 'merge': 'pass', 'ci_fallback': args.ci_fallback,
-                          'head': head, 'base': base}, indent=2))
-    else:
-        require(named.get(integration) == 'success', f'{integration} is not green')
-    if not args.ci_fallback:
-        failed = [n for n, c in named.items() if c not in ('success', 'neutral', 'skipped')]
-        require(not failed, f'failed checks on the head: {failed}')
+    require(pr['base']['ref'] == default, f'the PR does not target the current default branch {default}')
+    head = pr['head']['sha']
+    current = api(f'repos/{args.repo}/git/ref/heads/{default}')['object']['sha']
+    base = pr['base']['sha']
+    require(base == current, 'PR base differs from the current default-branch tip')
+    comparison = api(f'repos/{args.repo}/compare/{base}...{head}')
+    require(comparison.get('behind_by') == 0 and comparison.get('status') in ('ahead','identical'),
+            'PR head does not contain the current base')
+    pages = api(f'repos/{args.repo}/issues/{args.pr}/comments', '--paginate','--slurp') or []
+    comments = [c for page in pages for c in page]
+    attempt, _ = accepted(project, args.repo, args.pr, comments, head, base)
+    pages = api(f'repos/{args.repo}/commits/{head}/check-runs', '--paginate','--slurp') or []
+    checks = [c for page in pages for c in page.get('check_runs',[])]
+    latest = {}
+    for check in checks:
+        key = (check['name'], (check.get('app') or {}).get('id'))
+        if key not in latest or check['id'] > latest[key]['id']:
+            latest[key] = check
+    integration = merged_result(base,head)
+    integrated = latest.get((integration,args.ci_app_id))
+    require(integrated and integrated.get('status') == 'completed'
+            and integrated.get('conclusion') == 'success',
+            f'{integration} is not green from producing app {args.ci_app_id}')
+    failed = [c['name'] for c in latest.values() if c.get('status') == 'completed'
+              and c.get('conclusion') not in ('success','neutral','skipped')]
+    require(not failed, f'failed checks on the head: {failed}')
     after = api(f'repos/{args.repo}/pulls/{args.pr}')
-    require(after['head']['sha'] == head and after['base']['sha'] == base,
-            'the PR head or base moved while guard verified; run again')
+    base_after = api(f'repos/{args.repo}/git/ref/heads/{default}')['object']['sha']
+    require(after['state'] == 'open' and after['head']['sha'] == head
+            and after['base']['sha'] == base and base_after == base,
+            'PR head or base moved during verification; verify again')
     if not args.execute:
-        print(json.dumps({'action': 'merge', 'merge': 'pass', 'head': head, 'base': base}, indent=2))
+        print(json.dumps({'action':'merge','merge':'pass','head':head,'base':base,
+                          'attempt':attempt['comment_id']}, indent=2))
         return
-    run('gh', 'pr', 'merge', str(args.pr), '--repo', args.repo, '--squash', '--delete-branch', cwd=project)
-    print(json.dumps({'action': 'merge', 'merged': True, 'sha': head}, indent=2))
+    # The server enforces branch protection. Pin the head at the mutation too;
+    # deleting branches belongs to separately inspected integrated-lane cleanup.
+    run('gh','pr','merge',str(args.pr),'--repo',args.repo,'--squash',
+        '--match-head-commit',head,cwd=project)
+    print(json.dumps({'action':'merge','merged':True,'head':head,'base':base}, indent=2))
 
 
 if __name__ == '__main__':
     try:
         main()
-    except Refusal as refusal:
-        print(f'guard refused: {refusal}', file=sys.stderr)
+    except (Refusal,ValueError,OSError) as error:
+        print(f'guard refused: {error}', file=sys.stderr)
         sys.exit(1)

@@ -1,0 +1,29 @@
+name: Release
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - name: Test the release tree
+        run: |
+          python3 -m unittest discover -s tests -t .
+          python3 .github/check-routing.py
+          python3 .github/check-adr-index.py
+          ! grep -rn "@[a-zA-Z0-9_-]*/" reference/ --include='*.md' | grep -v actions/ | grep -v anthropic | grep .
+      - name: Both release descriptors must match the tag
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: python3 .github/check-release.py --tag "$RELEASE_TAG"
+      - name: Publish the authorized tag's GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release create "$GITHUB_REF_NAME" --generate-notes
+          fi

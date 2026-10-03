@@ -12,7 +12,7 @@ let the output question overlap every other kind, so a service's data could take
 default and die with a worktree. Roles that bind broke when a release archive containing a private key
 matched both *release: publish* and *secret: never publish*; a file cannot be forced to have only one
 role. Their common cause was trying to build a complete decision procedure over an open-ended set —
-the shape issue #173 records and the human ruled out on 2026-08-29. The rule below instead decides the
+the shape DevStandard source issue #173 records and the human ruled out on 2026-08-29. The rule below instead decides the
 common case, closes with a default, and names only the three kinds where taking it is expensive.
 
 ## The placement rule
@@ -60,7 +60,7 @@ session asks the human:
   path is still copied by an image build or an archive;
 - **application state, persistent or operational** — a service's, and equally a desktop app's or a
   CLI's autosave, history or local database; and the runtime files a program must be able to create
-  to run at all: a socket, a PID file, a lock file, a spool — **for a program that outlives your task.
+  to run at all: a socket, a process identity file, a lock file, a spool — **for a program that outlives your task.
   A test daemon's socket, thrown away with the task, is not this: that dies with the task and belongs
   in scratch.** A project-local gitignored path dies with
   the worktree, a package replacement or a read-only install loses the first kind, and a read-only

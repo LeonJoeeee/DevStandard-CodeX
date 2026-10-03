@@ -12,26 +12,63 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 2
+      - name: Verify the actual pull-request integration checkout
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: python3 .github/check-merge-checkout.py --base "$BASE_SHA" --head "$HEAD_SHA"
       - name: Routing, command surface, and hook binding
         run: python3 -m unittest discover -s tests -t .
       - name: Both release manifests in lockstep
-        run: |
-          python3 -c 'import json; p=json.load(open("codex-method.json"))["version"]; assert p; print("version",p)'
+        run: python3 .github/check-release.py
       - name: No @path references in shipped pages
         run: |
           ! grep -rn "@[a-zA-Z0-9_-]*/" reference/ --include='*.md' | grep -v actions/ | grep -v anthropic | grep .
       - name: The anchored table keeps its cell form
         run: python3 .github/check-routing.py
+      - name: ADR amendment announcements remain discoverable
+        run: python3 .github/check-adr-index.py
+
+  native:
+    name: native-runtime / Codex 0.159.2
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Linux sandbox prerequisites
+        if: runner.os == 'Linux'
+        run: |
+          # https://learn.chatgpt.com/docs/sandboxing#prerequisites
+          # A scoped bwrap profile preserves the global user-namespace restriction.
+          sudo apt-get update
+          sudo apt-get install -y bubblewrap apparmor-profiles apparmor-utils
+          sudo install -m 0644 /usr/share/apparmor/extra-profiles/bwrap-userns-restrict /etc/apparmor.d/bwrap-userns-restrict
+          sudo apparmor_parser -r /etc/apparmor.d/bwrap-userns-restrict
+          bwrap --unshare-user --unshare-net --ro-bind / / /bin/true
+      - name: Install the qualified native host
+        run: npm install --global @openai/codex@0.159.2
+      - name: Exercise installed roles and hooks with an auth-free local provider
+        env:
+          TMPDIR: ${{ runner.temp }}/codex-method-native
+        run: python3 .github/test-native-runtime.py --installer scripts/install --log-dir "$TMPDIR/evidence"
+      - name: Retain qualification evidence, including a failed run
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: native-runtime-evidence
+          path: ${{ runner.temp }}/codex-method-native
 
   test:
     if: ${{ always() }}
-    needs: [suite]
+    needs: [suite, native]
     runs-on: ubuntu-latest
     steps:
-      - name: Require the suite
+      - name: Require both the suite and native runtime
         env:
           SUITE_RESULT: ${{ needs.suite.result }}
-        run: test "$SUITE_RESULT" = success
+          NATIVE_RESULT: ${{ needs.native.result }}
+        run: test "$SUITE_RESULT" = success && test "$NATIVE_RESULT" = success
 
   merged-result:
     name: merged-result / ${{ github.event.pull_request.base.sha }} / ${{ github.event.pull_request.head.sha }}
@@ -39,5 +76,11 @@ jobs:
     needs: test
     runs-on: ubuntu-latest
     steps:
-      - name: Report that this exact merge result passed the test job
-        run: echo "merged-result green for ${{ github.event.pull_request.base.sha }} / ${{ github.event.pull_request.head.sha }}"
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+      - name: Verify the identity whose green result this job publishes
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: python3 .github/check-merge-checkout.py --base "$BASE_SHA" --head "$HEAD_SHA"
