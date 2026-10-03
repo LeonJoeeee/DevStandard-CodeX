@@ -72,14 +72,39 @@ def input_text(request):
     return '\n'.join(fragments(request.get('input', [])))
 
 
+def agent_message_text(item):
+    # MultiAgentV2 splits the envelope and task across input_text and
+    # encrypted_content blocks; in the local fixture the latter holds plain text.
+    return '\n'.join(block.get(key, '') for block in item.get('content', [])
+                    for kind, key in (('input_text', 'text'), ('encrypted_content', 'encrypted_content'))
+                    if block.get('type') == kind and isinstance(block.get(key), str))
+
+
 def request_role(request):
-    # Tool output may contain another agent's marker. Only the user's task selects
-    # a thread; the parent never puts its private token into a child's spawn message.
-    users = '\n'.join(fragments([item.get('content', '') for item in request.get('input', [])
-                                if item.get('role') == 'user']))
+    # Only user tasks and top-level NEW_TASK deliveries select a thread. Never
+    # scan tool outputs or ordinary/final mailbox messages for task markers.
+    # Paths cross-check the marker, never select a role: this fixture's children
+    # must receive NEW_TASK from /root at /root/<selected role>.
+    tasks, deliveries = [], []
+    for item in request.get('input', []):
+        if item.get('type') in ('function_call_output', 'custom_tool_call_output'):
+            continue
+        if item.get('type') == 'agent_message':
+            text = agent_message_text(item)
+            if text.startswith('Message Type: NEW_TASK\n'):
+                tasks.append(text)
+                deliveries.append(item)
+        elif item.get('role') == 'user':
+            tasks.extend(fragments(item.get('content', '')))
+    selection = '\n'.join(tasks)
     matches = [role for role, marker in (('root', PRIVATE_PARENT), ('worker', WORK_TASK),
-               ('reviewer', REVIEW_TASK), ('control', CONTROL_TASK)) if marker in users]
+               ('reviewer', REVIEW_TASK), ('control', CONTROL_TASK)) if marker in selection]
     require(len(matches) == 1, 'cannot uniquely identify actual requesting thread: ' + repr(matches))
+    for item in deliveries:
+        require(matches[0] != 'root' and item.get('author') == '/root'
+                and item.get('recipient') == '/root/' + matches[0],
+                matches[0] + ': NEW_TASK delivery paths disagree with task marker: '
+                + repr((item.get('author'), item.get('recipient'))))
     return matches[0]
 
 
@@ -526,6 +551,16 @@ class ResponsesFixture:
             return self.spawn(request, 'worker')
         role = {5: 'worker', 6: 'reviewer', 7: 'control'}.get(stage)
         if role:
+            # A failed child cannot deliver DONE. Surface its actual final payload
+            # before acknowledging or waiting; unrelated messages are not failures.
+            for item in request.get('input', []):
+                if (item.get('type') == 'agent_message' and item.get('author') == '/root/' + role
+                        and item.get('recipient') == '/root'):
+                    text = agent_message_text(item)
+                    if text.startswith('Message Type: FINAL_ANSWER\n'):
+                        payload = text.partition('\nPayload:\n')[2].strip()
+                        require(not payload.startswith('Agent errored'),
+                                role + ': child FINAL_ANSWER failed: ' + payload)
             if role not in self.handles:
                 self.handles[role] = canonical_handle(self.outputs.get('spawn_' + role, ''), role)
                 return self.call(request, 'send_message', {

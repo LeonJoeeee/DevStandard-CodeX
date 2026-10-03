@@ -30,6 +30,15 @@ def native_request(marker):
                     ('send_message', ('target', 'message')), ('wait_agent', ('timeout_ms',)))]}]}]}
 
 
+def agent_message(kind, author, recipient, payload, encrypted=False):
+    header = f'Message Type: {kind}\nTask name: {recipient}\nSender: {author}\nPayload:\n'
+    content = [{'type': 'input_text', 'text': header + ('' if encrypted else payload)}]
+    if encrypted:
+        content.append({'type': 'encrypted_content', 'encrypted_content': payload})
+    return {'type': 'agent_message', 'id': 'amsg_fixture', 'author': author,
+            'recipient': recipient, 'content': content}
+
+
 class NativeRuntimeFixtureTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -290,6 +299,108 @@ class NativeRuntimeFixtureTest(unittest.TestCase):
         self.assertEqual(f.request_role(request), 'root')
         request['input'][0]['content'] = f.REVIEW_TASK
         self.assertEqual(f.request_role(request), 'reviewer')
+
+    def test_new_task_agent_message_selects_actual_child_response(self):
+        f = self.fixture
+        for role, marker, call_id in (('worker', f.WORK_TASK, 'worker_lane_pwd'),
+                                      ('reviewer', f.REVIEW_TASK, 'reviewer_patch'),
+                                      ('control', f.CONTROL_TASK, 'control_write')):
+            for encrypted in (False, True):
+                with self.subTest(role=role, encrypted=encrypted):
+                    request = self.request(marker)
+                    request['input'][0]['content'] = [
+                        {'type': 'input_text', 'text': '<environment_context>fixture</environment_context>'}]
+                    payload = marker + ('\n' + f.PRIVATE_WORKER if role == 'worker' else '')
+                    request['input'].append(agent_message('NEW_TASK', '/root', '/root/' + role,
+                                                         payload, encrypted))
+                    other_marker = f.WORK_TASK if role == 'reviewer' else f.REVIEW_TASK
+                    other_role = 'worker' if role == 'reviewer' else 'reviewer'
+                    for kind in ('function_call_output', 'custom_tool_call_output'):
+                        request['input'].append({'type': kind, 'call_id': kind, 'output': [
+                            {'type': 'text', 'text': other_marker},
+                            agent_message('NEW_TASK', '/root', '/root/' + other_role, other_marker, True)]})
+                    self.runtime.counts[role] = 0
+                    self.assertEqual(self.runtime.response_item(request)['call_id'], call_id)
+
+    def test_new_task_requires_one_marker_and_matching_delivery_paths(self):
+        f = self.fixture
+        for payload, author, recipient, error in (
+                ('no task marker', '/root', '/root/worker', 'cannot uniquely identify'),
+                (f.WORK_TASK + '\n' + f.REVIEW_TASK, '/root', '/root/worker', 'cannot uniquely identify'),
+                (f.WORK_TASK, '/root', '/root/reviewer', 'delivery paths'),
+                (f.WORK_TASK, '/root/control', '/root/worker', 'delivery paths')):
+            with self.subTest(payload=payload, author=author, recipient=recipient):
+                request = {'input': [agent_message('NEW_TASK', author, recipient, payload, True)]}
+                with self.assertRaisesRegex(AssertionError, error):
+                    f.request_role(request)
+
+    def test_mailbox_messages_do_not_select_requesting_thread(self):
+        f = self.fixture
+        for kind in ('FINAL_ANSWER', 'MESSAGE'):
+            with self.subTest(kind=kind):
+                request = self.request(f.PRIVATE_PARENT)
+                request['input'].append(agent_message(kind, '/root/worker', '/root', f.WORK_TASK, True))
+                self.assertEqual(f.request_role(request), 'root')
+                request['input'][0]['content'] = 'environment only'
+                with self.assertRaisesRegex(AssertionError, 'cannot uniquely identify'):
+                    f.request_role(request)
+
+    def test_errored_final_answer_fails_before_mailbox_wait(self):
+        f = self.fixture
+        payload = 'Agent errored: provider refused the child request.\nThis agent\'s turn failed.'
+        for role, stage in (('worker', 5), ('reviewer', 6), ('control', 7)):
+            for encrypted in (False, True):
+                with self.subTest(role=role, encrypted=encrypted):
+                    self.runtime.root_stage = stage
+                    self.runtime.handles.pop(role, None)
+                    self.runtime.outputs['spawn_' + role] = json.dumps({'task_name': '/root/' + role})
+                    request = self.request(f.PRIVATE_PARENT)
+                    request['input'].append(agent_message('FINAL_ANSWER', '/root/' + role, '/root',
+                                                         payload, encrypted))
+                    with self.assertRaisesRegex(AssertionError, role + ':.*Agent errored') as failure:
+                        self.runtime.response_item(request)
+                    self.assertIn(payload, str(failure.exception))
+                    self.assertEqual(self.runtime.waits[role], 0)
+                    self.assertEqual(self.runtime.root_stage, stage)
+
+    def test_successful_final_answer_advances_parent_without_wait(self):
+        f = self.fixture
+        for role, stage, next_role in (('worker', 5, 'reviewer'), ('reviewer', 6, 'control'),
+                                       ('control', 7, None)):
+            for encrypted in (False, True):
+                with self.subTest(role=role, encrypted=encrypted):
+                    self.runtime.root_stage = stage
+                    self.runtime.handles[role] = '/root/' + role
+                    self.runtime.outputs['ack_' + role] = ''
+                    request = self.request(f.PRIVATE_PARENT)
+                    request['input'].append(agent_message('FINAL_ANSWER', '/root/' + role, '/root',
+                                                         f.DONE[role], encrypted))
+                    item = self.runtime.response_item(request)
+                    if next_role:
+                        self.assertEqual(item['call_id'], 'spawn_' + next_role)
+                    else:
+                        self.assertEqual(item['content'][0]['text'], f.DONE['root'])
+                    self.assertEqual(self.runtime.root_stage, stage + 1)
+                    self.assertEqual(self.runtime.waits[role], 0)
+
+    def test_error_text_outside_expected_child_final_answer_still_waits(self):
+        f = self.fixture
+        error = 'Agent errored: unrelated message'
+        for item in (agent_message('MESSAGE', '/root/worker', '/root', error),
+                     agent_message('FINAL_ANSWER', '/root/reviewer', '/root', error),
+                     agent_message('FINAL_ANSWER', '/root/worker', '/root/control', error),
+                     {'type': 'custom_tool_call_output', 'call_id': 'other', 'output':
+                      agent_message('FINAL_ANSWER', '/root/worker', '/root', error)}):
+            with self.subTest(item=item):
+                self.runtime.root_stage = 5
+                self.runtime.handles['worker'] = '/root/worker'
+                self.runtime.outputs['ack_worker'] = ''
+                self.runtime.waits['worker'] = 0
+                request = self.request(f.PRIVATE_PARENT)
+                request['input'].append(item)
+                response = self.runtime.response_item(request)
+                self.assertEqual(response['name'], 'wait_agent')
+                self.assertEqual(self.runtime.waits['worker'], 1)
 
     def test_isolated_environment_drops_inherited_credentials(self):
         f = self.fixture
