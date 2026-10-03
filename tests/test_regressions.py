@@ -130,3 +130,61 @@ class DispatchCleanupTest(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class BypassClosureTest(unittest.TestCase):
+    """The acts a safety review walked straight through."""
+
+    def test_the_rest_merge_endpoint_is_refused(self):
+        self.assertEqual(run_hook('gh api -X PUT repos/o/r/pulls/5/merge').returncode, 1)
+        self.assertEqual(run_hook('gh api -X PUT repos/o/r/merges -f base=main').returncode, 1)
+
+    def test_a_worker_cannot_execute_a_merge_through_the_guard(self):
+        proc = run_hook('scripts/guard merge --repo o/r --pr 5 --execute')
+        self.assertEqual(proc.returncode, 1)
+        self.assertIn('only the orchestrator', proc.stderr)
+
+    def test_the_orchestrator_still_executes_a_merge(self):
+        self.assertEqual(run_hook('scripts/guard merge --repo o/r --pr 5 --execute',
+                                  role='orchestrator').returncode, 0)
+
+    def test_a_quoted_single_word_is_still_argv(self):
+        self.assertEqual(run_hook('git "merge" feature').returncode, 1)
+        self.assertEqual(run_hook('git push origin "main"').returncode, 1)
+
+    def test_a_quoted_phrase_is_a_search_pattern(self):
+        self.assertEqual(run_hook('rg "git merge" reference/').returncode, 0)
+
+    def test_the_reviewer_write_flags_include_the_field_forms(self):
+        for text in ('gh api repos/x -f body=hello', 'gh api repos/x -F body=@f',
+                     'gh api repos/x --raw-field body=1', 'gh api repos/x --field body=1'):
+            self.assertEqual(run_hook(text, role='reviewer').returncode, 1, text)
+
+    def test_an_explicit_read_is_not_a_write(self):
+        self.assertEqual(run_hook('gh api -X GET repos/x/pulls', role='reviewer').returncode, 0)
+
+    def test_the_push_rule_is_case_insensitive(self):
+        self.assertEqual(run_hook('git push origin Master').returncode, 1)
+
+    def test_bulk_pushes_that_reach_main_are_refused(self):
+        for text in ('git push --all', 'git push --mirror origin', 'git push --prune origin'):
+            self.assertEqual(run_hook(text).returncode, 1, text)
+
+    def test_inspecting_merge_artifacts_is_not_merging(self):
+        self.assertEqual(run_hook('git grep merge scripts/').returncode, 0)
+        self.assertEqual(run_hook('git log --grep=merge --oneline').returncode, 0)
+
+
+class ProvenanceTest(unittest.TestCase):
+    def test_a_spawned_worker_receives_the_role_hook_it_is_bound_by(self):
+        source = (ROOT / 'scripts/dispatch').read_text()
+        self.assertIn("'hook_settings': hook_config(ROOT, args.purpose)", source)
+
+    def test_the_guard_accepts_only_a_published_review_packet_round(self):
+        source = (ROOT / 'scripts/guard').read_text()
+        self.assertIn('codex-method-review-v1', source)
+
+    def test_the_protection_payload_requires_the_pr_gate(self):
+        source = (ROOT / 'scripts/guard').read_text()
+        self.assertIn('required_pull_request_reviews', source)
+        self.assertIn('required_approving_review_count', source)

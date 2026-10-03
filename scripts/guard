@@ -57,8 +57,8 @@ def main():
             payload = {
                 'required_status_checks': {'strict': True, 'contexts': args.checks},
                 'enforce_admins': True,
-                'required_pull_request_reviews': None,
-                'restrictions': None,
+                'required_pull_request_reviews': {'required_approving_review_count': 1},
+                'restrictions': None,  # push restrictions need a paid plan; the PR gate is the backstop'
                 'allow_force_pushes': False,
                 'allow_deletions': False,
                 'required_linear_history': False,
@@ -98,6 +98,10 @@ def main():
     head, base = pr['head']['sha'], pr['base']['sha']
     comments = api(f'repos/{args.repo}/issues/{args.pr}/comments') or []
     verdict = round_check(comments, head)
+    if verdict:
+        require('codex-method-review-v1' in (verdict.get('body') or ''),
+                'the verdict is not a published review-packet round; a comment that merely quotes '
+                'the words is not a verdict')
     require(verdict, f'no whole verdict on head {head}')
     text = decisions(verdict['body'])
     require('### Goal verdict\nYes' in text, 'the latest verdict is not Goal Yes')
@@ -109,7 +113,9 @@ def main():
     if args.ci_fallback:
         # check 2 cannot run. The only legal substitute is a published CI-FALLBACK comment, which
         # the reviewer saw through `review-packet start --ci-fallback`; nothing else satisfies this.
-        posted = [c for c in comments if 'CI-FALLBACK' in (c.get('body') or '')]
+        posted = [c for c in comments
+                  if 'CI-FALLBACK' in (c.get('body') or '')
+                  and 'codex-method-review-v1' in (c.get('body') or '')]
         require(posted, 'no published CI-FALLBACK comment on this PR; the fallback has no evidence')
         require(any(args.ci_fallback in (c.get('body') or '') for c in posted),
                 'the published CI-FALLBACK comment is not the one named by --ci-fallback')

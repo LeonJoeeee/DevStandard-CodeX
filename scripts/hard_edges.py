@@ -147,8 +147,9 @@ def protection_check(repo, branch):
     observed = {
         'strict_up_to_date': bool(checks.get('strict')),
         'admin_enforced': bool((body.get('enforce_admins') or {}).get('enabled')),
-        'no_forced_updates': body.get('allow_force_pushes') is False,
         'no_deletions': body.get('allow_deletions') is False,
+        'pr_required': bool(body.get('required_pull_request_reviews')),
+        'no_force_pushes': body.get('allow_force_pushes') is False,
         'merge_queue_off': 'merge_queue' not in body or body.get('merge_queue') in (None, {}),
     }
     missing = [name for name, ok in observed.items() if not ok]

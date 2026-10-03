@@ -200,6 +200,7 @@ Return the PR and evidence to the caller; never merge.
         'run_in_background': True,
         'record_this_handle_on_the_issue': True,
         'conversation_history_forking': False,
+        'hook_settings': hook_config(ROOT, args.purpose),
     }, indent=2))
 
     lanes = project / '.codex-method' / 'lanes'
