@@ -17,7 +17,9 @@ contracts checked against openai/codex tag rust-v0.159.2, specifically native V2
 spawn.rs, agent/child_config.rs, hooks/engine/discovery.rs, and config/fingerprint.rs.
 The copied hook executable is instrumented to record actual payloads/results. Its
 policy is unchanged for worker/reviewer. The sole ungated control is an exact local
-write by runtime_readonly_control, demonstrating unsupported per-role sandboxing.
+write by runtime_readonly_control, whose accepted role file declares read-only.
+The loader accepts sandbox_mode but rejects cwd; the negative control checks that
+the native child still writes under parent permissions despite that declaration.
 This qualifies ordinary hook paths, not adversarial OS or credential isolation.
 """
 import argparse
@@ -290,7 +292,6 @@ def prepare(binary, scratch, env, installer, evidence):
     project, package = scratch / 'project', scratch / 'marketplace'
     project.mkdir()
     (project / 'worker-lane').mkdir()
-    (project / 'declared-control-cwd').mkdir()
     run_logged(['git', 'init', '--quiet', str(project)], env, scratch, scratch, 'git-init')
     evidence['isolation'] = inventory(project, Path(env['CODEX_HOME']))
     # Snapshot only shipped local assets; never copy .git, auth, or home state.
@@ -351,9 +352,13 @@ def prepare(binary, scratch, env, installer, evidence):
             if key in role:
                 require(role[key] == (MODEL if key == 'model' else EFFORT),
                         name + ': installed role overrides the qualification route')
+    # Codex 0.159.2's role loader accepts sandbox_mode="read-only" but rejects
+    # cwd as an unknown field and ignores the entire role. Keep the accepted
+    # sandbox declaration: the exact ungated filesystem write is the negative
+    # control for per-role OS isolation, not an instructions-only write probe.
     control = {'name': 'runtime_readonly_control', 'description': 'Per-role sandbox negative control',
                'developer_instructions': 'Harmless local inherited-permission control. ' + CONTROL_TASK,
-               'sandbox_mode': 'read-only', 'cwd': str(project / 'declared-control-cwd')}
+               'sandbox_mode': 'read-only'}
     (roles / 'runtime_readonly_control.toml').write_text('\n'.join(
         key + '=' + toml(value) for key, value in control.items()) + '\n')
 
@@ -647,7 +652,8 @@ class ResponsesFixture:
                 'worker_merge_denials': worker_denied,
                 'unknown_fields': 'actual V2 handler rejected cwd and fork_context',
                 'mailbox_completion': 'worker, reviewer, control completion delivered to root',
-                'per_role_readonly': 'UNSUPPORTED: exact ungated child write succeeded with parent permissions'}
+                'per_role_readonly': "UNSUPPORTED: declared read-only role's exact ungated child write "
+                                     'succeeded with parent permissions'}
 
 
 def main():

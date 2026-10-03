@@ -7,7 +7,9 @@ import re
 import shutil
 import subprocess
 import tempfile
+import tomllib
 import unittest
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -75,6 +77,40 @@ class NativeRuntimeFixtureTest(unittest.TestCase):
                              item['input'])
         self.assertIsNotNone(match, 'custom exec must receive raw JavaScript and surface the result')
         return json.loads(match[1])
+
+    def test_prepare_registers_declared_readonly_control_without_rejected_cwd(self):
+        f = self.fixture
+        run_logged = f.run_logged
+        installed = {}
+
+        def local_setup(command, env, cwd, directory, name, **kwargs):
+            # Plugin registration needs the CLI; keep Git, installer, role writes,
+            # and hook setup real without launching a provider or binding sockets.
+            if name in ('marketplace-add', 'plugin-add'):
+                return subprocess.CompletedProcess(command, 0, '', '')
+            result = run_logged(command, env, cwd, directory, name, **kwargs)
+            if name == 'role-install':
+                installed.update({path.name: path.read_bytes()
+                                  for path in (cwd / '.codex/agents').glob('*.toml')})
+            return result
+
+        for installer in (None, ROOT / 'scripts/install'):
+            with self.subTest(installer=installer):
+                scratch = self.scratch / ('installed' if installer else 'fallback')
+                scratch.mkdir()
+                env = f.isolated_env(scratch)
+                with patch.object(f, 'run_logged', side_effect=local_setup):
+                    project, command, fake = f.prepare('unused-codex', scratch, env, installer, {})
+                roles = project / '.codex/agents'
+                control = tomllib.loads((roles / 'runtime_readonly_control.toml').read_text())
+                self.assertEqual(set(control), {
+                    'name', 'description', 'developer_instructions', 'sandbox_mode'})
+                self.assertEqual(control['name'], 'runtime_readonly_control')
+                self.assertTrue(control['description'].strip())
+                self.assertIn(f.CONTROL_TASK, control['developer_instructions'])
+                self.assertEqual(control['sandbox_mode'], 'read-only')
+                for name, content in installed.items():
+                    self.assertEqual((roles / name).read_bytes(), content)
 
     def test_reviewer_leak_refuses_before_any_response(self):
         f = self.fixture
@@ -240,6 +276,16 @@ class NativeRuntimeFixtureTest(unittest.TestCase):
                 self.runtime.outputs['reviewer_remote'] = ''
                 with self.assertRaisesRegex(AssertionError, 'blocking denial'):
                     self.verify_records(records)
+
+    def test_readonly_result_reports_declared_role_and_requires_filesystem_write(self):
+        records = self.verification_records()
+        checks = self.verify_records(records)
+        self.assertEqual(checks['per_role_readonly'],
+                         "UNSUPPORTED: declared read-only role's exact ungated child write "
+                         'succeeded with parent permissions')
+        (self.project / 'inherited-permissions.txt').unlink()
+        with self.assertRaisesRegex(AssertionError, 'did not actually write'):
+            self.verify_records(records)
 
     def test_worker_merge_requires_blocking_hook_and_native_denial_output(self):
         records = self.verification_records()
