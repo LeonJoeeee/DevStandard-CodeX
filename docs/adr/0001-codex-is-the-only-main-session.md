@@ -1,6 +1,6 @@
 # 0001 — Codex is the only main session, and every worker is its own built-in subagent
 
-Status: Accepted (2026-09-29).
+Status: Accepted (2026-09-29); Amended (2026-10-03).
 
 *This ADR decides what this method ships. A reader in any seeded project should take it as method.*
 
@@ -38,3 +38,27 @@ stays only where the act is irreversible and no other layer stops it.
 
 SessionStart delivers `reference/orchestrator.md` whole, in ordered parts when one output cannot
 carry it; the parts concatenate to the file's exact bytes and are tested that way.
+
+
+**Amendment (2026-10-03, adaptation audit and human runtime qualification):** The original body
+incorrectly says no other project's pages are the source. codex-method is a port and adaptation
+of `/home/leon/projects/prod/devstandard`, including its role pages, reference rules, templates,
+and collaboration machinery. Starting from zero refers only to this project's ADR history,
+seeded by ADR 0000; it does not deny those sources. The original September acceptance date and
+source-free wording are retained as historical text, not asserted as verified facts: this
+adaptation instruction and correction are dated 2026-10-03. Source history is routed in
+`docs/architecture.md`, rather than copied as this project's decision log.
+
+The Codex-only main-session and native-subagent decision stands. Codex rust-v0.159.2 source
+qualification establishes V2 spawn fields, `gpt-6.1-sol`/`high` metadata, inherited cwd and
+permissions, package-level hooks selected by `agent_type`, and separate project-role discovery.
+A native nonediting reviewer is a fresh-context contract plus ordinary-path hook, not a per-child
+OS read-only sandbox. Native arbitration before a PR follows the same boundary. Model and effort
+are explicit; unavailable models and quota never silently substitute.
+
+The original claims about shipped role-hook breadth and tested whole startup delivery are not
+runtime evidence for this adaptation. `reference/harness-codex.md` and `docs/architecture.md`
+state the qualification limits. Review acceptance uses a shared-git local receipt and the exact
+published raw verdict; remote metadata is not authorization. Fallback and rebase-proof reuse
+remain documented source capabilities that the shipped guard does not qualify. Installation,
+production calls, and a complete remote lifecycle need captured evidence before they are claimed.

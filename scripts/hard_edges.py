@@ -92,16 +92,22 @@ def helper_line(root=None):
 
 
 def hook_config(root=None, role=None):
-    """`codex exec -c` key=value settings: the role hook, plus the default helper's tier."""
+    """Parent-session TOML fragment for the qualified V2 host, never spawn arguments.
+
+    Codex role configs do not apply hooks. The parent hook infers a child's role from the native
+    payload, and the legacy plugin supplies the same hook without this optional inline fragment.
+    """
     root_path = Path(root) if root else ROOT
     require(role in ('worker', 'reviewer'), 'executor role required')
-    command = shlex.join([str(root_path / 'hooks/pre-tool-use'), '--role', role])
+    command = shlex.join([str(root_path / 'hooks/pre-tool-use')])
     model, effort = ordinary_judgment_setting(root)
     return '\n'.join([
         'hooks.PreToolUse=[{matcher=".*",hooks=[{type="command",command='
         + json.dumps(command) + ',timeout=30}]}]',
         'agents.default_subagent_model=' + json.dumps(model),
         'agents.default_subagent_reasoning_effort=' + json.dumps(effort),
+        'features.multi_agent_v2.enabled=true',
+        'features.multi_agent_v2.expose_spawn_agent_model_overrides=true',
     ])
 
 
@@ -127,34 +133,9 @@ def merged_result(base, head):
 
 
 def protection_check(repo, branch):
-    """The five settings the method expects; a free-plan private repo records the plan limit.
-
-    A readable protection object is not enough: each documented setting is read and named, so a
-    silent loosening is a refusal rather than a pass.
-    """
-    require(repo and branch, 'a repository and branch are required')
-    try:
-        out = run('gh', 'api', f'repos/{repo}/branches/{branch}/protection')
-    except Refusal as error:
-        text = str(error)
-        if '404' in text and 'private' in text:
-            return {'state': 'unavailable', 'reason': 'plan limit'}
-        raise Refusal(
-            'GitHub did not return readable protection state; this response does not establish '
-            f'that protection is unavailable, so the server-side gate cannot be skipped. {text}')
-    body = json.loads(out) if out.strip() else {}
-    checks = body.get('required_status_checks') or {}
-    observed = {
-        'strict_up_to_date': bool(checks.get('strict')),
-        'admin_enforced': bool((body.get('enforce_admins') or {}).get('enabled')),
-        'no_deletions': body.get('allow_deletions') is False,
-        'pr_required': bool(body.get('required_pull_request_reviews')),
-        'no_force_pushes': body.get('allow_force_pushes') is False,
-        'merge_queue_off': 'merge_queue' not in body or body.get('merge_queue') in (None, {}),
-    }
-    missing = [name for name, ok in observed.items() if not ok]
-    require(not missing, f'branch protection is missing: {", ".join(missing)}')
-    return {'state': 'expected', **observed}
+    """Delegate GitHub's protection and active-rules inspection to the one boundary."""
+    from protection import protection_check as check
+    return check(repo, branch)
 
 
 def filled(value, name):

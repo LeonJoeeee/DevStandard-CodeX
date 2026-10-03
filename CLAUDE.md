@@ -26,8 +26,11 @@ moves. **Record the ruling, not the tally.**
 ```sh
 python3 -m unittest discover -s tests -t .
 python3 .github/check-routing.py
+python3 .github/check-adr-index.py
+python3 .github/check-release.py
 ! grep -rn "@[a-zA-Z0-9_-]*/" reference/ --include='*.md' | grep -v actions/ | grep -v anthropic | grep .
-python3 -c 'import json; print(json.load(open("codex-method.json"))["version"])'
+# Native runtime gate: use an explicitly writable scratch root; local bind refusals are blockers.
+python3 .github/test-native-runtime.py --installer scripts/install --scratch-root "$TMPDIR" --log-dir "$TMPDIR/native-evidence"
 ```
 
 ## Version bumps

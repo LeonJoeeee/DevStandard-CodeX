@@ -1,32 +1,53 @@
-# The repository's operational memory
+# The repo-root `AGENTS.md`
 
-`AGENTS.md` at a repository root is that project's operational memory: what a later session needs in
-order to work there without rediscovering it. It is the one file a reader opens before touching the
-tree.
+CI settles the project's commands — capture useful operational facts while they are fresh.
+Generate a repo-root `AGENTS.md` only when its content fence admits something, under
+`reference/in-repo-writes.md`. Codex discovers this root entry natively; every worker also
+reads it explicitly before task work. Keep it within one page and the cap below.
 
-**It accepts only these four kinds of content.** Anything else belongs on a shipped page, in an
-issue, or in a PR description:
+`AGENTS.md` is the Codex operational entry point. Preserve an adopted repository's existing
+instructions and established operational sources: consolidate or point to an established fact,
+never maintain competing copies. An existing `CLAUDE.md` may retain repository-maintenance
+instructions; its presence is not a reason to erase it or duplicate those instructions here.
+No managed method block belongs in `AGENTS.md`. Its content fence admits commands, environment
+gotchas, explicit worktree copy-list entries, and the conditional record-language declaration.
 
-1. **Commands** — how to build, test, lint, and run this project's own gates.
-2. **Environment gotchas** — the facts a session would otherwise burn a turn discovering.
-3. **Worktree copy-list entries** — untracked inputs a new worktree may copy, named explicitly. A
-   missing list means no copy.
-4. **Record-language declarations** — when a record is not in English, and which.
+- **Commands** — install, test, run (the same ones CI just encoded);
+- **Environment gotchas** — ports in use, services that must be up, local-vs-CI differences;
+- **Untracked files a new worktree must copy** — the allowlist `reference/orchestrator.md`'s Worktree lifecycle section copies from (nonconfidential local configuration only). Secret material is not copied into lanes;
+  its established destination and access remain subject to `reference/where-it-goes.md`.
 
-Nothing method-shaped lives here. A rule about how work is organized is a method rule and goes on a
-shipped page; `AGENTS.md` is a project's memory, and a project is not a method.
+A cache or deploy root outside the tree is an environment gotcha of exactly this kind only when the
+root itself already existed as an authority for this project's files or the human chose it. Recording
+that place relays the authority so a clean-context worker does not invent another
+(`reference/where-it-goes.md`); an `AGENTS.md` line added in the same change never authorises a root the
+change invented. It belongs under Gotchas, not as a new kind of content.
 
-**Naming.** The file is `AGENTS.md`, because Codex reads that name. A project that keeps both a
-`CLAUDE.md` and an `AGENTS.md` has two memories that drift; keep one.
+One conditional fourth item — the fence's only exception: a `## Record language` line, when the repo's durable record is not English. It sits here because a clean-context worker must see it natively; the reasoning behind the choice goes in that repo's ADR log, not here. Its absence means English.
 
-## What it is for
+A repo-wide language declaration in root `AGENTS.md` overrides English for the whole record,
+never per file or per agent. An established non-English record earns that declaration: write it
+and follow the existing record, never start a mixed record. A human-facing translation is a marked
+mirror naming its canonical file and changes in the same diff as that file.
 
-A worker arrives to a checkout with a brief and a role. It reads this file first, then the method
-pages its brief names. This file answers "how does *this* repository work", never "how does the
-method work".
+Generate it only when the project actually has some of that to say. A file that merely transcribes what CI already encodes, or that would stand empty under every heading with no record language to declare, is noise every later session pays to read — skip it, and let the first real command, gotcha, copy-list line or record-language declaration create it through the same write-back lane.
 
-## Placement
+It grows one line at a time: whoever merges a task that exposed a command, environment gotcha, worktree copy-list entry, or record-language declaration writes it back at lane cleanup through a short-branch PR like any other change. The writer enforces the 30-line cap (roughly twice the template below) at write time: a write-back that would cross it also drops the line it most clearly supersedes, or otherwise the stalest gotcha — never a separate cleanup pass. Architecture, decisions, rules, and task state never go here — the template's last line is the fence.
 
-Every reference-page rule about where a file goes still applies; see `reference/where-it-goes.md`.
-This file goes at the repository root, and its presence is optional: a project with nothing to put
-in it omits the file rather than shipping an empty one.
+```markdown
+# <Project> — repo notes for agents
+
+## Commands
+- install: <command>
+- test: <command>
+- run: <command>
+
+## Gotchas
+- <port / service / local-vs-CI difference worth one line>
+- <cache or deploy root already assigned to this project or chosen by the human, e.g. ~/.cache/foo or /srv/app — this line relays that place; it does not authorise a root this change invented>
+
+## New worktree: copy these untracked files
+- <path>   (or: none — everything load-bearing is tracked)
+
+Architecture: see docs/architecture.md — never duplicated here. Decisions: docs/adr/ unless the architecture doc points elsewhere. Tasks: GitHub issues.
+```

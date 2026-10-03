@@ -1,39 +1,66 @@
-# Writing outside the repository
+# Where a write goes when it is not in the repo
 
-Most work ends in the tree. Some work must not: secrets, live application state, and release
-deliverables. This page owns where those go, what the declaring root requires, and what must be
-disclosed when they are written.
+`reference/where-it-goes.md` is the entry point. This page applies only after that placement rule has
+established that a destination must be outside the project, and gives the three expensive kinds their
+specific requirements. It exists because nothing said, and so every agent defaulted to `$HOME` — which is how a
+home directory fills with `~/data`, `~/services`, `~/tools`, `~/labs`, and a folder dropped on the
+Desktop, none of it the human's doing.
 
-## The three expensive kinds
+For adding documentation *inside* the repository, use `reference/in-repo-writes.md`. For what may
+remain in the working tree at handback, use your role page's tree-accounting section (`reference/worker.md`'s Evidence and delivery).
 
-1. **Secrets and credentials** — never in the tree, never in a commit message, never in an issue or
-   PR body. They go to the destination the human authorized in words. Without one, the work stops
-   and reports the missing destination; it does not invent one.
-2. **Application and service state** — a database, a bucket, a queue, a running service. Writes here
-   change what other people see. They need the same authorization as a production change, and a
-   declared root: the one directory or namespace this task may write, named before the first write.
-3. **Release deliverables** — tags, published artifacts, package registry pushes. These are
-   irreversible and outward-facing. Release is the human's call unless they delegated it in words.
+**The line is conventional, not visible.** A tool's own documented cache — `~/.cache/huggingface`,
+`~/.npm`, `~/.cargo` — is fine; a place the agent invents on the human's machine is not, and a
+leading dot changes nothing. The source decision is routed in `docs/architecture.md`. Whether a destination counts as
+already-established — and what a document may relay — is the entry point's authority clause
+(`reference/where-it-goes.md`); this page does not restate it.
 
-## The cache arm
+## Three kinds of write, one rule each
 
-A cache is neither of the first two: it can be rebuilt from the repository. Writing to one needs no
-authorization, but it needs a declared root like everything else here, so a task cannot scatter
-caches across a home directory.
+**1. Downloads, environments, tool clones** — model weights, a venv, a cloned tool, whether they
+serve one task or many. In order:
 
-## Retention
+- the tool's own documented cache, if it has one, however many tasks the material serves — and most do (`hf download` uses
+  `~/.cache/huggingface` unless told otherwise; overriding that to hand-build `~/data/mage-vl` is
+  the exact move that produced this rule). An evictable cache is never the only durable copy of
+  material that must be kept;
+- else, material that dies with the task goes to scratch; for material that must be kept, use the
+  cache root the repo's `AGENTS.md` relays (`reference/repo-agents-md.md`) — a relay counts only for a
+  root the authority clause already admits, so read that clause before treating an `AGENTS.md` line as
+  the answer;
+- else, where the entry-point rule has established that the write belongs outside the project,
+  **stop and tell the main session** (a worker) or **ask the human** (the main session). Never an
+  invented entry under `$HOME`, hidden or not — and a spec written for this very task does not settle
+  it either; the authority clause says why.
 
-Anything written outside the repository is either (a) durable state the human owns — say where it
-is and how to undo it — or (b) disposable. Disposable artifacts are removed when the task ends and
-their ownership and disposability are established. A sole durable copy is never deleted.
+**2. A deploy root or runtime state** — where a service the project runs keeps its files. The
+location is the project's call, decided by the authority clause (`reference/where-it-goes.md`) like
+any other destination. What this kind adds is that the root is **documented in that repo's
+`AGENTS.md` or architecture doc before anything lands there**, and that a declared root also says
+what it retains — which copies are removed and when — because naming the place fixes where things
+go, not how many pile up: a documented `~/services` still grew fourteen release directories and a
+multi-gigabyte rehearsal leftover.
 
-## Disclosure
+**3. Scratch, drops, and task-local deliverables** — session-local, gone when the session is; release
+deliverables are not this kind. Write to the
+scratch the session gives you — the location your Codex harness names; if it names none,
+one dedicated `mktemp -d` directory per task. Post any durable result to the issue, PR, or
+other destination the placement rule chose. Retain the dispatch brief and native-handle record
+until lane cleanup under `reference/orchestrator.md`'s Dispatching to a worker section.
+A native worker follows the scratch binding in `reference/worker.md` and
+`reference/harness-codex.md`; inherited access does not authorize another lane's scratch.
+The human's Desktop and `$HOME` are never a drop target unless the human names one: showing them a
+result is what the PR, the issue, and the conversation are for.
 
-Every out-of-repository write is named in the PR description: what was written, where, under whose
-authorization, and how to undo it. Silence about an out-of-tree write is a defect the reviewer
-raises under Floor 2, because the next session cannot see it and cannot clean it up.
+## Say where you wrote
 
-## Where a rule lives
-
-Placement for anything in the tree is `reference/where-it-goes.md`. Task-state that belongs on an
-issue or PR is never an invented handoff file.
+Every durable write outside the repo is named in the PR description or, where there is no
+PR, at handback — the path, which branch of the rule applied, and why. **A committed write is
+reviewable; an ad hoc one is not.** If the write is in the diff — a script,
+a Makefile, a CI step that fetches to a path — merge check 1 sees it and can flag an invented
+location like any other line. A write done by a command typed in the session (which is what every
+row of the incident that prompted this rule was) leaves no trace in any diff; check 1 sees the diff
+and the report and nothing else, so nothing catches an undisclosed one.
+This is a discipline the acting agent keeps, not a gate. The disclosure gives a human, or a later
+audit, the one place to look; the reviewer asks for it when a task plainly needed a location (a
+model, a dataset, a service) and the report names none.

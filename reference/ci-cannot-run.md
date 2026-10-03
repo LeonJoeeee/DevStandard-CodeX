@@ -2,6 +2,16 @@
 
 Your role page makes green CI on the merged result check 2 because it is automated, impartial, and doesn't grade its own work. A local run gives up all three — same machine, same environment, run by an interested party — so what follows is a declared, evidenced, temporary degradation, never a second lane.
 
+## Shipped-command boundary
+
+This page preserves the source method's fallback design and evidence requirements. The shipped
+`review-packet` and `guard merge --ci-fallback` routes deliberately refuse as unqualified.
+A `CI-FALLBACK` marker or comment URL alone cannot authorize integration. No agent may lower
+protection, bypass a required check, substitute a partial suite, or ship a release under this
+route. Resolve the provider limitation and wait for ordinary CI. Qualifying a future fallback
+requires an exact merged-tree run, full job coverage, fresh review of that evidence, local receipt
+association, and a guarded integration route; none is inferred from this prose.
+
 ## First: the answer is almost always to wait
 
 An outage is measured in hours; a minutes quota resets on a known date. **Waiting keeps check 2 intact and costs a delay — the fallback costs a full local run, a published evidence block, a reviewer's audit, and a return sweep, and still ends with an unverified merge.** Almost no merge is worth that trade. Everything below applies only once you can say *why* waiting was ruled out.
@@ -55,20 +65,11 @@ Run every job CI would have run from that worktree, unfiltered and to completion
 
 **A partial run is never check 2.** If a job can't run locally — it needs secrets, a live service, another OS, a GPU — you have no fallback for that job. Wait for the platform, make the job runnable (a seeded fixture, a container, a documented local mode, in its own PR), or take it to the human. Never merge on the subset that happened to be runnable and call it evidence.
 
-**Unblocking a protected main is the human's call, not yours.** With the required check never reporting, the PR sits at "Expected — waiting for status to be reported" and the merge button is dead — for admins too, because "Do not allow bypassing" is on. Do NOT drop the required check, untick the bypass setting, edit the ruleset, or push to main directly. Name the PR to the human and ask; the human either removes the cause (top up minutes, make the repo public) or waives the check, and The merge still goes through the one entry point. `guard merge` refuses green CI, so the fallback names its evidence instead:
-
-```sh
-scripts/guard merge --repo OWNER/REPO --pr NUMBER --project CHECKOUT \
-  --ci-fallback <the published CI-FALLBACK comment URL>
-```
-
-That flag does not weaken the gate: it refuses unless a `CI-FALLBACK` comment is already published on the PR and is the one named. The comment is what the reviewer saw, and what the later audit searches closed PRs for.
-
-protection is restored in the same session the merge lands. An agent that switches the gate off to get past it has done more damage than the unverified merge. Where protection doesn't apply (free-plan private repos) the gate is convention-only — the same evidence and the same audit are owed all the same. `reference/orchestrator.md`'s Branch protection section owns how the guard recognizes GitHub's plan-limit response and records the unavailable server-side gate.
+**Unblocking a protected main is the human's call, not yours.** With the required check never reporting, the PR sits at "Expected — waiting for status to be reported" and the merge button is dead — for admins too, because "Do not allow bypassing" is on. Do NOT drop the required check, untick the bypass setting, edit the ruleset, or push to main directly. Name the PR to the human and ask; the human resolves the cause (top up minutes, make the repo public) or decides a separately authorized future route. The source method allowed a human waiver followed by immediate protection restoration; that historical design is not an implemented waiver in this adaptation, and agents never lower the gate. An agent that switches the gate off to get past it has done more damage than the unverified merge. A private-plan limitation does not waive the evidence or audit. The shipped protection guard refuses unreadable protection or active rules rather than inferring unavailability from an error; `reference/orchestrator.md`'s Branch protection section owns that boundary.
 
 **Evidence first, then check 1.** As with ordinary green-PR admission, evidence precedes review. Under the fallback, run the suite and post the evidence *before* check 1, and hand that comment to the reviewer with the diff — an impartial clean reader auditing the run is the closest available substitute for an impartial runner. If check 1 sends the diff back, or the rebase moves, redo the run: the last evidence on the PR must come from the tree that actually merged.
 
-**Post this with it.** The reviewer is a clean context and cannot open this file or follow a link, so the checklist travels with the evidence — in the same PR comment as the `CI-FALLBACK` block below. Commission the review with `scripts/review-packet start --ci-fallback <that comment's URL>`, and the assembler carries the whole comment into the CI-fallback placeholder of `reference/code-review-prompt.md`, which otherwise reads `NONE`:
+**Post this with it.** The reviewer is a clean context and cannot open this file or follow a link, so the checklist travels with the evidence — in the same PR comment as the `CI-FALLBACK` block below. The design requires a fresh review packet to carry the whole comment into the CI-fallback placeholder of `reference/code-review-prompt.md`, which otherwise reads `NONE`. The shipped `start --ci-fallback` refuses; do not commission or merge through this route until its receipt and evidence path is qualified:
 
     Audit the CI-fallback evidence above against all four items:
     - Is the stated cause outside this repo (minutes exhausted, platform
@@ -123,8 +124,8 @@ protection is restored in the same session the merge lands. An agent that switch
 
 **No releases under the fallback.** The release pipeline is a workflow too: pushing `vX.Y.Z` while runs are impossible publishes nothing and leaves a tag that looks shipped. Hold the release until the return, then tag.
 
-**Main is unverified, not red.** Dispatch continues — the stop-the-line rule answers a failing run, and there is no run. What ends the uncertainty is the sweep, not a pause.
+**In the source fallback design, main is unverified, not red.** Dispatch continues — the stop-the-line rule answers a failing run, and there is no run. What ends the uncertainty is the sweep, not a pause.
 
-**The return path.** The fallback ends the moment a push can produce a run again — no grace period, no standing "fallback mode"; the next merge is back on check 2. Re-verification is free: `main`'s first CI run after the return covers every commit merged under the fallback at once. Green closes them — nothing is re-reviewed. Red makes them the prime suspects: search closed PRs for `CI-FALLBACK` to get the list, and the red-main rule applies as written (revert first; fix forward only when the fix is obvious and takes minutes). Don't let that first run wait for the next task — when minutes reset or the outage clears, trigger a run on `main` yourself, and confirm protection is back on.
+**The source design's return path.** The fallback ends the moment a push can produce a run again — no grace period, no standing "fallback mode"; the next merge is back on check 2. Re-verification is free: `main`'s first CI run after the return covers every commit merged under the fallback at once. Green closes them — nothing is re-reviewed. Red makes them the prime suspects: search closed PRs for `CI-FALLBACK` to get the list, and the red-main rule applies as written (revert first; fix forward only when the fix is obvious and takes minutes). Don't let that first run wait for the next task — when minutes reset or the outage clears, trigger a run on `main` yourself, and confirm protection is back on.
 
 **If the fallback fires more than occasionally, the pipeline is the bug, not the gate** — see the minutes paragraph in `reference/ci-pipelines.md`.

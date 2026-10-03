@@ -4,6 +4,8 @@
 # One page per role. Each artifact has its own hook output; a page the host cannot carry in one
 # output is emitted across ordered handler calls whose parts concatenate, in part order, to the
 # file's exact bytes. CAP_BYTES bounds ONE part, never the page.
+# hooks.json sets additionalContextLimit=0, the supported setting that disables token-based context
+# spilling. These complete parts stay inline rather than becoming spill-file recovery notices.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -20,7 +22,10 @@ case "$ROLE" in
 esac
 
 if [ ! -f "$PAGE" ]; then
-  printf '{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"codex-method: the %s page is missing at %s. Read the repository reference/ before acting."}}\n' "$ROLE" "$PAGE"
+  python3 - "$PAGE" <<'PY'
+import json, sys
+print(json.dumps({'continue': False, 'stopReason': 'codex-method: required role page is missing at ' + sys.argv[1]}))
+PY
   exit 0
 fi
 
@@ -32,6 +37,9 @@ page = Path(sys.argv[1])
 part, parts_declared, cap = int(sys.argv[2]), int(sys.argv[3]), int(sys.argv[4])
 role = sys.argv[5]
 data = page.read_bytes()
+if part < 1 or parts_declared < 1 or cap < 4:
+    print(json.dumps({'continue': False, 'stopReason': 'codex-method: invalid page-part delivery configuration'}))
+    raise SystemExit(0)
 def split_points(data, cap):
     """Every part boundary, snapped back to a character start so parts concatenate exactly."""
     points, pos = [0], cap

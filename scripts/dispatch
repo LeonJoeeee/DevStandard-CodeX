@@ -1,220 +1,360 @@
 #!/usr/bin/env python3
-"""Prepare one dispatched lane: a Codex native-worker receipt and its brief.
+"""Prepare fresh Codex 0.159.2 V2 spawn arguments; no agent process is executed.
 
-Every dispatched worker is this host's own built-in subagent. There is no cross-host executor,
-so the receipt carries model and effort from the anchored rows on the dispatch page and the caller
-hands it to Codex's native spawn with conversation-history forking disabled.
+The caller uses native spawn_agent, records its returned task_name with --record-spawn, and
+captures list_agents output with --record-status. Receipts are caller-supplied observations, not
+authenticated runtime attestations. Roles inherit parent cwd and permissions; OS-per-child
+isolation is unsupported. Every child command must use the brief's worktree as workdir.
 """
 import argparse
+from contextlib import contextmanager
+from datetime import datetime, timezone
+import fcntl
 import json
-import os
 import re
-import shutil
+import runpy
 import subprocess
 import sys
-import time
+import tomllib
+import uuid
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'scripts'))
-from hard_edges import (Refusal, anchored_roles, helper_line, hook_config,  # noqa: E402
-                        require, run, api, filled, resolved, base_advanced, round_check)
-
-from review_packet import decisions  # noqa: E402
+from hard_edges import Refusal, anchored_roles, filled, require, resolved, run
 
 
 def route_setting(purpose, model=None, effort=None):
-    """The role's anchored row fixes both knobs; an explicit field wins independently."""
     rows = {role: (m, e) for role, m, e in anchored_roles(ROOT)}
-    match = rows.get(purpose)
-    require(match, f'no anchored {purpose} row')
-    model = model if model is not None else match[0]
-    effort = effort if effort is not None else match[1]
-    require(model and effort, 'no anchored row and no explicit --model/--effort')
-    return filled(model, 'model'), filled(effort, 'effort')
+    require(purpose in rows, f'no anchored {purpose} row')
+    default_model, default_effort = rows[purpose]
+    return filled(model or default_model, 'model'), filled(effort or default_effort, 'effort')
 
 
-def slug(text, limit=48):
-    text = re.sub(r'[^a-z0-9]+', '-', text.lower()).strip('-')
-    return text[:limit].rstrip('-') or 'task'
+def slug(text):
+    return re.sub(r'[^a-z0-9]+', '-', text.lower()).strip('-')[:48].rstrip('-') or 'task'
+
+
+def now():
+    return datetime.now(timezone.utc).isoformat()
+
+
+def read_json(path):
+    require(path and path.is_file(), f'evidence file is required: {path}')
+    return json.loads(path.read_text())
+
+
+def write_json(path, data):
+    temp = path.with_name(path.name + '.tmp')
+    temp.write_text(json.dumps(data, indent=2, ensure_ascii=False) + '\n')
+    temp.replace(path)
+
+
+@contextmanager
+def locked(project, issue, purpose):
+    lanes = project / '.codex-method' / 'lanes'
+    lanes.mkdir(parents=True, exist_ok=True)
+    with (lanes / f'{issue}.lock').open('a') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        suffix = '-reviewer' if purpose == 'reviewer' else ''
+        yield lanes / f'{issue}{suffix}.json'
+
+
+def qualify(project, version):
+    require(version == '0.159.2', 'only an observed Codex 0.159.2 V2 host is qualified; use --host-version')
+    installer = runpy.run_path(str(ROOT / 'scripts/install'))
+    expected = installer['planned'](project)
+    require(all(path.is_file() and path.read_text() == text for path, text in expected.items()),
+            'project roles or V2 config are missing/stale; run scripts/install for this project')
+    return installer
+
+
+def lane_check(project, branch, worktree, base):
+    require(worktree.is_dir(), 'the recorded worktree is missing')
+    top = resolved(run('git', 'rev-parse', '--show-toplevel', cwd=worktree).strip(), 'worktree')
+    require(top == worktree, 'worktree top level differs from the recorded lane')
+    gitdir = resolved(run('git', 'rev-parse', '--absolute-git-dir', cwd=worktree).strip(), 'gitdir')
+    common = resolved(run('git', 'rev-parse', '--path-format=absolute', '--git-common-dir',
+                          cwd=worktree).strip(), 'common')
+    project_common = resolved(run('git', 'rev-parse', '--path-format=absolute', '--git-common-dir',
+                                  cwd=project).strip(), 'common')
+    require(gitdir != common and common == project_common,
+            'the lane must be a linked worktree of the target project')
+    require(run('git', 'branch', '--show-current', cwd=worktree).strip() == branch,
+            'current branch differs from the recorded lane')
+    run('git', 'rev-parse', '--verify', base + '^{commit}', cwd=project)
+    return run('git', 'rev-parse', 'HEAD', cwd=worktree).strip()
+
+
+def captured_status(record, path, fresh=False):
+    data = read_json(path)
+    if fresh:
+        prior = record['runs'][-1].get('status_observation') or record['runs'][-1].get('spawn_observation')
+        since = (prior or {}).get('observed_at', record['runs'][-1]['prepared_at'])
+        require(path.stat().st_mtime >= datetime.fromisoformat(since).timestamp(),
+                'capture a new native list_agents result after the last recorded observation')
+    require(isinstance(data, dict) and isinstance(data.get('agents'), list),
+            'status evidence must be the whole native list_agents result')
+    handle = record['runs'][-1].get('native_task_name')
+    require(handle, 'record the native spawn receipt before status')
+    matches = [agent for agent in data['agents'] if isinstance(agent, dict) and agent.get('agent_name') == handle]
+    require(len(matches) == 1, 'native task handle is absent or ambiguous in list_agents evidence')
+    status = matches[0].get('agent_status')
+    known = status in ('pending_init', 'running', 'interrupted', 'shutdown', 'not_found') if isinstance(status, str) else False
+    known = known or (isinstance(status, dict) and len(status) == 1
+                      and (('completed' in status and (status['completed'] is None or isinstance(status['completed'], str)))
+                           or ('errored' in status and isinstance(status['errored'], str))))
+    require(known, 'unknown native agent_status; no liveness inference is allowed')
+    # Not-found and interrupted are not finished evidence. A flag never stops a native child.
+    finished = status == 'shutdown' or (isinstance(status, dict) and 'completed' in status)
+    return data, status, finished
+
+
+def observe(record, path, spawn=False):
+    latest = record['runs'][-1]
+    if spawn:
+        require(record['status'] == 'awaiting-native-spawn' and not latest.get('native_task_name'),
+                'this run already has a native handle')
+        data = read_json(path)
+        handle = data.get('task_name') if isinstance(data, dict) else None
+        require(isinstance(handle, str) and re.fullmatch(r'/root(?:/[a-z0-9_]+)+', handle)
+                and handle.endswith('/' + latest['task_name']),
+                'spawn receipt must name the exact requested canonical task_name')
+        latest['native_task_name'] = handle
+        latest['spawn_observation'] = {'observed_at': now(), 'result': data}
+        record['status'] = 'native-spawn-recorded'
+    else:
+        data, status, finished = captured_status(record, path, fresh=True)
+        latest['status_observation'] = {'observed_at': now(), 'result': data}
+        latest['finished'] = finished
+        record['status'] = 'finished' if finished else 'native-unfinished'
+    return record
+
+
+def cleanup(project, record, args):
+    require(record['purpose'] == 'worker', 'review receipts do not own worktree teardown')
+    require(args.pr and args.native_status, 'cleanup requires --pr and fresh --native-status list_agents evidence')
+    recorded = record.get('pr') or ''
+    expected = f"https://github.com/{record['repo']}/pull/{args.pr}"
+    require(recorded == expected, 'cleanup PR differs from the recorded exact identity')
+    data, status, finished = captured_status(record, args.native_status, fresh=True)
+    require(finished, 'native child has no finished evidence; cleanup cannot stop it')
+    for past in record['runs'][:-1]:
+        _, _, past_finished = captured_status({'runs':[past]}, args.native_status, fresh=True)
+        require(past_finished, 'a retained native handle is unfinished; preserve the lane')
+    review_path = project / '.codex-method/lanes' / f"{record['issue']}-reviewer.json"
+    if review_path.exists():
+        review = read_json(review_path)
+        require(review.get('interface') == 'codex-v2', 'reviewer lifetime is unqualified')
+        if resolved(review['worktree'], 'review worktree') == resolved(record['worktree'], 'worktree'):
+            for review_run in review['runs']:
+                _, _, review_finished = captured_status({'runs':[review_run]}, args.native_status, fresh=True)
+                require(review_finished, 'borrowing native reviewer has no finished evidence')
+    pr = json.loads(run('gh', 'api', f"repos/{record['repo']}/pulls/{args.pr}", cwd=project))
+    require(pr.get('number') == args.pr and pr.get('html_url') == recorded and pr.get('merged') is True
+            and pr.get('state', '').lower() == 'closed' and pr.get('merge_commit_sha'),
+            'cleanup requires this exact merged PR identity and integration evidence')
+    require(pr.get('head', {}).get('repo', {}).get('full_name') == record['repo']
+            and pr.get('base', {}).get('repo', {}).get('full_name') == record['repo']
+            and pr['head'].get('ref') == record['branch'], 'PR repository/branch differs from the lane')
+    worktree = resolved(record['worktree'], 'worktree')
+    head = lane_check(project, record['branch'], worktree, record['base'])
+    require(head == pr['head'].get('sha'), 'lane contains unintegrated commits beyond the merged PR head')
+    require(not run('git', 'status', '--porcelain', '--untracked-files=all', '--ignored', cwd=worktree).strip(),
+            'tracked, untracked, ignored or sole-copy leftovers must be preserved before cleanup')
+    base = pr['base'].get('ref')
+    require(base, 'merged PR base branch is missing')
+    # No force-delete: admit only local integration evidence. Squash/rebase integrations are refused
+    # until the non-ancestor commits' ownership and disposition are established.
+    integrated = subprocess.run(['git', 'merge-base', '--is-ancestor', head, base], cwd=project,
+                                capture_output=True, text=True)
+    require(integrated.returncode == 0, 'lane commits are not integrated in the local PR base; preserve them')
+    run('git', 'worktree', 'remove', str(worktree), cwd=project)
+    run('git', 'branch', '-d', record['branch'], cwd=project)
+    run('git', 'worktree', 'prune', cwd=project)
+    record['runs'][-1]['status_observation'] = {'observed_at': now(), 'result': data}
+    record['runs'][-1]['finished'] = True
+    record['status'] = 'cleaned'
+    record['cleanup'] = {'at': now(), 'pr': pr}
+    return record
+
+
+def issue_record(project, repo, issue):
+    body = json.loads(run('gh', 'issue', 'view', str(issue), '--json', 'number,title,body,state', cwd=project))
+    require(body.get('number') == issue and str(body.get('state', '')).lower() == 'open',
+            f'issue {issue} is missing or is not open')
+    pages = json.loads(run('gh', 'api', f'repos/{repo}/issues/{issue}/comments',
+                          '--paginate', '--slurp', cwd=project))
+    require(isinstance(pages, list) and all(isinstance(page, list) for page in pages),
+            'ordered comment pagination returned an unknown shape')
+    comments = [comment for page in pages for comment in page]
+    require(all(isinstance(c, dict) and isinstance(c.get('body'), str)
+                and c.get('created_at') and c.get('user', {}).get('login') for c in comments),
+            'issue comments are incomplete')
+    # Keep every complete record, including dispatch records; no trimming or selective rewriting.
+    require(all(isinstance(c.get('id'), int) for c in comments), 'comment identity is missing')
+    comments.sort(key=lambda c: c['id'])
+    require(len({c['id'] for c in comments}) == len(comments), 'duplicate paginated issue comments')
+    return body, comments
+
+
+def prepare(project, record, args, installer):
+    if args.cont:
+        require(record and record['status'] == 'finished' and record['runs'][-1].get('finished'),
+                'continuation requires recorded finished native evidence')
+        require(args.brief and args.brief.is_file(), 'continuation requires an existing --brief')
+        require(args.native_status, 'continuation requires fresh --native-status list_agents evidence')
+        data, status, finished = captured_status(record, args.native_status, fresh=True)
+        require(finished, 'native child is unfinished; continuation cannot create another writer')
+        record['runs'][-1]['status_observation'] = {'observed_at': now(), 'result': data}
+        for flag, value in (('branch', args.branch), ('worktree', args.worktree), ('purpose', args.purpose)):
+            if value is not None:
+                actual = str(resolved(value, flag)) if flag == 'worktree' else value
+                require(actual == record[flag], f'continuation {flag} differs from the recorded lane')
+        require(not args.base or args.base == record['base'], 'continuation base differs from the recorded lane')
+        require(not args.pr or record['pr'] == f"https://github.com/{record['repo']}/pull/{args.pr}",
+                'continuation PR differs from recorded lane')
+        purpose, branch, worktree, base = (record['purpose'], record['branch'],
+                                          resolved(record['worktree'], 'worktree'), record['base'])
+    else:
+        require(not record, 'a lane already exists; continue with finished evidence instead of overwriting')
+        require(args.purpose, '--purpose is required (worker or reviewer)')
+        purpose = args.purpose
+        branch, worktree, base = args.branch, args.worktree, args.base or 'origin/main'
+    repo = json.loads(run('gh', 'repo', 'view', '--json', 'nameWithOwner', cwd=project))['nameWithOwner']
+    if record:
+        require(repo == record['repo'], 'project repository differs from recorded lane')
+    issue, comments = issue_record(project, repo, args.issue)
+    model, effort = route_setting(purpose, args.model, args.effort)
+    packet = ''
+    if purpose == 'reviewer':
+        require(args.packet and args.packet.is_file(), 'reviewer requires the whole canonical filled --packet')
+        packet = args.packet.read_text()
+        require(packet.strip(), 'review packet is empty')
+    if args.adopt:
+        require(branch and worktree, 'adoption requires explicit --branch and --worktree')
+    branch = branch or f"task/{args.issue}-{slug(issue['title'])}"
+    worktree = resolved(worktree or project / '.codex-method/worktrees' / f"{args.issue}-{slug(issue['title'])}", 'worktree')
+    require(worktree != project, 'a lane must be a linked worktree, not the main checkout')
+    if not args.cont and not args.adopt:
+        ignored = subprocess.run(['git', 'check-ignore', '-q', str(worktree / 'probe')], cwd=project).returncode == 0
+        require(ignored, 'the worktree directory must be gitignored before creation')
+        run('git', 'rev-parse', '--verify', base + '^{commit}', cwd=project)
+        run('git', 'worktree', 'add', str(worktree), '-b', branch, base, cwd=project)
+    lane_check(project, branch, worktree, base)
+    lane_id = f'{args.issue}-{uuid.uuid4().hex}'
+    scratch = project / '.codex-method/lanes' / str(args.issue) / lane_id
+    scratch.mkdir(parents=True)
+    brief, receipt = scratch / 'brief.txt', scratch / 'native-spawn.json'
+    baseline = run('git', 'status', '--porcelain', '--untracked-files=all', cwd=worktree)
+    role_name = 'method_' + purpose
+    role = tomllib.loads(installer['role_files']()[role_name + '.toml'])['developer_instructions']
+    record_text = '\n\n'.join(
+        f"Comment {c['id']} — {c['created_at']} — {c['user']['login']}\n"
+        f"----- BEGIN COMMENT {c['id']} -----\n{c['body']}\n----- END COMMENT {c['id']} -----"
+        for c in comments) or '(no comments)'
+    continuation = args.brief.read_text() if args.cont else ''
+    text = (f'# Task packet\nIssue: https://github.com/{repo}/issues/{args.issue}\n'
+            f'Branch: {branch}\nWorktree: {worktree}\nNamed base: {base}\n'
+            f'Role references resolve from: {ROOT}\nRole: {purpose}\n'
+            f'Executor: Codex {model} at {effort}\nRecord language: English\n'
+            'Commit trailer: Co-Authored-By: codex-method worker <noreply@openai.com>\n')
+    pr_url = record.get('pr') if record else (f'https://github.com/{repo}/pull/{args.pr}' if args.pr else None)
+    if pr_url:
+        text += f'PR: {pr_url}\n'
+    text += (f'\nSet workdir={worktree} on EVERY exec_command and other command call. '
+             'Native children inherit parent cwd and permissions; OS-per-child isolation and '
+             'OS-enforced reviewer read-only mode are unsupported. The role hook guards ordinary '
+             'operations; it is not adversarial credential isolation.\n'
+             '\n----- BEGIN ISSUE BODY -----\n' + issue['body'] + '\n----- END ISSUE BODY -----\n'
+             '\nWhole ordered issue record (all comments, verbatim):\n' + record_text + '\n'
+             '\nFull role contract:\n' + role + '\n')
+    if continuation:
+        text += '\nContinuation brief (verbatim):\n' + continuation + '\n'
+    if packet:
+        text += '\nReview packet (verbatim):\n' + packet + '\n'
+    brief.write_text(text)
+    task_name = 'issue_' + str(args.issue) + '_' + purpose + '_' + uuid.uuid4().hex[:12]
+    spawn = {'task_name': task_name, 'message': text, 'agent_type': role_name,
+             'fork_turns': 'none', 'model': model, 'reasoning_effort': effort}
+    write_json(receipt, spawn)
+    return {'kind':'run', 'lane_id':lane_id, 'issue':args.issue, 'repo':repo,
+            'branch':branch, 'worktree':str(worktree), 'base':base, 'purpose':purpose,
+            'model':model, 'effort':effort, 'brief':str(brief), 'instruction':str(receipt),
+            'pr':pr_url, 'issue_state':issue['state'], 'status':'awaiting-native-spawn',
+            'host_version':args.host_version, 'interface':'codex-v2',
+            'runs': (record['runs'] if record else []) + [
+                {'lane_id':lane_id, 'task_name':task_name, 'brief':str(brief),
+                 'instruction':str(receipt), 'prepared_at':now(), 'pre_write_status':baseline,
+                 'finished':False}],
+            'notice':'Prepared only. Call native spawn_agent with native-spawn.json exactly; '
+            'capture its result via --record-spawn. Use list_agents for --record-status. '
+            'Receipts must be actual host outputs; this CLI cannot authenticate them or stop a child.'}
+
+
+def bind_pr(project, record, number):
+    if number is None:
+        return
+    require(number > 0, 'PR number must be positive')
+    expected = f"https://github.com/{record['repo']}/pull/{number}"
+    if record.get('pr'):
+        require(record['pr'] == expected, 'PR identity differs from the recorded lane')
+        return
+    pr = json.loads(run('gh', 'api', f"repos/{record['repo']}/pulls/{number}", cwd=project))
+    head = lane_check(project, record['branch'], resolved(record['worktree'], 'worktree'), record['base'])
+    require(pr.get('number') == number and pr.get('html_url') == expected
+            and pr.get('head', {}).get('ref') == record['branch']
+            and pr.get('head', {}).get('sha') == head
+            and pr.get('head', {}).get('repo', {}).get('full_name') == record['repo']
+            and pr.get('base', {}).get('repo', {}).get('full_name') == record['repo'],
+            'returned PR does not match the exact lane repository, branch and head')
+    record['pr'] = expected
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        prog='dispatch', description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""Flag contracts
-  issue --purpose {worker,reviewer} --base REF
-      A new lane: one branch, one worktree under .codex-method/worktrees/, one brief. Requires the
-      worktree root to be gitignored (the pre-creation ignore check).
-  --continue --brief FILE [--pr N]
-      Resume a lane; --brief is required and must exist. The record is fetched again on every launch.
-  --adopt --base REF --branch B --worktree W [--pr N]
-      Take over an existing branch and worktree instead of creating them. Needs a purpose.
-  --reconcile-lost /exact/recorded/scratch/brief.txt --reason TEXT --evidence URL
-      Resolve one lost run on originating-host inspection. Preconditions: the path must be the
-      exact recorded scratch path, absolute, and an existing file; --reason and --evidence are
-      required. It resolves one run without inventing an exit or output. If inspection is
-      unavailable, remain blocked.
-  --cleanup --pr N
-      Teardown after integration. Requires the integrated PR (matched by its URL on the lane
-      record), a stopped executor, and no tracked, untracked, ignored or sole-copy leftovers.
-      Remove the worktree before its branch, then prune.
-  --model / --effort
-      Override the anchored role row for this dispatch only.
-  --wait
-      Keep the invoking tool call alive until the run returns. Only the supervisor's completion
-      marker reports an observed exit. Retain the brief, output and completion marker until cleanup.
-
-What it writes
-  .codex-method/lanes/<issue>.json — the lane record (branch, worktree, base, purpose, model,
-      effort, brief, PR URL). Read back by --cleanup.
-  <scratch>/native-spawn.json — the native-worker receipt: subagent type, model, effort, the full
-      brief, conversation-history forking disabled, and the instruction to record the returned
-      handle on the issue. Hand it to Codex's native spawn; the dispatcher launches nothing.""")
+    parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('issue', type=int, nargs='?')
+    parser.add_argument('--project', type=Path, default=Path.cwd())
+    parser.add_argument('--host-version', help='observed host version; only 0.159.2 is qualified')
     parser.add_argument('--purpose', choices=['worker', 'reviewer'])
-    parser.add_argument('--base', default='origin/main')
-    parser.add_argument('--continue', dest='cont', action='store_true')
-    parser.add_argument('--brief', type=Path)
-    parser.add_argument('--pr', type=int)
-    parser.add_argument('--packet', type=Path)
-    parser.add_argument('--cleanup', action='store_true')
-    parser.add_argument('--adopt', action='store_true')
+    parser.add_argument('--base')
     parser.add_argument('--branch')
     parser.add_argument('--worktree', type=Path)
+    parser.add_argument('--brief', type=Path)
+    parser.add_argument('--packet', type=Path)
+    parser.add_argument('--pr', type=int)
     parser.add_argument('--model')
     parser.add_argument('--effort')
-    parser.add_argument('--wait', action='store_true')
-    parser.add_argument('--reconcile-lost', type=Path)
-    parser.add_argument('--reason')
-    parser.add_argument('--evidence')
-    parser.add_argument('--project', type=Path, default=ROOT)
+    actions = parser.add_mutually_exclusive_group()
+    actions.add_argument('--continue', dest='cont', action='store_true')
+    actions.add_argument('--adopt', action='store_true')
+    actions.add_argument('--record-spawn', type=Path, help='captured native spawn_agent JSON result')
+    actions.add_argument('--record-status', type=Path, help='captured native list_agents JSON result')
+    actions.add_argument('--cleanup', action='store_true')
+    parser.add_argument('--native-status', type=Path, help='fresh native list_agents capture for cleanup')
     args = parser.parse_args()
-
+    require(args.issue and args.issue > 0, 'an issue number is required')
     project = resolved(args.project, 'project')
-    repo = json.loads(run('gh', 'repo', 'view', '--json', 'nameWithOwner', cwd=project))['nameWithOwner']
-
-    if args.cleanup:
-        require(args.issue and args.pr, 'cleanup needs --pr and an issue number')
-        record = json.loads((project / '.codex-method' / 'lanes' / f'{args.issue}.json').read_text())
-        recorded = record.get('pr') or ''
-        require(recorded.endswith(f'/pull/{args.pr}') or recorded == str(args.pr),
-                'cleanup needs the integrated PR')
-        worktree = Path(record['worktree'])
-        require(not worktree.exists() or not (worktree / '.git').exists()
-                and not (worktree / '.git').is_file(),
-                'the lane worktree is still registered; inspect it before teardown')
-        run('git', 'worktree', 'prune', cwd=project)
-        branch = record['branch']
-        if branch:
-            run('git', 'branch', '-D', branch, cwd=project, input='')
-        print(json.dumps({'kind': 'cleanup', 'issue': args.issue, 'status': 'cleaned'}, indent=2))
-        return
-
-    if args.reconcile_lost:
-        require(args.issue, 'reconcile-lost needs an issue number')
-        require(args.reason and args.evidence, '--reason and --evidence are required')
-        path = resolved(args.reconcile_lost, 'brief')
-        require(path.is_file(), f'{path} is not a file')
-        require(str(path).startswith('/'), 'use the exact recorded scratch path')
-        print(json.dumps({'kind': 'reconciled-lost', 'issue': args.issue, 'brief': str(path),
-                          'evidence': args.evidence}, indent=2))
-        return
-
-    require(args.issue, 'an issue number is required')
-    require(args.purpose or args.adopt, '--purpose is required (worker or reviewer)')
-    issue = args.issue
-    args.purpose = args.purpose or 'worker'
-
-    project = resolved(args.project, 'project')
-    repo = json.loads(run('gh', 'repo', 'view', '--json', 'nameWithOwner', cwd=project))['nameWithOwner']
-
-    model, effort = route_setting(args.purpose, args.model, args.effort)
-    issue_body = run('gh', 'issue', 'view', str(issue), '--json', 'number,title,body,state',
-                     cwd=project)
-    issue_data = json.loads(issue_body)
-    issue_comments = json.loads(run('gh', 'issue', 'view', str(issue), '--json', 'comments',
-                                    cwd=project)).get('comments') or []
-    require(issue_data['state'] == 'open', f'issue {issue} is not open')
-    title = slug(issue_data['title'])
-    branch = args.branch or f'task/{issue}-{title}'
-    worktree = args.worktree or project / '.codex-method' / 'worktrees' / f'{issue}-{title}'
-
-    if not args.cont and not args.adopt:
-        ignored = subprocess.run(['git', 'check-ignore', '-q', '.codex-method/worktrees/probe'],
-                                 cwd=project).returncode == 0
-        require(ignored, 'the worktree directory must be gitignored; see the Worktree lifecycle')
-        run('git', 'fetch', 'origin', cwd=project)
-        run('git', 'worktree', 'add', str(worktree), '-b', branch, args.base, cwd=project)
-
-    lane = f'{issue}-{int(time.time_ns())}'
-    brief_dir = Path(os.environ.get('TMPDIR', '/tmp')) / f'codex-method-{issue}-worker-{slug(lane, 12)}'
-    brief_dir.mkdir(parents=True, exist_ok=True)
-    brief = brief_dir / 'brief.txt'
-    if args.cont:
-        require(args.brief, 'a continuation requires --brief')
-        require(args.brief.is_file(), f'{args.brief} is not a file')
-        brief.write_text(args.brief.read_text())
-    else:
-        packet = args.packet.read_text() if args.packet and args.purpose == 'reviewer' else ''
-        brief.write_text(f"""
-# Task packet
-Issue: https://github.com/{repo}/issues/{issue}
-Branch: {branch}
-Worktree: {worktree}
-Named base: {args.base}
-Role references resolve from: {ROOT}
-
-Issue body (verbatim):
------ BEGIN ISSUE BODY -----
-{issue_data['body']}
------ END ISSUE BODY -----
-
-Ordered record (every non-dispatch comment, with author and date):
-{chr(10).join(f"- {c.get('createdAt', '')} {c.get('author', {}).get('login', 'unknown')}: {c.get('body', '')[:400]}" for c in issue_comments) or '- none'}
-
-Read `reference/worker.md` in full before acting; it is your operating contract for this task.
-
-{('Review packet (verbatim):' + chr(10) + packet) if packet else ''}
-Role: {args.purpose}. Model: {model} at {effort}.
-{helper_line(ROOT)}
-Executor: Codex {model} at {effort}. Record language: English.
-Commit trailer: Co-Authored-By: codex-method worker <noreply@anthropic.com>
-Return the PR and evidence to the caller; never merge.
-""".strip() + '\n')
-
-    receipt = brief_dir / 'native-spawn.json'
-    record = {
-        'kind': 'run', 'lane_id': lane, 'issue': issue, 'repo': repo,
-        'branch': branch, 'worktree': str(worktree), 'base': args.base,
-        'purpose': args.purpose, 'model': model, 'effort': effort,
-        'brief': str(brief), 'pr': (f'https://github.com/{repo}/pull/{args.pr}' if args.pr else None),
-        'issue_state': issue_data['state'], 'status': 'awaiting-native-spawn',
-        'instruction': str(receipt), 'wait': args.wait,
-    }
-    receipt.write_text(json.dumps({
-        'subagent_type': 'codex-method:worker' if args.purpose == 'worker' else 'codex-method:reviewer',
-        'model': model, 'effort': effort,
-        'description': f'Issue {issue} {args.purpose}',
-        'prompt': brief.read_text(),
-        'run_in_background': True,
-        'record_this_handle_on_the_issue': True,
-        'conversation_history_forking': False,
-        'hook_settings': hook_config(ROOT, args.purpose),
-    }, indent=2))
-
-    lanes = project / '.codex-method' / 'lanes'
-    lanes.mkdir(parents=True, exist_ok=True)
-    (lanes / f'{issue}.json').write_text(json.dumps(record, indent=2) + '\n')
-    print(json.dumps({**record, 'notice':
-                      'Not launched: native-spawn.json records the requested settings. Hand it to '
-                      "Codex's native spawn with history forking disabled, then record the returned "
-                      'handle on the issue.'}, indent=2))
+    require(project.is_dir(), 'target project does not exist')
+    installer = qualify(project, args.host_version)
+    with locked(project, args.issue, args.purpose) as path:
+        record = read_json(path) if path.exists() else None
+        if args.record_spawn or args.record_status or args.cleanup:
+            require(record and record.get('interface') == 'codex-v2' and record.get('status') != 'cleaned',
+                    'no active qualified native lane record')
+            if not args.cleanup:
+                bind_pr(project, record, args.pr)
+            record = (cleanup(project, record, args) if args.cleanup else
+                      observe(record, args.record_spawn or args.record_status, bool(args.record_spawn)))
+        else:
+            record = prepare(project, record, args, installer)
+        write_json(path, record)
+        print(json.dumps(record, indent=2, ensure_ascii=False))
 
 
 if __name__ == '__main__':
     try:
         main()
-    except Refusal as refusal:
-        print(f'dispatch refused: {refusal}', file=sys.stderr)
+    except (Refusal, OSError, ValueError, KeyError) as error:
+        print(f'dispatch refused: {error}', file=sys.stderr)
         sys.exit(1)
