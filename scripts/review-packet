@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / 'scripts'))
 from hard_edges import (Refusal, api, arbitration_settings, filled, helper_line, require,  # noqa: E402
                         resolved, round_check, run)
-from review_packet import DECISION_LABELS, decisions, published_body  # noqa: E402
+from review_packet import DECISION_LABELS, UNPINNED, decisions, published_body  # noqa: E402
 
 HEADING = re.compile(r'^## Merge check 1 — round (\d+)', re.M)
 ATTEMPT = re.compile(r'"attempt":\s*"?(\d+)"?')
@@ -30,36 +30,52 @@ def comments(project, number):
     return api(f'repos/{repo_of(project)}/issues/{number}/comments') or []
 
 
-def packet_text(project, issue, number, architecture, output, ci_fallback=None):
-    head = run('gh', 'pr', 'view', str(number), '--json', 'headRefOid', cwd=project)
-    head_sha = json.loads(head)['headRefOid']
+def packet_text(project, issue, number, architecture, output, ci_fallback=None,
+                model=None, effort=None):
+    """Fill every slot the shipped reviewer contract names, and report what it could not pin."""
+    from review_packet import FORMAT, predicate, render, template
+
+    repo = repo_of(project)
+    pr = json.loads(run('gh', 'pr', 'view', str(number), '--json',
+                        'title,body,headRefOid,baseRefName,baseRefOid', cwd=project))
+    head_sha = pr['headRefOid']
+    base_sha = pr['baseRefOid']
     checks = json.loads(run('gh', 'pr', 'checks', str(number), '--json', 'name,bucket', cwd=project))
     failing = [c['name'] for c in checks if c['bucket'] not in ('pass', 'neutral', 'skipped')]
     require(not failing, f'checks not green on {head_sha}: {failing}')
-    body = json.loads(run('gh', 'pr', 'view', str(number), '--json', 'title,body', cwd=project))
-    issue_body = json.loads(run('gh', 'issue', 'view', str(issue), '--json', 'body', cwd=project))['body']
-    text = f"""# Review packet
-PR: https://github.com/{repo_of(project)}/pull/{number}
-Issue: https://github.com/{repo_of(project)}/issues/{issue}
-Head: {head_sha}
-Architecture-level: {'YES' if architecture else 'NO'}
-CI-FALLBACK: {ci_fallback or 'NONE'}
-Packet integrity: this assembler pins the head, the base and the reported checks.
-Any slot it could not produce is listed here rather than withheld. It does not run
-the repository's diff capture; a ground about a missing diff form is the reviewer's
-to raise.
 
-## Issue body (verbatim)
-{issue_body}
+    issue_body = json.loads(run('gh', 'issue', 'view', str(issue), '--json', 'body',
+                                cwd=project))['body']
 
-## PR title and body (verbatim)
-{body['title']}
+    def section(name):
+        match = re.search(rf'^## {name}\s*\n(.*?)(?=^## |\Z)', issue_body, re.S | re.M)
+        return match.group(1).strip() if match else UNPINNED
 
-{body['body']}
+    changed = run('gh', 'pr', 'diff', str(number), '--name-only', cwd=project).splitlines()
+    ci_paths = [c for c in changed if c.startswith('.github/workflows/')]
+    identity = (f'Codex, {model} at {effort}, read-only' if model and effort
+                else 'Codex, the reviewer as invoked')
 
-## Checks
-{chr(10).join(f"- {c['name']}: {c['bucket']}" for c in checks)}
-"""
+    slots = {
+        'REVIEW_BASE_SHA': base_sha,
+        'HEAD_SHA': head_sha,
+        'CONVENTION_BASE_SHA': base_sha,
+        'ACCEPTED_SPEC_BLOB_SHA': 'NONE',
+        'ARCHITECTURE_LEVEL_FLAG': 'YES' if architecture else 'NO',
+        'CI_CONFIGURATION_PATHS': '\n'.join(ci_paths) if ci_paths else 'NONE',
+        'CI_FALLBACK_COMMENT_OR_NONE': ci_fallback or 'NONE',
+        'COMPLETE_PR_DESCRIPTION': pr['body'] or '(empty)',
+        'ISSUE_GOAL_STATEMENT': section('Goal'),
+        'ISSUE_BOUNDS': section('Bounds'),
+        'ISSUE_DONE_CHECK': section('Done-check'),
+        'REVIEWER_IDENTITY': identity,
+    }
+    unit, gap = predicate()
+    if unit and not gap:
+        slots['IN_REPO_WRITES_PREDICATE'] = unit
+    packet = {'template': template(), 'slots': slots, 'issue_body': issue_body,
+              'format': FORMAT}
+    text = render(packet, identity)
     Path(output).mkdir(parents=True, exist_ok=True)
     (Path(output) / 'packet.md').write_text(text)
     return text, head_sha
@@ -154,7 +170,7 @@ Record association
     require(args.output, 'assemble and start need --output')
     architecture = args.arch == 'yes' if args.arch else False
     text, head = packet_text(project, issue, number, architecture, args.output,
-                            args.ci_fallback)
+                            args.ci_fallback, args.model, args.effort)
     if args.action == 'assemble':
         print(json.dumps({'kind': 'packet', 'head': head, 'file': str(args.output / 'packet.md')},
                          indent=2))
