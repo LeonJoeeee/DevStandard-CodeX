@@ -1,3 +1,4 @@
 .codex-method/
-scripts/__pycache__/
+__pycache__/
+*.pyc
 tests/.scratch-page/
