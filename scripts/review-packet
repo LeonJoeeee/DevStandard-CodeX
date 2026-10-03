@@ -30,7 +30,7 @@ def comments(project, number):
     return api(f'repos/{repo_of(project)}/issues/{number}/comments') or []
 
 
-def packet_text(project, issue, number, architecture, output):
+def packet_text(project, issue, number, architecture, output, ci_fallback=None):
     head = run('gh', 'pr', 'view', str(number), '--json', 'headRefOid', cwd=project)
     head_sha = json.loads(head)['headRefOid']
     checks = json.loads(run('gh', 'pr', 'checks', str(number), '--json', 'name,bucket', cwd=project))
@@ -43,7 +43,7 @@ PR: https://github.com/{repo_of(project)}/pull/{number}
 Issue: https://github.com/{repo_of(project)}/issues/{issue}
 Head: {head_sha}
 Architecture-level: {'YES' if architecture else 'NO'}
-CI-FALLBACK: {args.ci_fallback or 'NONE'}
+CI-FALLBACK: {ci_fallback or 'NONE'}
 Packet integrity: this assembler pins the head, the base and the reported checks.
 Any slot it could not produce is listed here rather than withheld. It does not run
 the repository's diff capture; a ground about a missing diff form is the reviewer's
@@ -138,8 +138,8 @@ Record association
         match = HEADING.search(target[0].get('body') or '')
         round_number = int(match.group(1)) if match else 1
         run('gh', 'api', '-X', 'PATCH', f'repos/{repo}/issues/comments/{args.attempt}',
-            '-f', body=(f'## Merge check 1 — round {round_number}\n\n{body}' if args.action == 'publish'
-                        else f'## Merge check 1 — round {round_number} — failed\n\n{args.reason}'),
+            '-f', 'body=' + (f'## Merge check 1 — round {round_number}\n\n{body}' if args.action == 'publish'
+                            else f'## Merge check 1 — round {round_number} — failed\n\n{args.reason}'),
             cwd=project)
         print(json.dumps({'kind': args.action, 'attempt': args.attempt}, indent=2))
         return
@@ -153,7 +153,8 @@ Record association
 
     require(args.output, 'assemble and start need --output')
     architecture = args.arch == 'yes' if args.arch else False
-    text, head = packet_text(project, issue, number, architecture, args.output)
+    text, head = packet_text(project, issue, number, architecture, args.output,
+                            args.ci_fallback)
     if args.action == 'assemble':
         print(json.dumps({'kind': 'packet', 'head': head, 'file': str(args.output / 'packet.md')},
                          indent=2))
@@ -179,7 +180,7 @@ The packet follows. Judge Goal and both Floors; post the whole verdict on this P
 {chr(10) * 2}{text}
 """
     posted = run('gh', 'api', '-X', 'POST', f'repos/{repo}/issues/{number}/comments',
-                 '-f', body=body, cwd=project)
+                 '-f', f'body={body}', cwd=project)
     comment_id = json.loads(posted)['id']
     print(json.dumps({'kind': 'reservation', 'comment_id': comment_id, 'head': head,
                       'model': model, 'effort': effort,
