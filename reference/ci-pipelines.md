@@ -112,7 +112,7 @@ If the project genuinely has no release form yet, generate CI only and record th
 
 Both files land in the target repo under `.github/workflows/`.
 
-The same setup step also generates the repo-root `CLAUDE.md`, when the project has anything to put in it — `reference/repo-claude-md.md` (that file stays the operational memory on every harness). The same founding commit also seeds the in-repo worktree root into `.gitignore` (`/.codex-method/worktrees/`) — the line every later worktree creation checks for (`reference/orchestrator.md`'s Worktree lifecycle section, Birth).
+The same setup step also generates the repo-root `AGENTS.md`, when the project has anything to put in it — `reference/repo-agents-md.md` (that file stays the operational memory on every harness). The same founding commit also seeds the in-repo worktree root into `.gitignore` (`/.codex-method/worktrees/`) — the line every later worktree creation checks for (`reference/orchestrator.md`'s Worktree lifecycle section, Birth).
 
 ## When CI goes red with no change of yours
 

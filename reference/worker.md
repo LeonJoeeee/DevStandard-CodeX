@@ -80,13 +80,13 @@ one, says how you recover your binding, what you may spawn, and what your sandbo
 
 ## 3. Before the first write
 
-1. Read the repository-root `CLAUDE.md` in full when present; this is explicit. Read
+1. Read the repository-root `AGENTS.md` in full when present; this is explicit. Read
    canonical `docs/architecture.md` and decisions relevant to the task. Respect existing
    `AGENTS.md`. Build against the named current base.
 2. Validate the assigned lane: the resolved top level equals the recorded worktree, git-dir differs
    from common-dir, the current branch equals the packet, and the named base resolves. A mismatch
    stops; do not adapt or create another lane.
-3. Copy only untracked inputs named by the project's `CLAUDE.md` allowlist. No list means no copy.
+3. Copy only untracked inputs named by the project's `AGENTS.md` allowlist. No list means no copy.
 4. Before installs, tests, or task-generated writes, inspect existing changes with
    `git status --porcelain -uall`. Publish and account for the baseline where the issue requires it.
    Install dependencies and run the baseline suite. An unrelated installation, runtime, or test
@@ -101,9 +101,9 @@ one, says how you recover your binding, what you may spawn, and what your sandbo
 
 Implement the accepted design in this lane. Make the decisions it leaves within Bounds and disclose
 material choices in the PR. Update every document the change invalidates in the same diff. A PRD or
-architecture expansion returns before implementation. `CLAUDE.md` accepts only commands,
+architecture expansion returns before implementation. `AGENTS.md` accepts only commands,
 environment gotchas, worktree copy-list entries, and a record-language declaration under
-`reference/repo-claude-md.md`.
+`reference/repo-agents-md.md`.
 
 Write code, comments, documentation, commits, and GitHub records in the packet's language. Product
 text follows its audience. Use the supplied commit attribution. Read the whole diff before delivery

@@ -30,7 +30,7 @@ Founding is the orchestrator's work, and it configures nothing: the guard has no
 1. **Create the repo**, after asking the human two things: the name, and public or private.
 2. **Push the founding commits directly to main** — this PRD, the architecture doc, the skeleton,
    the CI and Dependabot files from `reference/ci-pipelines.md`, the `/.codex-method/worktrees/` line in
-   `.gitignore`, and the repo-root `CLAUDE.md` if the project has anything to put in it.
+   `.gitignore`, and the repo-root `AGENTS.md` if the project has anything to put in it.
 3. **Apply branch protection last**: `guard protection --apply --check NAME` on main, naming the
    status check the CI file in step 2 reports. That command is the step that ends direct pushes,
    for every account including this one. The hook does not gate it — it stays the human's or the
