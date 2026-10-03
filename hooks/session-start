@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# SessionStart delivery for a Codex main session.
+#
+# One page per role. Each artifact has its own hook output; a page the host cannot carry in one
+# output is emitted across ordered handler calls whose parts concatenate, in part order, to the
+# file's exact bytes. CAP_BYTES bounds ONE part, never the page.
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+ROLE="${1:-orchestrator}"
+PART="${2:-1}"
+PARTS="${3:-1}"
+CAP_BYTES="${CODEX_METHOD_CAP_BYTES:-8000}"
+
+case "$ROLE" in
+  orchestrator) PAGE="$ROOT/reference/orchestrator.md" ;;
+  worker) PAGE="$ROOT/reference/worker.md" ;;
+  *) PAGE="$ROOT/reference/${ROLE}.md" ;;
+esac
+
+if [ ! -f "$PAGE" ]; then
+  printf '{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"codex-method: the %s page is missing at %s. Read the repository reference/ before acting."}}\n' "$ROLE" "$PAGE"
+  exit 0
+fi
+
+python3 - "$PAGE" "$PART" "$PARTS" "$CAP_BYTES" "$ROLE" <<'PY'
+import json, re, sys
+from pathlib import Path
+
+page = Path(sys.argv[1])
+part, parts_declared, cap = int(sys.argv[2]), int(sys.argv[3]), int(sys.argv[4])
+role = sys.argv[5]
+data = page.read_bytes()
+total = max(1, (len(data) + cap - 1) // cap)
+if part > total:
+    raise SystemExit(0)
+chunk = data[(part - 1) * cap: part * cap]
+marker = f'--- codex-method part {part} of {total} ---'
+if part == 1 and total > 1:
+    preamble = (f'codex-method operating context: reference/{role}.md (part 1 of {total})\n'
+                f'This artifact is delivered in {total} numbered parts, one per hook output, in '
+                f'part order.\nConcatenate the parts below the marker with nothing between them to '
+                f'reconstruct the page exactly,\nand follow the whole page before acting or '
+                f'replying. Resolve references from this root; load them only at their triggers.\n'
+                f'{marker}\n')
+elif total > 1:
+    preamble = f'reference/{role}.md (part {part} of {total})\n{marker}\n'
+else:
+    preamble = f'codex-method operating context: reference/{role}.md\n{marker}\n'
+payload = preamble.encode() + chunk
+print(json.dumps({"hookSpecificOutput": {
+    "hookEventName": "SessionStart", "additionalContext": payload.decode()}}))
+PY

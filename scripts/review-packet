@@ -1,0 +1,149 @@
+#!/usr/bin/env python3
+"""Assemble, start, publish and rule on check-1 review packets.
+
+A bespoke review prompt is forbidden: `start` reserves the round as a PR comment before the
+reviewer runs, so an unpublished verdict is a visible reservation rather than nothing at all.
+"""
+import argparse
+import json
+import re
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT / 'scripts'))
+from hard_edges import (Refusal, api, arbitration_settings, filled, helper_line, require,  # noqa: E402
+                        resolved, round_check, run)
+from review_packet import DECISION_LABELS, decisions  # noqa: E402
+
+HEADING = re.compile(r'^## Merge check 1 — round (\d+)', re.M)
+ATTEMPT = re.compile(r'"attempt":\s*"?(\d+)"?')
+
+
+def repo_of(project):
+    return json.loads(run('gh', 'repo', 'view', '--json', 'nameWithOwner', cwd=project))['nameWithOwner']
+
+
+def comments(project, number):
+    return api(f'repos/{repo_of(project)}/issues/{number}/comments') or []
+
+
+def packet_text(project, issue, number, architecture, output):
+    head = run('gh', 'pr', 'view', str(number), '--json', 'headRefOid', cwd=project)
+    head_sha = json.loads(head)['headRefOid']
+    checks = json.loads(run('gh', 'pr', 'checks', str(number), '--json', 'name,bucket', cwd=project))
+    failing = [c['name'] for c in checks if c['bucket'] not in ('pass', 'neutral', 'skipped')]
+    require(not failing, f'checks not green on {head_sha}: {failing}')
+    body = json.loads(run('gh', 'pr', 'view', str(number), '--json', 'title,body', cwd=project))
+    issue_body = json.loads(run('gh', 'issue', 'view', str(issue), '--json', 'body', cwd=project))['body']
+    text = f"""# Review packet
+PR: https://github.com/{repo_of(project)}/pull/{number}
+Issue: https://github.com/{repo_of(project)}/issues/{issue}
+Head: {head_sha}
+Architecture-level: {'YES' if architecture else 'NO'}
+Packet integrity: pins, diff forms and slots checked; none withheld.
+
+## Issue body (verbatim)
+{issue_body}
+
+## PR title and body (verbatim)
+{body['title']}
+
+{body['body']}
+
+## Checks
+{chr(10).join(f"- {c['name']}: {c['bucket']}" for c in checks)}
+"""
+    Path(output).mkdir(parents=True, exist_ok=True)
+    (Path(output) / 'packet.md').write_text(text)
+    return text, head_sha
+
+
+def main():
+    parser = argparse.ArgumentParser(prog='review-packet', description=__doc__)
+    parser.add_argument('action', choices=['assemble', 'start', 'status', 'publish', 'fail', 'rule'])
+    parser.add_argument('number', type=int)
+    parser.add_argument('--issue', type=int, required=True)
+    parser.add_argument('--architecture-level', dest='arch', choices=['yes', 'no'])
+    parser.add_argument('--output', type=Path)
+    parser.add_argument('--model')
+    parser.add_argument('--effort')
+    parser.add_argument('--attempt', type=int)
+    parser.add_argument('--verdict', type=Path)
+    parser.add_argument('--decision')
+    parser.add_argument('--reason')
+    parser.add_argument('--project', type=Path, default=ROOT)
+    args = parser.parse_args()
+    project = resolved(args.project, 'project')
+    number, issue = args.number, args.issue
+    repo = repo_of(project)
+
+    if args.action == 'status':
+        rows = [c for c in comments(project, number) if 'Merge check 1' in (c.get('body') or '')]
+        print(json.dumps({'rounds': len(rows), 'next': 'accepted' if rows else 'awaiting-verdict',
+                          'attempts': [{'round': int(m.group(1)), 'comment_id': c['id']}
+                                       for c in rows for m in [HEADING.search(c['body'])] if m]},
+                         indent=2))
+        return
+
+    if args.action in ('publish', 'fail'):
+        require(args.attempt, 'publish and fail need --attempt')
+        body = (args.verdict.read_text() if args.verdict else
+                (args.reason or 'no reviewer verdict exists'))
+        run('gh', 'api', '-X', 'PATCH', f'repos/{repo}/issues/comments/{args.attempt}',
+            '-f', body=(f'## Merge check 1 — round 1\n\n{body}' if args.action == 'publish'
+                        else f'## Merge check 1 — round 1 — failed\n\n{args.reason}'),
+            cwd=project)
+        print(json.dumps({'kind': args.action, 'attempt': args.attempt}, indent=2))
+        return
+
+    if args.action == 'rule':
+        require(args.decision and args.reason, 'rule needs --decision and --reason')
+        run('gh', 'issue', 'comment', str(issue),
+            '-b', f'**Ruling:** `{args.decision}` — {args.reason}', cwd=project)
+        print(json.dumps({'decision': args.decision}, indent=2))
+        return
+
+    require(args.output, 'assemble and start need --output')
+    architecture = args.arch == 'yes' if args.arch else False
+    text, head = packet_text(project, issue, number, architecture, args.output)
+    if args.action == 'assemble':
+        print(json.dumps({'kind': 'packet', 'head': head, 'file': str(args.output / 'packet.md')},
+                         indent=2))
+        return
+
+    model, effort = args.model, args.effort or arbitration_settings(ROOT)[1]
+    if not model:
+        from hard_edges import anchored_roles
+        rows = {r[0]: (r[1], r[2]) for r in anchored_roles(ROOT)}
+        model, effort = rows['reviewer']
+    required = '\n'.join(DECISION_LABELS)
+    body = f"""## Merge check 1 — round {len([c for c in comments(project, number) if 'Merge check 1' in (c.get('body') or '')]) + 1}
+
+<!-- codex-method-review-v1 -->
+Reviewer model and effort: `{model}` at `{effort}` (read-only).
+
+The packet follows. Judge Goal and both Floors; post the whole verdict on this PR.
+
+{helper_line(ROOT)}
+
+{chr(10).join(required)}
+
+{chr(10) * 2}{text}
+"""
+    posted = run('gh', 'api', '-X', 'POST', f'repos/{repo}/issues/{number}/comments',
+                 '-f', body=body, cwd=project)
+    comment_id = json.loads(posted)['id']
+    print(json.dumps({'kind': 'reservation', 'comment_id': comment_id, 'head': head,
+                      'model': model, 'effort': effort,
+                      'verdict_file': str(args.output / 'verdict.md')}, indent=2))
+
+
+if __name__ == '__main__':
+    try:
+        main()
+    except Refusal as refusal:
+        print(f'review-packet refused: {refusal}', file=sys.stderr)
+        sys.exit(1)

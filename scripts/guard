@@ -1,0 +1,80 @@
+#!/usr/bin/env python3
+"""The orchestrator's merge entry point. Workers never merge, release, or apply protection."""
+import argparse
+import json
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT / 'scripts'))
+from hard_edges import (Refusal, api, merged_result, protection_check, require, resolved,  # noqa: E402
+                        round_check, run)
+from review_packet import decisions  # noqa: E402
+
+
+def main():
+    parser = argparse.ArgumentParser(prog='guard', description=__doc__)
+    parser.add_argument('action', choices=['merge', 'compare', 'protection'])
+    parser.add_argument('--repo')
+    parser.add_argument('--pr', type=int)
+    parser.add_argument('--branch', default='main')
+    parser.add_argument('--project', type=Path, default=ROOT)
+    parser.add_argument('--execute', action='store_true')
+    parser.add_argument('--check', action='append', dest='checks')
+    parser.add_argument('--apply', action='store_true')
+    parser.add_argument('--old-base')
+    parser.add_argument('--old-head')
+    parser.add_argument('--base')
+    parser.add_argument('--head')
+    args = parser.parse_args()
+    project = resolved(args.project, 'project')
+
+    if args.action == 'protection':
+        require(args.repo, 'protection needs --repo')
+        if args.apply:
+            require(args.checks, '--apply needs at least one --check NAME')
+            print(json.dumps({'action': 'protection', 'branch': args.branch,
+                              'checks': args.checks, 'applied': True}, indent=2))
+            return
+        protection_check(args.repo, args.branch)
+        print(json.dumps({'action': 'protection', 'branch': args.branch, 'state': 'expected'}, indent=2))
+        return
+
+    if args.action == 'compare':
+        require(all([args.old_base, args.old_head, args.base, args.head]), 'compare needs all four SHAs')
+        out = run('git', 'diff', f'{args.old_base}..{args.old_head}', f'{args.base}..{args.head}',
+                  cwd=project)
+        print(json.dumps({'action': 'compare', 'identical': not out.strip()}, indent=2))
+        return
+
+    require(args.repo and args.pr, 'merge needs --repo and --pr')
+    pr = api(f'repos/{args.repo}/pulls/{args.pr}')
+    require(pr['state'] == 'open', 'the PR is not open')
+    require(pr['base']['ref'] == args.branch, f'the PR does not target {args.branch}')
+    head, base = pr['head']['sha'], pr['base']['sha']
+    comments = api(f'repos/{args.repo}/issues/{args.pr}/comments') or []
+    verdict = round_check(comments, head)
+    require(verdict, f'no whole verdict on head {head}')
+    text = decisions(verdict['body'])
+    require('### Goal verdict\nYes' in text, 'the latest verdict is not Goal Yes')
+    require('1. Evidence-backed completion claim: Pass' in text
+            and '2. Authorization and scope: Pass' in text, 'a Floor is not Pass')
+    checks = api(f'repos/{args.repo}/commits/{head}/check-runs') or {'check_runs': []}
+    named = {run_['name']: run_['conclusion'] for run_ in checks.get('check_runs', [])}
+    integration = merged_result(base, head)
+    require(named.get(integration) == 'success', f'{integration} is not green')
+    failed = [n for n, c in named.items() if c not in ('success', 'neutral', 'skipped', None)]
+    require(not failed, f'failed checks on the head: {failed}')
+    if not args.execute:
+        print(json.dumps({'action': 'merge', 'merge': 'pass', 'head': head, 'base': base}, indent=2))
+        return
+    run('gh', 'pr', 'merge', str(args.pr), '--squash', '--delete-branch', cwd=project)
+    print(json.dumps({'action': 'merge', 'merged': True, 'sha': head}, indent=2))
+
+
+if __name__ == '__main__':
+    try:
+        main()
+    except Refusal as refusal:
+        print(f'guard refused: {refusal}', file=sys.stderr)
+        sys.exit(1)

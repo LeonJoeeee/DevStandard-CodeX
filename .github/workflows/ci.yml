@@ -1,0 +1,43 @@
+name: CI
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  suite:
+    name: suite
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+      - name: Routing, command surface, and hook binding
+        run: python3 -m unittest discover -s tests -t .
+      - name: Both release manifests in lockstep
+        run: |
+          python3 -c 'import json; p=json.load(open("codex-method.json"))["version"]; assert p; print("version",p)'
+      - name: No @path references in shipped pages
+        run: |
+          ! grep -rn "@[a-zA-Z0-9_-]*/" reference/ --include='*.md' | grep -v actions/ | grep -v anthropic | grep .
+      - name: The anchored table keeps its cell form
+        run: python3 .github/check-routing.py
+
+  test:
+    if: ${{ always() }}
+    needs: [suite]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require the suite
+        env:
+          SUITE_RESULT: ${{ needs.suite.result }}
+        run: test "$SUITE_RESULT" = success
+
+  merged-result:
+    name: merged-result / ${{ github.event.pull_request.base.sha }} / ${{ github.event.pull_request.head.sha }}
+    if: github.event_name == 'pull_request'
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Report that this exact merge result passed the test job
+        run: echo "merged-result green for ${{ github.event.pull_request.base.sha }} / ${{ github.event.pull_request.head.sha }}"

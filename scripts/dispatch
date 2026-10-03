@@ -1,0 +1,175 @@
+#!/usr/bin/env python3
+"""Prepare one dispatched lane: a Codex native-worker receipt and its brief.
+
+Every dispatched worker is this host's own built-in subagent. There is no cross-host executor,
+so the receipt carries model and effort from the anchored rows on the dispatch page and the caller
+hands it to Codex's native spawn with conversation-history forking disabled.
+"""
+import argparse
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT / 'scripts'))
+from hard_edges import (Refusal, anchored_roles, helper_line, hook_config,  # noqa: E402
+                        require, run, api, filled, resolved, base_advanced, round_check)
+
+from review_packet import decisions  # noqa: E402
+
+
+def route_setting(purpose, model=None, effort=None):
+    """The role's anchored row fixes both knobs; an explicit field wins independently."""
+    rows = {role: (m, e) for role, m, e in anchored_roles(ROOT)}
+    match = rows.get(purpose)
+    require(match, f'no anchored {purpose} row')
+    model = model if model is not None else match[0]
+    effort = effort if effort is not None else match[1]
+    require(model and effort, 'no anchored row and no explicit --model/--effort')
+    return filled(model, 'model'), filled(effort, 'effort')
+
+
+def slug(text, limit=48):
+    text = re.sub(r'[^a-z0-9]+', '-', text.lower()).strip('-')
+    return text[:limit].rstrip('-') or 'task'
+
+
+def main():
+    parser = argparse.ArgumentParser(prog='dispatch', description=__doc__)
+    parser.add_argument('issue', type=int, nargs='?')
+    parser.add_argument('--purpose', choices=['worker', 'reviewer'])
+    parser.add_argument('--base', default='origin/main')
+    parser.add_argument('--continue', dest='cont', action='store_true')
+    parser.add_argument('--brief', type=Path)
+    parser.add_argument('--pr', type=int)
+    parser.add_argument('--packet', type=Path)
+    parser.add_argument('--cleanup', action='store_true')
+    parser.add_argument('--adopt', action='store_true')
+    parser.add_argument('--branch')
+    parser.add_argument('--worktree', type=Path)
+    parser.add_argument('--model')
+    parser.add_argument('--effort')
+    parser.add_argument('--wait', action='store_true')
+    parser.add_argument('--reconcile-lost', type=Path)
+    parser.add_argument('--reason')
+    parser.add_argument('--evidence')
+    parser.add_argument('--project', type=Path, default=ROOT)
+    args = parser.parse_args()
+
+    project = resolved(args.project, 'project')
+    repo = json.loads(run('gh', 'repo', 'view', '--json', 'nameWithOwner'))['nameWithOwner']
+
+    if args.cleanup:
+        require(args.issue and args.pr, 'cleanup needs --pr and an issue number')
+        record = json.loads((project / '.codex-method' / 'lanes' / f'{args.issue}.json').read_text())
+        require(record.get('pr') == str(args.pr), 'cleanup needs the integrated PR')
+        worktree = Path(record['worktree'])
+        require(not worktree.exists() or not (worktree / '.git').exists()
+                and not (worktree / '.git').is_file(),
+                'the lane worktree is still registered; inspect it before teardown')
+        run('git', 'worktree', 'prune', cwd=project)
+        branch = record['branch']
+        if branch:
+            run('git', 'branch', '-D', branch, cwd=project, input='')
+        print(json.dumps({'kind': 'cleanup', 'issue': args.issue, 'status': 'cleaned'}, indent=2))
+        return
+
+    if args.reconcile_lost:
+        require(args.issue, 'reconcile-lost needs an issue number')
+        require(args.reason and args.evidence, '--reason and --evidence are required')
+        path = resolved(args.reconcile_lost, 'brief')
+        require(path.is_file(), f'{path} is not a file')
+        require(str(path).startswith('/'), 'use the exact recorded scratch path')
+        print(json.dumps({'kind': 'reconciled-lost', 'issue': args.issue, 'brief': str(path),
+                          'evidence': args.evidence}, indent=2))
+        return
+
+    require(args.issue and args.purpose, 'an issue number and --purpose are required')
+    issue = args.issue
+
+    model, effort = route_setting(args.purpose, args.model, args.effort)
+    issue_body = run('gh', 'issue', 'view', str(issue), '--json', 'number,title,body,state',
+                     cwd=project)
+    issue_data = json.loads(issue_body)
+    require(issue_data['state'] == 'open', f'issue {issue} is not open')
+    title = slug(issue_data['title'])
+    branch = args.branch or f'task/{issue}-{title}'
+    worktree = args.worktree or project / '.codex-method' / 'worktrees' / f'{issue}-{title}'
+
+    if not args.cont and not args.adopt:
+        ignored = subprocess.run(['git', 'check-ignore', '-q', '.codex-method/worktrees/probe'],
+                                 cwd=project).returncode == 0
+        require(ignored, 'the worktree directory must be gitignored; see the Worktree lifecycle')
+        run('git', 'fetch', 'origin', cwd=project)
+        run('git', 'worktree', 'add', str(worktree), '-b', branch, args.base, cwd=project)
+
+    lane = f'{issue}-{int(time.time_ns())}'
+    brief_dir = Path(os.environ.get('TMPDIR', '/tmp')) / f'codex-method-{issue}-worker-{slug(lane, 12)}'
+    brief_dir.mkdir(parents=True, exist_ok=True)
+    brief = brief_dir / 'brief.txt'
+    if args.cont:
+        require(args.brief, 'a continuation requires --brief')
+        require(args.brief.is_file(), f'{args.brief} is not a file')
+        brief.write_text(args.brief.read_text())
+    else:
+        packet = args.packet.read_text() if args.packet and args.purpose == 'reviewer' else ''
+        brief.write_text(f"""
+# Task packet
+Issue: https://github.com/{repo}/issues/{issue}
+Branch: {branch}
+Worktree: {worktree}
+Named base: {args.base}
+Role references resolve from: {ROOT}
+
+Issue body (verbatim):
+----- BEGIN ISSUE BODY -----
+{issue_data['body']}
+----- END ISSUE BODY -----
+
+{('Review packet (verbatim):' + chr(10) + packet) if packet else ''}
+Role: {args.purpose}. Model: {model} at {effort}.
+{helper_line(ROOT)}
+Executor: Codex {model} at {effort}. Record language: English.
+Commit trailer: Co-Authored-By: codex-method worker <noreply@anthropic.com>
+Return the PR and evidence to the caller; never merge.
+""".strip() + '\n')
+
+    receipt = brief_dir / 'native-spawn.json'
+    record = {
+        'kind': 'run', 'lane_id': lane, 'issue': issue, 'repo': repo,
+        'branch': branch, 'worktree': str(worktree), 'base': args.base,
+        'purpose': args.purpose, 'model': model, 'effort': effort,
+        'brief': str(brief), 'pr': (f'https://github.com/{repo}/pull/{args.pr}' if args.pr else None),
+        'issue_state': issue_data['state'], 'status': 'awaiting-native-spawn',
+        'instruction': str(receipt), 'wait': args.wait,
+    }
+    receipt.write_text(json.dumps({
+        'subagent_type': 'codex-method:worker' if args.purpose == 'worker' else 'codex-method:reviewer',
+        'model': model, 'effort': effort,
+        'description': f'Issue {issue} {args.purpose}',
+        'prompt': brief.read_text(),
+        'run_in_background': True,
+        'record_this_handle_on_the_issue': True,
+        'conversation_history_forking': False,
+    }, indent=2))
+
+    lanes = project / '.codex-method' / 'lanes'
+    lanes.mkdir(parents=True, exist_ok=True)
+    (lanes / f'{issue}.json').write_text(json.dumps(record, indent=2) + '\n')
+    print(json.dumps({**record, 'notice':
+                      'Not launched: native-spawn.json records the requested settings. Hand it to '
+                      "Codex's native spawn with history forking disabled, then record the returned "
+                      'handle on the issue.'}, indent=2))
+
+
+if __name__ == '__main__':
+    try:
+        main()
+    except Refusal as refusal:
+        print(f'dispatch refused: {refusal}', file=sys.stderr)
+        sys.exit(1)
