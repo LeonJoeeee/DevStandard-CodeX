@@ -36,6 +36,16 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
+      - name: Install Linux sandbox prerequisites
+        if: runner.os == 'Linux'
+        run: |
+          # https://learn.chatgpt.com/docs/sandboxing#prerequisites
+          # A scoped bwrap profile preserves the global user-namespace restriction.
+          sudo apt-get update
+          sudo apt-get install -y bubblewrap apparmor-profiles apparmor-utils
+          sudo install -m 0644 /usr/share/apparmor/extra-profiles/bwrap-userns-restrict /etc/apparmor.d/bwrap-userns-restrict
+          sudo apparmor_parser -r /etc/apparmor.d/bwrap-userns-restrict
+          bwrap --unshare-user --unshare-net --ro-bind / / /bin/true
       - name: Install the qualified native host
         run: npm install --global @openai/codex@0.159.2
       - name: Exercise installed roles and hooks with an auth-free local provider

@@ -588,6 +588,10 @@ class ResponsesFixture:
         require(not self.errors, 'provider errors: ' + repr(self.errors))
         require(self.root_stage == 8 and DONE['root'] in events, 'root did not complete qualification')
         require(set(self.handles) == {'worker', 'reviewer', 'control'}, 'missing native spawn handles')
+        for call in ('root_pwd', 'worker_lane_pwd', 'worker_session_pwd', 'control_write'):
+            setup_errors = [line.strip() for line in self.outputs.get(call, '').splitlines()
+                            if line.strip().startswith('bwrap:')]
+            require(not setup_errors, call + ': sandbox setup failed: ' + '; '.join(setup_errors))
         for call, expected in (('root_pwd', self.project), ('worker_lane_pwd', self.project / 'worker-lane'),
                                ('worker_session_pwd', self.project)):
             require(str(expected) in self.outputs.get(call, '').splitlines(), call + ': actual cwd mismatch')

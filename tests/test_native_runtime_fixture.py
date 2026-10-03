@@ -266,6 +266,42 @@ class NativeRuntimeFixtureTest(unittest.TestCase):
             ''.join(json.dumps(record) + '\n' for record in records))
         return self.runtime.verify(self.fixture.DONE['root'])
 
+    def test_bwrap_setup_failure_is_diagnosed_and_never_passes_probe_assertions(self):
+        error = 'bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted\n'
+        for call in ('root_pwd', 'worker_lane_pwd', 'worker_session_pwd', 'control_write'):
+            for success_evidence in (False, True):
+                with self.subTest(call=call, success_evidence=success_evidence):
+                    records = self.verification_records()
+                    command_output = self.runtime.outputs.get(call, '') if success_evidence else ''
+                    if call == 'control_write' and not success_evidence:
+                        (self.project / 'inherited-permissions.txt').unlink()
+                    request = self.request(self.fixture.PRIVATE_PARENT)
+                    request['input'].append({'type': 'custom_tool_call_output', 'call_id': call,
+                        'output': [
+                            {'type': 'input_text', 'text': 'Script completed\nWall time 0.1 seconds\nOutput:\n'},
+                            {'type': 'input_text', 'text': error + command_output}]})
+                    self.runtime.response_item(request)
+                    with self.assertRaisesRegex(AssertionError, call + ':.*sandbox setup.*bwrap:') as failure:
+                        self.verify_records(records)
+                    self.assertIn(error.strip(), str(failure.exception))
+
+    def test_real_pwd_outputs_still_pass_verification(self):
+        records = self.verification_records()
+        lane = self.project / 'worker-lane'
+        lane.mkdir()
+        request = self.request(self.fixture.PRIVATE_PARENT)
+        for call, cwd in (('root_pwd', self.project), ('worker_lane_pwd', lane),
+                          ('worker_session_pwd', self.project)):
+            result = subprocess.run(['pwd'], cwd=cwd, capture_output=True, text=True, check=True)
+            request['input'].append({'type': 'custom_tool_call_output', 'call_id': call,
+                'output': [
+                    {'type': 'input_text', 'text': 'Script completed\nWall time 0.1 seconds\nOutput:\n'},
+                    {'type': 'input_text', 'text': result.stdout}]})
+        self.runtime.response_item(request)
+        checks = self.verify_records(records)
+        self.assertTrue(checks['worker_explicit_lane_cwd'])
+        self.assertEqual(checks['child_session_cwd'], str(self.project))
+
     def test_hook_denials_bind_to_shell_commands_for_both_payload_shapes(self):
         for tool, key in (('Bash', 'command'), ('exec_command', 'cmd')):
             with self.subTest(tool=tool):
