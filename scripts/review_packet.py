@@ -21,6 +21,19 @@ DECISION = re.compile(r'^[*_]{0,2}(?:([12])\. [*_]{0,2}(Evidence-backed completi
                       r'|(Ready to merge)): [*_]{0,2}(Yes|No|Pass|Fail)[*_]{0,2}(?=[\W_]|$)', re.M)
 
 
+PUBLISHED_MARKER = '\n<!-- codex-method-review-v1 -->'
+
+
+def published_body(kind, round_number, text):
+    """The comment body a returned verdict is published as; it carries its provenance.
+
+    Without the marker a published verdict fails the very gate it is evidence for.
+    """
+    heading = (f'## Merge check 1 — round {round_number}' if kind == 'publish'
+               else f'## Merge check 1 — round {round_number} — failed')
+    return f'{heading}{PUBLISHED_MARKER}\n\n{text}'
+
+
 def decisions(text):
     """Strip emphasis from every decision line — around the result, the label, or both."""
     return DECISION.sub(lambda match: (f'{match[1]}. {match[2]}' if match[1] else match[3]) + f': {match[4]}', text)

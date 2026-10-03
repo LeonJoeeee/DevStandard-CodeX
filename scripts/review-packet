@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / 'scripts'))
 from hard_edges import (Refusal, api, arbitration_settings, filled, helper_line, require,  # noqa: E402
                         resolved, round_check, run)
-from review_packet import DECISION_LABELS, decisions  # noqa: E402
+from review_packet import DECISION_LABELS, decisions, published_body  # noqa: E402
 
 HEADING = re.compile(r'^## Merge check 1 — round (\d+)', re.M)
 ATTEMPT = re.compile(r'"attempt":\s*"?(\d+)"?')
@@ -137,10 +137,10 @@ Record association
         require(target, f'no reservation comment {args.attempt} on PR {number}')
         match = HEADING.search(target[0].get('body') or '')
         round_number = int(match.group(1)) if match else 1
+        published = published_body(args.action, round_number,
+                                   body if args.action == 'publish' else args.reason)
         run('gh', 'api', '-X', 'PATCH', f'repos/{repo}/issues/comments/{args.attempt}',
-            '-f', 'body=' + (f'## Merge check 1 — round {round_number}\n\n{body}' if args.action == 'publish'
-                            else f'## Merge check 1 — round {round_number} — failed\n\n{args.reason}'),
-            cwd=project)
+            '-f', 'body=' + published, cwd=project)
         print(json.dumps({'kind': args.action, 'attempt': args.attempt}, indent=2))
         return
 

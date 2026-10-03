@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / 'scripts'))
 from hard_edges import (Refusal, api, merged_result, protection_check, require, resolved,  # noqa: E402
                         round_check, run)
-from review_packet import decisions  # noqa: E402
+from review_packet import decisions, verdict_shape  # noqa: E402
 
 
 def main():
@@ -102,6 +102,8 @@ def main():
         require('codex-method-review-v1' in (verdict.get('body') or ''),
                 'the verdict is not a published review-packet round; a comment that merely quotes '
                 'the words is not a verdict')
+        defect = verdict_shape(verdict['body'], head)
+        require(not defect, f'the returned verdict is malformed: {defect}')
     require(verdict, f'no whole verdict on head {head}')
     text = decisions(verdict['body'])
     require('### Goal verdict\nYes' in text, 'the latest verdict is not Goal Yes')

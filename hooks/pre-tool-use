@@ -69,7 +69,8 @@ def main():
             deny(role, 'a worker never merges',
                  'Push the PR and let the orchestrator run scripts/guard merge.')
         if whole('push', lower) and (
-                any(w in lower for w in ('main', 'master', '--all', '--mirror', '--prune'))
+                any(whole(w, lower) for w in ('main', 'master'))
+                or '--all' in lower or '--mirror' in lower or '--prune' in lower
                 or '*' in text):
             deny(role, 'a worker never pushes main or master',
                  'Push your task branch only.')
