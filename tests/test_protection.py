@@ -95,6 +95,11 @@ class GitHubRunner:
                 raise AssertionError(f'unexpected PUT: {args}')
             payload = json.loads(input)
             self.writes.append(payload)
+            status = payload['required_status_checks']
+            # The live 2026-10-04 API rejected both selectors with a oneOf error.
+            # Validate the request before modeling a successful response.
+            if 'contexts' in status and 'checks' in status:
+                raise Refusal('gh: ambiguous status-check selectors (HTTP 422)')
             if PROTECTION in self.failures:
                 raise self.failures[PROTECTION]
             if self.put_response is not None:
@@ -252,7 +257,7 @@ class ProtectionApplyTest(unittest.TestCase):
         self.assertEqual(len(runner.writes), 1)
         payload = runner.writes[0]
         self.assertEqual(payload['required_status_checks'], {
-            'strict': True, 'contexts': [],
+            'strict': True,
             'checks': [{'context': 'build', 'app_id': 15368},
                        {'context': 'lint', 'app_id': -1}, {'context': 'test'}],
         })
@@ -277,6 +282,18 @@ class ProtectionApplyTest(unittest.TestCase):
         self.assertIs(payload['allow_deletions'], False)
         self.assertTrue(all(call[1] == ROOT for call in runner.calls))
 
+    def test_put_preserves_multiple_producers_for_the_same_context(self):
+        body = github_state()
+        body['required_status_checks']['checks'].append({'context': 'build', 'app_id': 999})
+        runner = GitHubRunner(body)
+        self.apply(runner, checks=('build', 'test', 'test'))
+        self.assertEqual(runner.writes[0]['required_status_checks'], {
+            'strict': True,
+            'checks': [{'context': 'build', 'app_id': 15368},
+                       {'context': 'lint', 'app_id': -1},
+                       {'context': 'build', 'app_id': 999}, {'context': 'test'}],
+        })
+
     def test_a_new_pr_requirement_uses_zero_approvals(self):
         body = github_state()
         body['required_pull_request_reviews'] = None
@@ -300,7 +317,7 @@ class ProtectionApplyTest(unittest.TestCase):
         self.apply(runner)
         self.assertEqual(runner.writes[0], {
             'required_status_checks': {
-                'strict': True, 'contexts': [],
+                'strict': True,
                 'checks': [{'context': 'build'}, {'context': 'test'}],
             },
             'enforce_admins': True,
@@ -498,7 +515,7 @@ sys.stdout.write(response)
         self.assertEqual(len(writes), 1)
         payload = writes[0]
         self.assertEqual(payload['required_status_checks'], {
-            'strict': True, 'contexts': [],
+            'strict': True,
             'checks': [{'context': 'build', 'app_id': 15368},
                        {'context': 'lint', 'app_id': -1}, {'context': 'test'}],
         })
@@ -512,15 +529,18 @@ sys.stdout.write(response)
         self.assertIs(payload['allow_force_pushes'], False)
         self.assertIs(payload['allow_deletions'], False)
 
-    def test_guard_founding_put_requires_prs_but_not_native_approvals(self):
+    def test_guard_founding_test_check_avoids_rejected_selector_combination(self):
         self.fixture['branch']['protected'] = False
         self.fixture['body']['required_pull_request_reviews'] = None
         self.fixture['body']['restrictions'] = None
-        proc = self.invoke('--apply', '--check', 'build')
+        proc = self.invoke('--apply', '--check', 'test')
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertTrue(json.loads(proc.stdout)['pr_required'])
         writes = self.captured_writes()
         self.assertEqual(len(writes), 1)
+        self.assertEqual(writes[0]['required_status_checks'], {
+            'strict': True, 'checks': [{'context': 'test'}],
+        })
         self.assertEqual(writes[0]['required_pull_request_reviews'], {
             'required_approving_review_count': 0,
         })
