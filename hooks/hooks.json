@@ -2,53 +2,53 @@
   "hooks": {
     "SessionStart": [
       {
-        "matcher": "startup|clear|compact",
+        "matcher": "startup|resume|clear|compact",
         "hooks": [
           {
             "type": "command",
-            "command": "\"${PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT}}/hooks/session-start\" orchestrator 1 8",
+            "command": "\"${PLUGIN_ROOT}/hooks/session-start\" orchestrator 1 8",
             "async": false,
             "additionalContextLimit": 0
           },
           {
             "type": "command",
-            "command": "\"${PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT}}/hooks/session-start\" orchestrator 2 8",
+            "command": "\"${PLUGIN_ROOT}/hooks/session-start\" orchestrator 2 8",
             "async": false,
             "additionalContextLimit": 0
           },
           {
             "type": "command",
-            "command": "\"${PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT}}/hooks/session-start\" orchestrator 3 8",
+            "command": "\"${PLUGIN_ROOT}/hooks/session-start\" orchestrator 3 8",
             "async": false,
             "additionalContextLimit": 0
           },
           {
             "type": "command",
-            "command": "\"${PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT}}/hooks/session-start\" orchestrator 4 8",
+            "command": "\"${PLUGIN_ROOT}/hooks/session-start\" orchestrator 4 8",
             "async": false,
             "additionalContextLimit": 0
           },
           {
             "type": "command",
-            "command": "\"${PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT}}/hooks/session-start\" orchestrator 5 8",
+            "command": "\"${PLUGIN_ROOT}/hooks/session-start\" orchestrator 5 8",
             "async": false,
             "additionalContextLimit": 0
           },
           {
             "type": "command",
-            "command": "\"${PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT}}/hooks/session-start\" orchestrator 6 8",
+            "command": "\"${PLUGIN_ROOT}/hooks/session-start\" orchestrator 6 8",
             "async": false,
             "additionalContextLimit": 0
           },
           {
             "type": "command",
-            "command": "\"${PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT}}/hooks/session-start\" orchestrator 7 8",
+            "command": "\"${PLUGIN_ROOT}/hooks/session-start\" orchestrator 7 8",
             "async": false,
             "additionalContextLimit": 0
           },
           {
             "type": "command",
-            "command": "\"${PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT}}/hooks/session-start\" orchestrator 8 8",
+            "command": "\"${PLUGIN_ROOT}/hooks/session-start\" orchestrator 8 8",
             "async": false,
             "additionalContextLimit": 0
           }
@@ -61,7 +61,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${PLUGIN_ROOT:-${CLAUDE_PLUGIN_ROOT}}/hooks/pre-tool-use\"",
+            "command": "\"${PLUGIN_ROOT}/hooks/pre-tool-use\"",
             "timeout": 30
           }
         ]

@@ -7,8 +7,8 @@ reads it explicitly before task work. Keep it within one page and the cap below.
 
 `AGENTS.md` is the Codex operational entry point. Preserve an adopted repository's existing
 instructions and established operational sources: consolidate or point to an established fact,
-never maintain competing copies. An existing `CLAUDE.md` may retain repository-maintenance
-instructions; its presence is not a reason to erase it or duplicate those instructions here.
+never maintain competing copies. Repository-maintenance practices belong in the established
+maintenance document, linked here when needed; they are not another agent-host entry point.
 No managed method block belongs in `AGENTS.md`. Its content fence admits commands, environment
 gotchas, explicit worktree copy-list entries, and the conditional record-language declaration.
 
@@ -26,8 +26,10 @@ change invented. It belongs under Gotchas, not as a new kind of content.
 One conditional fourth item — the fence's only exception: a `## Record language` line, when the repo's durable record is not English. It sits here because a clean-context worker must see it natively; the reasoning behind the choice goes in that repo's ADR log, not here. Its absence means English.
 
 A repo-wide language declaration in root `AGENTS.md` overrides English for the whole record,
-never per file or per agent. An established non-English record earns that declaration: write it
-and follow the existing record, never start a mixed record. A human-facing translation is a marked
+never per file or per agent. State one language explicitly under `## Record language`, such as
+`Chinese is canonical for code, documentation, commits, and GitHub records` or `记录语言：中文`.
+An established non-English record earns that declaration: write it and follow the existing record,
+never start a mixed record. A human-facing translation is a marked
 mirror naming its canonical file and changes in the same diff as that file.
 
 Generate it only when the project actually has some of that to say. A file that merely transcribes what CI already encodes, or that would stand empty under every heading with no record language to declare, is noise every later session pays to read — skip it, and let the first real command, gotcha, copy-list line or record-language declaration create it through the same write-back lane.

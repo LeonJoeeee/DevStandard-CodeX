@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 """The role hook.
 
-Reads a shell command's own text, strips here-document bodies and command substitutions, strips
-quoted **prose** (a quoted run containing whitespace) while keeping a quoted single word, since
-`git "merge"` is live argv and `rg "git merge"` is a search pattern. Matches whole words, without
-case sensitivity. It refuses only acts that are irreversible and that no other layer stops.
+Checks ordinary command argv, including command/env wrappers and executable paths. Search
+arguments are not commands. This is a policy hook, not a shell interpreter or OS isolation;
+interpreter bodies, runtime-built operations and arbitrary MCP writes remain outside its boundary.
 """
 import json
 import re
@@ -24,40 +23,104 @@ def strip_noise(text):
     return text
 
 
-def whole(word, text):
-    return re.search(rf'(?<![\w-]){re.escape(word)}(?![\w-])', text) is not None
-
-
-def git_commands(text):
-    """Recognize ordinary git argv, including directory options; not a shell interpreter."""
+def shell_commands(text):
+    """Parse ordinary command segments; keep argv quoted arguments without treating them as code."""
     text = re.sub(r"<<-?\s*'?(\w+)'?\n.*?\n\1", ' ', text, flags=re.S)
-    try:
-        lexer = shlex.shlex(text.replace('\n', ';'), posix=True, punctuation_chars=';&|')
-        lexer.whitespace_split = True
-        tokens = list(lexer)
-    except ValueError:
-        return []
-    segments, current = [], []
-    for token in tokens + [';']:
-        if token and all(c in ';&|' for c in token):
+    # shlex's punctuation tokens discard whether a quoted ";" was an argv value.
+    # Split separators first while retaining their quote/escape context, then parse each argv.
+    segments, current, quote, escaped, commented = [], [], None, False, False
+    for character in text + '\n':
+        if commented:
+            if character != '\n':
+                continue
+            commented = False
+        if escaped:
+            current.append(character)
+            escaped = False
+        elif character == '\\' and quote != "'":
+            current.append(character)
+            escaped = True
+        elif quote:
+            current.append(character)
+            if character == quote:
+                quote = None
+        elif character in ("'", '"'):
+            current.append(character)
+            quote = character
+        elif character == '#' and (not current or current[-1].isspace()):
+            commented = True
+        elif character in ';&|\n':
             if current:
-                segments.append(current)
+                try:
+                    argv = shlex.split(''.join(current))
+                except ValueError:
+                    return []
+                if argv:
+                    segments.append(argv)
             current = []
         else:
-            current.append(token)
+            current.append(character)
     commands = []
     for argv in segments:
-        if argv[0] == 'command':
-            argv = argv[1:]
-        if not argv or argv[0].rsplit('/', 1)[-1].lower() != 'git':
-            continue
-        index = 1
-        while index < len(argv) and argv[index].startswith('-'):
-            option = argv[index]
-            index += 2 if option in ('-C', '-c', '--git-dir', '--work-tree', '--namespace', '--config-env') else 1
-        if index < len(argv):
-            commands.append((argv[index].lower(), argv[index + 1:]))
+        while argv:
+            if re.match(r'^[A-Za-z_][A-Za-z_0-9]*=', argv[0]):
+                argv = argv[1:]
+            elif argv[0].rsplit('/', 1)[-1] == 'command':
+                argv = argv[1:]
+                while argv and argv[0] in ('-p', '--'):
+                    argv = argv[1:]
+            elif argv[0].rsplit('/', 1)[-1] == 'env':
+                argv = argv[1:]
+                while argv and argv[0].startswith('-'):
+                    option = argv.pop(0)
+                    if option in ('-u', '--unset', '-C', '--chdir') and argv:
+                        argv = argv[1:]
+                    if option == '--':
+                        break
+            else:
+                break
+        if argv:
+            commands.append((argv[0].rsplit('/', 1)[-1].lower(), argv[1:]))
     return commands
+
+
+def subcommand(args, value_options):
+    index = 0
+    while index < len(args) and args[index].startswith('-'):
+        index += 2 if args[index] in value_options else 1
+    return (args[index].lower(), args[index + 1:]) if index < len(args) else ('', [])
+
+
+def unsafe_worker_push(args):
+    """A push with no explicit destination can follow a main upstream or push.default."""
+    values, index = [], 0
+    while index < len(args):
+        arg = args[index]
+        if arg.split('=')[0] in ('--all', '--mirror', '--prune', '--tags', '--follow-tags'):
+            return True
+        if arg in ('--repo', '--receive-pack', '--exec', '-o', '--push-option'):
+            index += 2
+            continue
+        if not arg.startswith('-'):
+            values.append(arg)
+        index += 1
+    if len(values) < 2:
+        return True
+    for refspec in values[1:]:
+        destination = refspec.lstrip('+').split(':')[-1]
+        if (not destination or '*' in refspec or destination.upper() == 'HEAD'
+                or destination.lower().split('/')[-1] in ('main', 'master')):
+            return True
+    return False
+
+
+def tool_name(name):
+    """Only known host namespaces are aliases; MCP names retain their independent identity."""
+    aliases = {'collaborationspawn_agent': 'spawn_agent',
+               'collaboration.spawn_agent': 'spawn_agent',
+               'functions.apply_patch': 'apply_patch',
+               'functions.exec_command': 'exec_command'}
+    return aliases.get(name, name)
 
 
 def git_write(command, args):
@@ -131,7 +194,7 @@ def main():
             deny('unknown', 'child role is missing', 'Use an installed method role.')
         else:
             role = 'orchestrator'
-        tool = payload.get('tool_name', '').split('.')[-1]
+        tool = tool_name(payload.get('tool_name', ''))
         inputs = payload.get('tool_input') or {}
         if not isinstance(inputs, dict):
             deny(role, 'unrecognized tool input', 'Supply the native structured tool input.')
@@ -147,18 +210,26 @@ def main():
                  'Spawn method_review_helper with fork_turns="none".')
     if not isinstance(text, str):
         deny(role, 'unrecognized command', 'Supply the native command string.')
-    git_argv = git_commands(text)
-    text = strip_noise(text)
-    lower = text.lower()
+    commands = shell_commands(text)
+    git_argv = [subcommand(args, ('-C', '-c', '--git-dir', '--work-tree', '--namespace', '--config-env'))
+                for executable, args in commands if executable == 'git']
+    gh_argv = [subcommand(args, ('-R', '--repo', '--hostname'))
+               for executable, args in commands if executable == 'gh']
+    clean_text = strip_noise(text)
 
     # The REST merge endpoints merge a PR or write a merge commit straight onto a branch. Neither
     # goes through the guard, so neither is admitted for anyone.
-    if ('/merge' in lower and whole('gh', text)) or re.search(r'\bpulls/\d+/merge\b', lower):
+    if (any(command == 'api' and any('/merge' in arg.lower() for arg in args)
+            for command, args in gh_argv)
+            or any(executable in ('curl', 'wget') and
+                   any(re.search(r'\bpulls/\d+/merge\b', arg.lower()) for arg in args)
+                   for executable, args in commands)):
         deny(role, 'a merge goes through the guard',
              'Run: scripts/guard merge --repo OWNER/REPO --pr NUMBER --project CHECKOUT --execute')
 
     # The guard is the merge entry point; only the orchestrator runs it with --execute.
-    if whole('guard', text) and whole('merge', text) and ('--execute' in lower or whole('execute', lower)):
+    if any(executable == 'guard' and args and args[0] == 'merge' and '--execute' in args
+           for executable, args in commands):
         if role != 'orchestrator':
             deny(role, 'only the orchestrator executes a merge',
                  'Return a PR with evidence and let the orchestrator run the guard.')
@@ -167,36 +238,38 @@ def main():
         if any(command == 'merge' for command, _ in git_argv):
             deny(role, 'a worker never merges',
                  'Push the PR and let the orchestrator run scripts/guard merge.')
-        if whole('push', lower) and (
-                any(whole(w, lower) for w in ('main', 'master'))
-                or '--all' in lower or '--mirror' in lower or '--prune' in lower
-                or '*' in text):
-            deny(role, 'a worker never pushes main or master',
-                 'Push your task branch only.')
+        if any(command == 'push' and unsafe_worker_push(args) for command, args in git_argv):
+            deny(role, 'a worker push needs an explicit task-branch destination',
+                 'Push your named task branch only; do not use implicit upstream, main or master.')
 
     if role == 'reviewer':
         # Ordinary shell paths only: this is a policy hook, not a shell interpreter or an
         # OS-per-child security boundary. Scripts and runtime-built operations remain residuals.
         if (any(git_write(command, args) for command, args in git_argv)
-                or re.search(r'(^|[;&|]\s*)\s*(?:rm|mv|cp|touch|mkdir|rmdir|tee|truncate|chmod|chown)\b', lower)
-                or re.search(r'(?<![<])>{1,2}(?![&])', text)
-                or re.search(r'\b(?:sed\s+.*(?:-i\b|--in-place)|perl\s+.*-\w*i)', text)
-                or re.search(r'\bgh\s+(?:pr|issue|release|repo)\s+'
-                             r'(?:create|edit|comment|close|reopen|merge|delete|upload|fork|rename)\b', lower)):
+                or any(executable in {'rm', 'mv', 'cp', 'touch', 'mkdir', 'rmdir', 'tee',
+                                      'truncate', 'chmod', 'chown'} for executable, _ in commands)
+                or re.search(r'(?<![<])>{1,2}(?![&])', clean_text)
+                or any((executable == 'sed' and any(arg == '-i' or arg.startswith('--in-place')
+                                                  or arg.startswith('-i') for arg in args))
+                       or (executable == 'perl' and any(re.match(r'-\w*i', arg) for arg in args))
+                       for executable, args in commands)
+                or any(command in ('pr', 'issue', 'release', 'repo') and args and args[0] in
+                       ('create', 'edit', 'comment', 'close', 'reopen', 'merge', 'delete',
+                        'upload', 'fork', 'rename') for command, args in gh_argv)):
             deny(role, 'a reviewer is read-only', "Return a verdict; publication is the caller's job.")
-        if whole('gh', text) and whole('api', text):
-            if any(flag in text for flag in ('--method', '--input', '--raw-field', '--field', '-f', '-F')):
-                deny(role, 'a reviewer is read-only',
-                     "Return a verdict; publication is the caller's job.")
-            match = re.search(r'-X\s+(\S+)', text)
-            if match and match.group(1).upper() not in ('GET', 'HEAD'):
-                deny(role, 'a reviewer is read-only',
-                     "Return a verdict; publication is the caller's job.")
-            if '-X' in text and not re.search(r'-X\s+(GET|HEAD)', text):
+        for command, args in gh_argv:
+            if command != 'api':
+                continue
+            write_flags = ('--method', '--input', '--raw-field', '--field', '-f', '-F')
+            if (any(arg.split('=')[0] in write_flags or arg.startswith(('-f', '-F')) for arg in args)
+                    or any(arg.startswith('-X') and
+                           (args[index + 1] if arg == '-X' and index + 1 < len(args)
+                            else arg[2:]).upper() not in ('GET', 'HEAD')
+                           for index, arg in enumerate(args))):
                 deny(role, 'a reviewer is read-only',
                      "Return a verdict; publication is the caller's job.")
 
-    if whole('gh', text) and whole('pr', text) and whole('merge', lower):
+    if any(command == 'pr' and args and args[0] == 'merge' for command, args in gh_argv):
         deny(role, 'the orchestrator merges through the guard',
              'Run: scripts/guard merge --repo OWNER/REPO --pr NUMBER --project CHECKOUT --execute')
 

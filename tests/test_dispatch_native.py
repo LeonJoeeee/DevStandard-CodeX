@@ -36,9 +36,9 @@ class DispatchNativeTest(unittest.TestCase):
         self.f.git('checkout', 'main')
         self.f.git('worktree', 'add', self.worktree, 'task/2-acceptance')
         self.branch = 'task/2-acceptance'
-        self.record = self.f.project / '.codex-method/lanes/2.json'
+        self.record = self.f.project / '.git/codex-method/lanes/2.json'
         result = subprocess.run([sys.executable, str(ROOT / 'scripts/install'), '--project',
-                                 str(self.f.project), '--host-version', '0.159.2'],
+                                 str(self.f.project), '--host-version', '0.160.0'],
                                 capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
         state = self.f.state()
@@ -58,7 +58,7 @@ class DispatchNativeTest(unittest.TestCase):
         if explicit:
             cmd += ['--project', str(self.f.project)]
         if qualify:
-            cmd += ['--host-version', '0.159.2']
+            cmd += ['--host-version', '0.160.0']
         return subprocess.run(cmd, cwd=self.f.project, env=self.f.env, text=True, capture_output=True)
 
     def prepare(self, purpose='worker', **kwargs):
@@ -93,6 +93,247 @@ class DispatchNativeTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         return handle, evidence
 
+    def another_checkout(self):
+        other = self.f.root / 'caller-b'
+        self.f.git('branch', 'caller-b', 'main')
+        self.f.git('worktree', 'add', other, 'caller-b')
+        installed = subprocess.run([sys.executable, str(ROOT / 'scripts/install'), '--project',
+                                    str(other), '--host-version', '0.160.0'],
+                                   env=self.f.env, capture_output=True, text=True)
+        self.assertEqual(installed.returncode, 0, installed.stderr)
+        return other
+
+    def call_from(self, project, *args):
+        return subprocess.run([sys.executable, str(ROOT / 'scripts/dispatch'), '2', *map(str, args),
+                               '--project', str(project), '--host-version', '0.160.0'],
+                              cwd=project, env=self.f.env, capture_output=True, text=True)
+
+    def install_isolated_user_roles(self):
+        self.f.env['CODEX_HOME'] = str(self.f.root / 'codex-user')
+        result = subprocess.run([sys.executable, str(ROOT / 'scripts/install'), '--user',
+                                 '--host-version', '0.160.0'], env=self.f.env,
+                                cwd=self.f.project, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_current_user_roles_qualify_when_project_has_no_method_roles(self):
+        self.install_isolated_user_roles()
+        for path in (self.f.project / '.codex/agents').glob('method_*.toml'):
+            path.unlink()
+        config = self.f.project / '.codex/config.toml'
+        original = '# unrelated project configuration\nmodel = "project-model"\n'
+        config.write_text(original)
+        result = self.prepare()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(config.read_text(), original)
+        self.assertFalse(list((self.f.project / '.codex/agents').glob('method_*.toml')))
+
+    def test_current_user_roles_never_hide_stale_project_roles(self):
+        self.install_isolated_user_roles()
+        path = self.f.project / '.codex/agents/method_worker.toml'
+        path.write_text(path.read_text().replace('developer_instructions =', 'stale_instructions ='))
+        before = path.read_bytes()
+        result = self.prepare()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(path.read_bytes(), before)
+        self.assertFalse(self.record.exists())
+
+    def test_project_disabling_v2_refuses_despite_current_user_roles(self):
+        self.install_isolated_user_roles()
+        for path in (self.f.project / '.codex/agents').glob('method_*.toml'):
+            path.unlink()
+        config = self.f.project / '.codex/config.toml'
+        config.write_text('[features.multi_agent_v2]\nenabled = false\n')
+        result = self.prepare()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(self.record.exists())
+
+    def test_a_subdirectory_cannot_replace_the_project_root_language_authority(self):
+        self.install_isolated_user_roles()
+        nested = self.f.project / 'nested'
+        nested.mkdir()
+        (nested / 'AGENTS.md').write_text('## Record language\nEnglish is canonical.\n')
+        (self.f.project / 'AGENTS.md').write_text('## Record language\nChinese is canonical.\n')
+        result = self.call_from(nested, '--purpose', 'worker', '--adopt', '--branch', self.branch,
+                                '--worktree', self.worktree, '--base', 'main')
+        self.assertNotEqual(result.returncode, 0, '--project must identify the actual checkout root')
+        self.assertFalse(self.record.exists())
+
+    def test_another_issue_cannot_adopt_an_owned_writer_worktree(self):
+        self.prepared()
+        fake = self.f.root / 'bin/gh'
+        fake.write_text(GH.replace("'number':2", "'number':3").replace('issues/2/comments', 'issues/3/comments'))
+        result = subprocess.run([sys.executable, str(ROOT / 'scripts/dispatch'), '3', '--project',
+                                 str(self.f.project), '--host-version', '0.160.0', '--purpose', 'worker',
+                                 '--adopt', '--branch', self.branch, '--worktree', str(self.worktree), '--base', 'main'],
+                                cwd=self.f.project, env=self.f.env, capture_output=True, text=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse((self.record.parent / '3.json').exists())
+
+    def test_another_checkout_can_cleanup_the_recorded_integrated_lane(self):
+        handle, _ = self.finish()
+        other = self.another_checkout()
+        self.merged()
+        result = self.call_from(other, '--cleanup', '--pr', 1,
+                                '--native-status', self.status(handle, {'completed': 'done'}))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(self.worktree.exists())
+        self.assertEqual(json.loads(self.record.read_text())['status'], 'cleaned')
+
+    def test_initial_brief_reaches_both_native_and_retained_carriers_verbatim(self):
+        brief = self.f.root / 'initial.txt'
+        raw = 'Input dataset: 唯一数据.csv\nExpected output: complete result\r\n'
+        brief.write_bytes(raw.encode())
+        result = self.call('--purpose', 'worker', '--adopt', '--branch', self.branch,
+                           '--worktree', self.worktree, '--base', 'main', '--brief', brief)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        record = json.loads(result.stdout)
+        request = json.loads(Path(record['instruction']).read_text())
+        self.assertTrue(raw in request['message'], 'initial inputs were omitted or rewritten')
+        self.assertTrue(raw in Path(record['brief']).read_bytes().decode(), 'retained brief lost inputs')
+        self.assertIn('Inputs and expected output', request['message'])
+
+    def test_missing_initial_brief_refuses_before_preparing_a_lane(self):
+        result = self.call('--purpose', 'worker', '--adopt', '--branch', self.branch,
+                           '--worktree', self.worktree, '--base', 'main', '--brief', self.f.root / 'missing')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(self.record.exists())
+        self.assertTrue(self.worktree.exists())
+        self.assertFalse((self.f.project / '.git/codex-method/lanes').exists(),
+                         'bad input must refuse before ownership or legacy-state mutations')
+
+    def test_changed_legacy_receipt_after_import_blocks_shared_lane_actions(self):
+        data = self.prepared()
+        legacy = self.f.project / '.codex-method/lanes/2.json'
+        legacy.parent.mkdir(parents=True, exist_ok=True)
+        legacy.write_text(json.dumps(data))
+        self.record.unlink()
+        self.assertNotEqual(self.prepare().returncode, 0)
+        before = self.record.read_bytes()
+        altered = dict(data, status='finished')
+        legacy.write_text(json.dumps(altered))
+        request = json.loads(Path(data['instruction']).read_text())
+        evidence = self.evidence('spawn.json', {'task_name': '/root/' + request['task_name']})
+        result = self.call('--record-spawn', evidence)
+        self.assertNotEqual(result.returncode, 0, 'changed old state was silently ignored after migration')
+        self.assertEqual(self.record.read_bytes(), before)
+
+    def test_other_checkout_cannot_adopt_a_running_writer_lane(self):
+        handle = self.spawn()
+        result = self.call('--record-status', self.status(handle, 'running'))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        before = self.record.read_bytes()
+        other = self.another_checkout()
+        result = self.call_from(other, '--purpose', 'worker', '--adopt', '--branch', self.branch,
+                                '--worktree', self.worktree, '--base', 'main')
+        self.assertNotEqual(result.returncode, 0, 'another checkout commissioned a second writer')
+        self.assertEqual(self.record.read_bytes(), before)
+
+    def test_another_checkout_can_observe_and_continue_the_existing_lane(self):
+        handle, _ = self.finish()
+        other = self.another_checkout()
+        brief = self.f.root / 'continue.txt'
+        brief.write_text('Continue exactly the recorded lane.')
+        result = self.call_from(other, '--continue', '--brief', brief,
+                                '--native-status', self.status(handle, {'completed': 'done'}))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        data = json.loads(result.stdout)
+        self.assertEqual(data['worktree'], str(self.worktree))
+        self.assertEqual(len(data['runs']), 2)
+        self.assertEqual(json.loads(self.record.read_text())['lane_id'], data['lane_id'])
+
+    def test_legacy_unfinished_record_is_preserved_and_blocks_another_writer(self):
+        data = self.prepared()
+        legacy = self.f.project / '.codex-method/lanes/2.json'
+        legacy.parent.mkdir(parents=True, exist_ok=True)
+        raw = json.dumps(data, indent=2)
+        legacy.write_text(raw)
+        shared = self.f.project / '.git/codex-method/lanes/2.json'
+        if shared.exists():
+            shared.unlink()
+        other = self.another_checkout()
+        result = self.call_from(other, '--purpose', 'worker', '--adopt', '--branch', self.branch,
+                                '--worktree', self.worktree, '--base', 'main')
+        self.assertNotEqual(result.returncode, 0, 'legacy reservation was treated as an unused lane')
+        self.assertEqual(legacy.read_text(), raw)
+        self.assertTrue(shared.is_file(), 'retain a reconciled shared receipt even when launch refuses')
+
+    def test_conflicting_legacy_records_refuse_without_overwriting_either(self):
+        data = self.prepared()
+        shared = self.f.project / '.git/codex-method/lanes/2.json'
+        if shared.exists():
+            shared.unlink()
+        legacy = self.f.project / '.codex-method/lanes/2.json'
+        legacy.parent.mkdir(parents=True, exist_ok=True)
+        legacy.write_text(json.dumps(data))
+        other = self.another_checkout()
+        conflict = dict(data, lane_id='other-unfinished-lane')
+        alternative = other / '.codex-method/lanes/2.json'
+        alternative.parent.mkdir(parents=True, exist_ok=True)
+        alternative.write_text(json.dumps(conflict))
+        before = (legacy.read_bytes(), alternative.read_bytes())
+        result = self.call_from(other, '--record-status', self.status('/root/unknown', 'running'))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual((legacy.read_bytes(), alternative.read_bytes()), before)
+        self.assertFalse(shared.exists())
+
+    def test_a_new_legacy_copy_with_a_different_native_handle_refuses(self):
+        handle = self.spawn()
+        before = self.record.read_bytes()
+        conflict = json.loads(before)
+        run = conflict['runs'][-1]
+        run['native_task_name'] = '/root/other_parent/' + run['task_name']
+        run['spawn_observation']['result']['task_name'] = run['native_task_name']
+        legacy = self.f.project / '.codex-method/lanes/2.json'
+        legacy.parent.mkdir(parents=True, exist_ok=True)
+        raw = json.dumps(conflict)
+        legacy.write_text(raw)
+        result = self.call('--record-status', self.status(handle, {'completed': 'shared writer done'}))
+        self.assertNotEqual(result.returncode, 0, 'a conflicting native child was treated as historical copy')
+        self.assertEqual(self.record.read_bytes(), before)
+        self.assertEqual(legacy.read_text(), raw)
+
+    def test_a_new_legacy_copy_cannot_relabel_the_same_run_host_version(self):
+        handle = self.spawn()
+        before = self.record.read_bytes()
+        conflict = json.loads(before)
+        conflict['runs'][-1]['host_version'] = '0.159.2'
+        legacy = self.f.project / '.codex-method/lanes/2.json'
+        legacy.parent.mkdir(parents=True, exist_ok=True)
+        raw = json.dumps(conflict)
+        legacy.write_text(raw)
+        result = self.call('--record-status', self.status(handle, {'completed': 'done'}))
+        self.assertNotEqual(result.returncode, 0, 'a historical run version was silently overwritten')
+        self.assertEqual(self.record.read_bytes(), before)
+        self.assertEqual(legacy.read_text(), raw)
+
+    def test_root_record_language_declarations_reach_the_packet(self):
+        for declaration, wanted in (
+                ('## Record language\nChinese is canonical for code, comments, documentation, commits, and GitHub records.\n', 'Chinese'),
+                ('## 记录语言\n中文是代码、注释、文档、提交与 GitHub 记录的规范语言。\n', '中文')):
+            with self.subTest(declaration=declaration):
+                (self.f.project / 'AGENTS.md').write_text('# Repo\n\n' + declaration)
+                result = self.prepare()
+                self.assertEqual(result.returncode, 0, result.stderr)
+                data = json.loads(result.stdout)
+                request = json.loads(Path(data['instruction']).read_text())
+                self.assertTrue('Record language: ' + wanted + '\n' in request['message'],
+                                'packet ignored the explicit project record language')
+                self.record.unlink()
+
+    def test_no_root_record_language_declaration_defaults_to_english(self):
+        data = self.prepared()
+        request = json.loads(Path(data['instruction']).read_text())
+        self.assertIn('Record language: English\n', request['message'])
+
+    def test_empty_or_ambiguous_record_language_refuses_before_lane_preparation(self):
+        for declaration in ('## Record language\n',
+                            '## Record language\nEnglish is canonical.\nChinese is canonical.\n'):
+            with self.subTest(declaration=declaration):
+                (self.f.project / 'AGENTS.md').write_text(declaration)
+                result = self.prepare()
+                self.assertNotEqual(result.returncode, 0)
+                self.assertFalse(self.record.exists())
+
     def test_receipt_has_only_real_v2_fields_and_whole_role_and_ordered_record(self):
         data = self.prepared()
         spawn = json.loads(Path(data['instruction']).read_text())
@@ -123,6 +364,32 @@ class DispatchNativeTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertFalse(self.record.exists())
 
+    def test_current_native_version_is_qualified_for_dispatch(self):
+        result = self.call('--host-version', '0.160.0', '--purpose', 'worker', '--adopt',
+                           '--branch', self.branch, '--worktree', self.worktree, '--base', 'main', qualify=False)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)['host_version'], '0.160.0')
+
+    def test_old_run_host_version_survives_observation_and_fresh_continuation(self):
+        handle = self.spawn()
+        old = json.loads(self.record.read_text())
+        old['host_version'] = '0.159.2'
+        for run in old['runs']:
+            run.pop('host_version', None)
+        self.record.write_text(json.dumps(old))
+        result = self.call('--record-status', self.status(handle, {'completed': 'old run completed'}))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        observed = json.loads(result.stdout)
+        self.assertEqual(observed['host_version'], '0.159.2')
+        self.assertEqual(observed['runs'][0].get('host_version'), '0.159.2')
+        brief = self.f.root / 'upgrade.txt'
+        brief.write_text('Continue the same lane under the newly observed native host.')
+        result = self.call('--continue', '--brief', brief,
+                           '--native-status', self.status(handle, {'completed': 'old run completed'}))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        data = json.loads(result.stdout)
+        self.assertEqual([run.get('host_version') for run in data['runs']], ['0.159.2', '0.160.0'])
+
     def test_removed_process_flags_are_not_accepted(self):
         for flag in ('--wait', '--reconcile-lost'):
             result = self.call(flag)
@@ -152,7 +419,7 @@ class DispatchNativeTest(unittest.TestCase):
                            '--worktree',self.worktree,'--base','main','--pr',1,'--packet',packet)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.record.read_bytes(), before)
-        review_record = self.f.project / '.codex-method/lanes/2-reviewer.json'
+        review_record = self.f.project / '.git/codex-method/lanes/2-reviewer.json'
         self.assertTrue(review_record.is_file())
         self.assertEqual(json.loads(review_record.read_text())['purpose'],'reviewer')
 

@@ -72,7 +72,10 @@ through an explicit source disposition, never a silent loss.
 
 ## Constraints
 
-Codex rust-v0.159.2 native V2 is the source-qualified baseline. Default model/effort is
-`gpt-6.1-sol`/`high`; exact helper and arbitration bindings are in the orchestrator page. Account
+Codex 0.160.0 native V2 is the supported host with the captured target mechanics in the
+architecture. Every worker, reviewer, helper
+and arbitration uses explicit `gpt-6.1-sol`/`high` unless a direct, specific human instruction
+overrides its named dispatch; no automatic model ladder exists. Main-session settings remain
+the human's choice. Exact role bindings are in the orchestrator page. Account
 availability and live operation require separate evidence. Missing tools, models, skills, or gate
 properties are disclosed and block dependent work; no quota-driven substitution is allowed.

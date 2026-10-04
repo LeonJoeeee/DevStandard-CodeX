@@ -11,6 +11,11 @@ acting.**
 
 If this page was not delivered to the orchestrator, read it in full before acting.
 
+The package SessionStart matcher covers startup, resume, clear and compact. Its numbered parts
+reconstruct this page exactly. A page needing more parts than configured handlers stops delivery
+with `continue: false` rather than injecting a partial contract. A matcher or constructed hook
+output is not proof of live lifecycle delivery; capture each claimed target transition separately.
+
 The collaboration chain is: **human speaks → you restate → discuss → they confirm → you work
 unattended → you return the PR → they decide the merge.** A `delegated` label on the issue extends
 the human's handover through that last step.
@@ -195,8 +200,9 @@ No vendor process or quota-balancing route is part of this method.
 
 #### Model and effort
 
-The main session defaults to `gpt-6.1-sol` at `high`; the human may explicitly choose its model. The worker and the
-reviewer are anchored: model and effort are fixed for the role, not routed per task.
+The human chooses the main session's model and service tier; this method does not change its live
+settings. Every worker, reviewer and helper uses explicit `gpt-6.1-sol` at `high`, fixed for the
+role rather than routed per task.
 
 | Role | Model at effort |
 |---|---|
@@ -204,55 +210,48 @@ reviewer are anchored: model and effort are fixed for the role, not routed per t
 | reviewer | `gpt-6.1-sol` at `high` |
 
 `scripts/dispatch` reads those two rows, so keep the cell form. Arbitration—a genuine dilemma, an
-irreversible judgment, an architecture-level acceptance—takes `gpt-6-astra` at `max`, read-only. It
-informs the decision and does not make it: a genuine dilemma or irreversible judgment still goes to
-the human. With a PR, commission it through the reviewer path:
+irreversible judgment, or an architecture-level acceptance—uses `gpt-6.1-sol` at `high`,
+read-only. It informs the decision; a direction decision or irreversible judgment remains the
+human's. With a PR, commission it through the ordinary reviewer path. Before a PR exists,
+commission a fresh native `method_review_helper` with `fork_turns="none"`, model `gpt-6.1-sol`,
+and `reasoning_effort="high"`. Supply a self-contained question, real alternatives, decision
+bounds and pinned evidence, then publish the whole answer on the issue. Its answer grants no
+human authorization or merge authority.
 
-```sh
-<plugin>/scripts/review-packet start 124 --issue 123 --architecture-level no --output <session-scratch> --host-version 0.159.2 --model gpt-6-astra --effort max
-```
-
-Before a PR exists, commission a fresh native `method_review_helper` with
-`fork_turns="none"`, `gpt-6-astra`, and `reasoning_effort="max"`. Supply a self-contained question,
-real alternatives, decision bounds and pinned evidence. Its nonediting contract and ordinary-path
-hook are the same as a design challenge's; return and publish the whole answer on the issue.
-The answer informs the decision; it grants no human authorization or merge authority.
-
-A helper — a one-off subagent any role spawns for its own task — is neither anchored role and never
-goes through `scripts/dispatch` or `scripts/review-packet`. It always uses Codex's own native
-subagent tool, and takes the model its work needs:
+A helper is a one-off subagent a role may spawn for its own task, never through `scripts/dispatch`
+or `scripts/review-packet`. Every child uses the same explicit model and effort. The following
+work labels remain the packet's task descriptions, not routes to different models:
 
 | Helpers' work | Model at effort |
 |---|---|
-| Its conclusion directly decides a merge or a design (checking a worker's diff, challenging a design) | `gpt-6-astra` at `high` |
+| Its conclusion directly decides a merge or a design (checking a worker's diff, challenging a design) | `gpt-6.1-sol` at `high` |
 | Ordinary judgment (research, checking) | `gpt-6.1-sol` at `high` |
-| Mechanical (scans, first-pass triage, evidence gathering, fixed-field extraction, lists, format conversion) | `gpt-6-luna` at `max` |
+| Mechanical (scans, first-pass triage, evidence gathering, fixed-field extraction, lists, format conversion) | `gpt-6.1-sol` at `high` |
 
-A helper's effort is the one its row gives; the qualified V2 call supplies it explicitly. Every role that can spawn a helper is told this where it already reads:
-dispatch reads this table into each packet's `Helpers:` line, and `reference/worker.md`'s Helpers
-paragraph carries the same rule. Keep this table's cell form.
+Every native child and helper states both settings in its call. The dispatcher carries these
+rows in the packet's `Helpers:` line, and the worker role states the same fixed setting. Keep the
+cell form so a missing or reworded binding refuses instead of silently changing settings.
+The human chooses the main session's model; this method does not change its live model or speed.
 
 Bulk repetitive work — building a retrieval index or a knowledge graph, batch extraction and
-tagging — is not agent work: run a script against a cheap model endpoint, named in the needing
-project's `AGENTS.md`. Counting, sorting, hashing and other deterministic operations take a script,
-not a model.
+tagging — is not agent work: run a script against a project-declared model endpoint when needed.
+Counting, sorting, hashing and other deterministic operations take a script, not a model.
 
-A gating review never runs below the tier that produced the work. Work that returns stuck changes
-one thing per attempt: add missing context, raise effort, raise the model, cut the task smaller,
-then take a genuine dilemma or irreversible judgment to the human. Use explicit model and effort
-in the native call. An authorized issue setting or explicit `--model` or `--effort` overrides
-the anchor for that dispatch; `AGENTS.md` remains inside its operational-content fence.
-An unavailable model or quota is a reported limitation, never an implicit substitute.
+When work returns stuck, add missing context, adjust the approach, or cut the task smaller before
+retrying. Prefer the retained lane owner and actual handle. Do not automatically change child model or effort to
+route around a failure or quota limit; report unavailable settings. Only a direct, specific human
+instruction changes the setting for its named child dispatch; it does not establish a model ladder. A genuine dilemma or an
+irreversible judgment returns to the human. Main-session settings remain the human's choice.
 
 #### Fixed dispatcher
 
 ```sh
-<plugin>/scripts/dispatch 123 --purpose worker --base origin/main --host-version 0.159.2
-<plugin>/scripts/dispatch 123 --purpose worker --continue --host-version 0.159.2 --brief <continuation-file>
-<plugin>/scripts/dispatch 123 --purpose worker --continue --host-version 0.159.2 --pr 124 --brief <continuation-file>
-<plugin>/scripts/dispatch 123 --host-version 0.159.2 --purpose worker --adopt --base origin/main --branch <existing-branch> --worktree <existing-worktree> --pr 124
-<plugin>/scripts/dispatch 123 --purpose reviewer --host-version 0.159.2 --packet <complete-review-packet>
-<plugin>/scripts/dispatch 123 --cleanup --pr 124 --host-version 0.159.2 --native-status <actual-list-agents-capture>
+<plugin>/scripts/dispatch 123 --purpose worker --base origin/main --host-version 0.160.0
+<plugin>/scripts/dispatch 123 --purpose worker --continue --host-version 0.160.0 --brief <continuation-file>
+<plugin>/scripts/dispatch 123 --purpose worker --continue --host-version 0.160.0 --pr 124 --brief <continuation-file>
+<plugin>/scripts/dispatch 123 --host-version 0.160.0 --purpose worker --adopt --base origin/main --branch <existing-branch> --worktree <existing-worktree> --pr 124
+<plugin>/scripts/dispatch 123 --purpose reviewer --host-version 0.160.0 --packet <complete-review-packet>
+<plugin>/scripts/dispatch 123 --cleanup --pr 124 --host-version 0.160.0 --native-status <actual-list-agents-capture>
 ```
 
 Fetch the named base first. New identities default deterministically to `task/ISSUE-TITLE` and
@@ -267,7 +266,12 @@ the actual handle/lane identity on the issue. These captures are actual host obs
 not hand-written attestations; the CLI cannot authenticate or stop a native child. Continue the same stopped child through
 native `followup_task` with the refreshed brief. `dispatch --continue` instead prepares a
 fresh native child identity; it does not resume the retained handle. Use that fresh route only
-under the harness page's recovery rule. A live or uncertain child blocks reuse and cleanup.
+under the harness page's recovery rule. A live or uncertain child blocks reuse and cleanup. Lane state, locks and retained briefs live
+in the Git common directory under `codex-method/lanes`; all checkouts share writer ownership.
+Legacy checkout-local records are conservatively imported only when uniquely consistent, with
+original bytes and hashes retained. Conflicting records or later legacy changes refuse. An
+old-version run preserves its host identity; a new 0.160.0 child requires current qualification
+and fresh actual completion evidence for the old handle, never a force option.
 
 #### What it returns
 
@@ -308,9 +312,7 @@ alone defines judging: Goal and both Floors decide readiness. Record failed atte
 
 ```sh
 <plugin>/scripts/review-packet assemble 124 --issue 123 --architecture-level no --output <session-scratch>
-<plugin>/scripts/review-packet start 124 --issue 123 --architecture-level no --output <session-scratch> --host-version 0.159.2
-# Gating review on the arbitration tier
-<plugin>/scripts/review-packet start 124 --issue 123 --architecture-level no --output <session-scratch> --host-version 0.159.2 --model gpt-6-astra --effort max
+<plugin>/scripts/review-packet start 124 --issue 123 --architecture-level no --output <session-scratch> --host-version 0.160.0
 <plugin>/scripts/review-packet status 124 --issue 123
 <plugin>/scripts/review-packet rule 124 --issue 123 --decision continue --reason '<blocking goal gap or missing evidence>'
 ```
@@ -420,15 +422,19 @@ denials. Role TOML cannot install its own hook. Workers and worker helpers obey 
 boundary; reviewers and review helpers obey the nonediting boundary. Unknown role payloads cannot
 be treated as proof that a reviewer restriction ran.
 
-The hook scans ordinary shipped tool paths and shell command text. Quoted prose containing
-whitespace, here-document bodies and backtick bodies are stripped; quoted single argv words remain
-active. It recognizes roles from `agent_type`; an unknown type or an identified child missing its
-type is denied. Unrecognized structured input is denied rather than guessed.
+The hook checks actual ordinary tool names and command argv segments. It resolves leading
+assignments, `command`/`env` wrappers and absolute executable paths before recognizing `git`,
+`gh` and the guard; inert search prose is not treated as an executed command. Native spawn is
+recognized by the actual `collaboration_spawn_agent` alias and known tool names, never an
+arbitrary MCP suffix. It recognizes roles from `agent_type`; an unknown type or an identified
+child missing its type is denied. Unrecognized structured input is denied rather than guessed.
 
 - For every role, direct PR/branch REST merge endpoints and `gh pr merge` route to `guard merge`.
   Only the orchestrator may execute `guard merge`.
-- Workers and worker helpers cannot run `git merge`, or push a named `main`/`master`, all branches,
-  mirror/prune updates, or wildcard ref targets. Push only the assigned branch.
+- Workers and worker helpers cannot run `git merge`, or push to `main`/`master`, all branches,
+  mirror/prune updates or wildcard ref targets. A push needs an explicit remote and branch
+  refspec; targetless push and implicit `HEAD` refuse. An explicit `HEAD:refs/heads/task/topic`
+  is allowed when it is the assigned branch. Push only the assigned branch.
 - Reviewers and review helpers cannot use ordinary edit tools (`apply_patch`, Write/Edit variants),
   shell filesystem mutations (`rm`, `mv`, `cp`, `touch`, `mkdir`, `rmdir`, `tee`, `truncate`,
   `chmod`, `chown`), output redirection, or in-place `sed`/`perl`.
@@ -438,13 +444,14 @@ type is denied. Unrecognized structured input is denied rather than guessed.
   upload/fork/rename paths are denied. `gh api` field/input flags and non-GET/HEAD method writes
   are denied. Review helpers must be `method_review_helper` with `fork_turns="none"`.
 
-The source command scanner is case-insensitive for command words and intentionally incomplete.
+The command checks cover ordinary shipped paths and remain intentionally incomplete.
 
 Benign inert-text false positives may use a file argument only when the operation itself is
 permitted. An actual refusal is returned through the escalation path, never re-spelled to evade it.
 
 This is ordinary-path enforcement, not a malicious same-credential boundary. Obfuscation,
-interpreter bodies, runtime-built operations, a compromised host, arbitrary MCP writes and hostile
+interpreter bodies, interactive stdin, runtime-built operations, a compromised host, arbitrary
+MCP writes and hostile
 filesystem edits are outside the threat model. Children inherit parent cwd and permissions; no
 per-child OS read-only guarantee is claimed. The guard's local receipt verifies shipped lifecycle
 records, not a filesystem controlled by a malicious peer. GitHub protection, exact-head merge
@@ -473,7 +480,7 @@ reach.
 
 ### Cleanup and release
 
-After integration run `scripts/dispatch ISSUE --cleanup --pr NUMBER --host-version 0.159.2
+After integration run `scripts/dispatch ISSUE --cleanup --pr NUMBER --host-version 0.160.0
 --native-status <actual-list-agents-capture>`; routine integrated-lane
 teardown needs no separate authorization record. Cleanup runs outside the lane and requires the
 integrated PR's branch and exact head, a stopped native child, and no tracked, untracked, ignored, or
@@ -527,8 +534,8 @@ The upstream superpowers plugin must be installed and discoverable in Codex. Rea
 skill's `SKILL.md`; the accepted human task and this role govern conflicts. Ignore skill execution
 menus and skill-to-skill handoff instructions. Put requirements and accepted design in admitted
 project documents; keep implementation planning in task scratch or the PR description. A missing
-required binding returns the exact dependency gap; neither a role name nor Claude frontmatter
-installs a Codex skill. `README.md` gives the dependency path and qualification limits.
+required binding returns the exact dependency gap; a role name alone does not install a Codex
+skill. `README.md` gives the dependency path and qualification limits.
 
 ## 5. Exceptional events
 

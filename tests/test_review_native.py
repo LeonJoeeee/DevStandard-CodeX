@@ -13,14 +13,14 @@ class ReviewNativeTest(unittest.TestCase):
         self.fx = GitHubFixture()
         self.addCleanup(self.fx.close)
         installed = subprocess.run([sys.executable, str(ROOT / 'scripts/install'), '--project',
-                                    str(self.fx.project), '--host-version', '0.159.2'],
+                                    str(self.fx.project), '--host-version', '0.160.0'],
                                    capture_output=True, text=True)
         self.assertEqual(installed.returncode, 0, installed.stderr)
 
     def start(self, *args):
         return self.fx.command('review-packet', 'start', 1, '--issue', 2,
                                '--architecture-level', 'yes', '--output', self.fx.output,
-                               '--host-version', '0.159.2', *args)
+                               '--host-version', '0.160.0', *args)
 
     def test_start_returns_the_complete_native_request_with_exact_fresh_role_and_pins(self):
         result = self.start()

@@ -25,11 +25,11 @@ shipped lifecycle's relationship to its public record; it is not another task tr
 | Orchestrator role | `reference/orchestrator.md` is the complete main-session contract: human handover, responsive event loop, dispatch, design challenge, acceptance, integration, recovery, cleanup, release, and requirements craft. |
 | Worker role | `reference/worker.md` plus `reference/harness-codex.md` supplies one lane's execution, evidence, escalation, and native recovery obligations. Its freshly fetched packet carries the whole ordered issue, named base, branch, worktree, inputs, output duty, language and attribution. |
 | Reviewer role | `reference/code-review-prompt.md` alone supplies Goal/Floor/Notes judgment. The assembler supplies exact pins, issue contract, PR claims, accepted-spec authority, convention base, diff forms, status captures and gaps. The reviewer has no implementation craft or publication authority. |
-| Native delivery | Package hooks use `.codex-plugin/plugin.json`. `scripts/install` separately generates project `.codex/agents/*.toml` roles: `method_worker`, `method_reviewer`, `method_helper`, `method_review_helper`. Roles carry developer instructions only; actual native calls supply model/effort so role config cannot override escalation. Hook configuration belongs to the package. |
-| Dispatcher | `scripts/dispatch` creates or validates a lane and prepares native invocation data. The caller launches, observes, records and continues the real child. A resolver is an ordinary worker assigned the affected lane and original contract. |
+| Native delivery | Package hooks use `.codex-plugin/plugin.json` and the host-provided `PLUGIN_ROOT`. SessionStart covers startup/resume/clear/compact; insufficient configured parts stop rather than deliver partial context. `scripts/install` separately generates project `.codex/agents/*.toml` roles: `method_worker`, `method_reviewer`, `method_helper`, `method_review_helper`. Roles carry developer instructions only; actual native calls supply model/effort so role config cannot silently override the invocation. Hook configuration belongs to the package. |
+| Dispatcher | `scripts/dispatch` creates or validates a lane and prepares native invocation data. Lane receipts, locks and retained briefs live in the Git common directory under `codex-method/lanes`; a repository-wide ownership lock prevents different checkouts from admitting overlapping writers. The caller launches, observes, records and continues the real child. A resolver remains an ordinary lane worker. |
 | Review lifecycle | `scripts/review-packet`, packet assembly, and `scripts/review_state.py` use one shared parser and ledger in the common git directory: `codex-method/reviews/OWNER/REPO/PR.json`. Start qualifies installed roles and prepares the fresh six-field native instruction. Reservation id/token, issue/head/base, identity/author, packet SHA, instruction SHA, raw verdict SHA and exact comment SHA bind start, publish, status and guard. Pending intent is durable before remote mutation; status recovers only exact association, never retries an unknown outcome. |
 | Integration and protection | `scripts/guard` verifies the current default branch, current-base ancestry, exact accepted receipt/head/base, and green `merged-result / BASE_SHA / HEAD_SHA` from GitHub Actions app `15368`, with no failed head checks. It re-fetches before execute and merges with `--match-head-commit`. No automatic remote-branch deletion. Protection is provisioned deliberately with explicit required check names. |
-| On-demand guidance | Other `reference/` pages own document admission, placement, templates, CI upkeep, red/flaky checks and fallback design. `AGENTS.md` is commands/gotchas/copy-list/language only; existing `CLAUDE.md` remains repository maintenance guidance. |
+| On-demand guidance | Other `reference/` pages own document admission, placement, templates, CI upkeep, red/flaky checks and fallback design. `AGENTS.md` is commands/gotchas/copy-list/language only; `docs/maintenance.md` is this repository's maintenance authority. |
 
 The orchestrator processes events briefly and observes outstanding lanes. Independent writable
 scopes permit parallel workers; shared writable paths have one accountable writer. Task-local
@@ -45,21 +45,34 @@ review/CI identity checks gate integration. Evidence truth, goal fulfillment, de
 irreversible authorization and nonconvergence still require judgment. A hard gate is not lowered
 because its tool or model is unavailable.
 
-Source inspection of Codex **rust-v0.159.2** established the following schema properties: `gpt-6.1-sol`/`high` exists in
-metadata; V2 is the default; spawn accepts `task_name`, `message`, `agent_type`, `fork_turns="none"`,
-`model`, and `reasoning_effort`. Role TOML cwd/sandbox/hooks do not set effective child controls.
-Children inherit parent cwd and permissions. The hook receives actual `agent_type` and uses
-structured deny. Plugin hooks/skills and project role discovery are separate paths. The
-[harness page](../reference/harness-codex.md) owns the exact native contract.
+Codex **0.160.0**, native V2 is the supported host; target probes qualify the mechanics below. Native roles
+must be discovered before dispatch: the schema exposes `agent_type` only when roles are loaded.
+Project installation remains explicitly scoped; `scripts/install --user` opts into roles under
+`~/.codex/agents`. Active configuration layers still govern discovery; user files alone do not
+register roles for every project. Both paths preserve unrelated settings and refuse unowned
+collisions. No installer changes the main session's chosen model or service tier. Default children are all
+Sol/high; only a direct, specific human instruction overrides its named dispatch, never an
+automatic escalation or quota fallback.
 
-This qualifies source/schema behavior, not account access, installed hook delivery, byte-identical
-live context arrival, persistent native handles, compaction/clear behavior, uncoached adherence,
-or a complete remote PR lifecycle. A child worktree instruction is not OS isolation. Fresh native
-nonediting review is a context/contract/hook property, not per-child OS read-only enforcement.
-Same-credential hostile filesystem edits, obfuscation/interpreters, a compromised host, and arbitrary
-MCP writes are outside the threat model. DevStandard's historical runtime probes and old host
-limits do not qualify this installation. Local constructed checks and actual target runtime
-captures must be reported separately.
+Target probes captured complete worker/reviewer role bytes, explicit `gpt-6.1-sol`/`high`,
+`fork_turns="none"`, an allowed `pwd`, and worker merge, reviewer write and reviewer cross-role
+refusals. The hook normalizes the actual native spawn alias before role checks. Ordinary command checks
+use executable argv segments, including assignment/wrapper/absolute-path normalization, without
+interpreting search prose as a command. Worker pushes need an explicit remote and branch refspec;
+implicit/default targets refuse. Interactive stdin and arbitrary MCP/script writes remain outside
+this ordinary-path boundary. These mechanics captures use the actual host with a controlled provider. A separate production
+Sol/high typed fresh-reviewer call, with its role-config layer explicitly active, retained the
+prompt heading/end marker and omitted a parent-only token. Its earlier inactive-config discovery
+block remains evidence. That production call does not establish universal account access,
+user-scope installation, uncoached adherence or a complete remote PR lifecycle. Source/schema qualification on
+0.159.2 remains historical evidence; it does not extend the current support boundary.
+
+Children inherit parent cwd and permissions. A child worktree instruction is not OS isolation;
+fresh native nonediting review is a context/contract/hook property, not per-child OS read-only
+enforcement. Same-credential hostile filesystem edits, obfuscation/interpreters, a compromised
+host and arbitrary MCP writes remain outside the threat model. Main startup/resume delivery,
+clear/compaction, persistent handles and remote protected integration need distinct captured
+evidence. Local constructed checks and target runtime captures are reported separately.
 
 A pending local review reservation blocks another start. Every returned verdict burns a round,
 including malformed responses; a failed attempt with no verdict burns none. Raw publication and
@@ -79,7 +92,7 @@ No route imports another host, quotas as routing authority, or a weaker gate.
 | Source | Target/disposition |
 |---|---|
 | `README.md` | Adapted README: honest source attribution, native-only roles, dependency/install path, command lifecycle, qualification limits. Source marketplace/badges/release claims are source-project history. |
-| `CLAUDE.md` | Existing target file retained for repository operations. The Codex operational entry and template are `AGENTS.md` and `reference/repo-agents-md.md`; method prose is not injected into either root memory. |
+| `CLAUDE.md` (source) | Applicable repository operations moved to target `docs/maintenance.md`; the old target host entry was removed. The Codex operational entry and template are `AGENTS.md` and `reference/repo-agents-md.md`; method prose is not injected into root memory. |
 | `reference/orchestrator.md` | Same target: entire handover/event/task/merge/recovery flow retained. Native invocation/continuation replaces cross-host execution. Restored bounded goals, unsettled-design challenge, brainstorming binding, refusal escalation and property-preserving unavailable-capability route. |
 | `reference/worker.md` | Same target: receipt vetting, full task carrier, bounded writes/unbounded tracing, baseline/final evidence, own diff inspection, PR-green ownership, verify/refute, stop events and execution craft retained. Explicit actual status captures and native binding recovery. |
 | `reference/harness-codex.md`, `reference/harness-claude.md` | Replaced by native `reference/harness-codex.md`: role delivery, inherited cwd/permissions, native handle observation/continuation and exact binding recovery. Cross-host process supervision and host-specific persistence recipes are inapplicable history. |
@@ -139,14 +152,14 @@ are not copied as target claims.
 | 0004 | Founding sequence → PRD/CI/orchestrator templates; no automatic full ceremony for each new task. |
 | 0005, 0009, 0015, 0047, 0055, 0057 | GitHub flow, independent lanes, accountable writer, responsive orchestrator, fixed dispatch, task-local native helpers → roles/commands. No second coordination engine. |
 | 0006 | Native mechanics supplement the collaboration protocol; “Workflow is the whole harness” is superseded source history. |
-| 0010, 0029, 0030, 0032, 0043 | Source rename/changelog/audit and repo-only guidance remain source history; target README provenance, existing CLAUDE maintenance and architecture routing retain applicable disciplines. |
+| 0010, 0029, 0030, 0032, 0043 | Source rename/changelog/audit and repo-only guidance remain source history; target README provenance, target maintenance and architecture routing retain applicable disciplines. |
 | 0011, 0022, 0026, 0044 | Both gates, universal PR path, PR-green ownership and Goal/Floor/Notes → roles/reviewer/guard. Version-only source waiver is not wired into this guard. |
 | 0012, 0041 | Task-bound worktree lifecycle, adopted input discipline, baseline/clean handback → worker/orchestrator/dispatcher. |
 | 0013, 0033 | Concurrent ADR numbering and discoverable amendment status → `reference/adr.md` and fresh target log. |
 | 0017 | Design middle layer and substantial-change trigger → design-spec; native independent challenge before building. |
 | 0018, 0023 | Operational memory and canonical record language/translation → repo-agents and root AGENTS. Source CLAUDE memory carrier adapted, existing repository operations preserved. Copy-list entries are nonconfidential only; secrets are not copied into lanes. |
 | 0020, 0021 | Revert-first red-main recovery and pipeline pin upkeep → orchestrator/CI. |
-| 0024, 0040, 0050 | Explicit model/effort and role/helper routes → orchestrator: default `gpt-6.1-sol`/`high`; no quota-balancing or silent alternatives. Source model names/tier caps are historical settings. |
+| 0024, 0040, 0050 | Explicit model/effort and role/helper routes → orchestrator: every worker, reviewer, helper and arbitration uses `gpt-6.1-sol`/`high`; no model ladder, quota-balancing or silent alternatives. Source model names/tier caps are historical settings. |
 | 0025 | Fallback trigger/evidence/audit/return property retained in ci-cannot-run; shipped route blocked as unqualified. |
 | 0027 | Search both rule statements and pointer/paraphrase sites → retained repository maintenance discipline. ADR bodies are corrected by amendment. |
 | 0034 | Whole verdict published at return before acting → review lifecycle; caller receives native return and publishes its exact raw bytes. |
@@ -173,19 +186,25 @@ The shipped fallback refuses; a comment substring is not a waiver. No release us
 These are code/qualification follow-ups, not deleted source requirements.
 
 The dispatcher records actual supplied native spawn/status observations but cannot authenticate
-them or stop children. `--continue` prepares a fresh identity; retained-handle continuation uses
+them or stop children. One shared Git lane ledger covers all checkouts. Legacy checkout-local
+receipts are imported only when uniquely consistent; originals and their hashes remain retained.
+Conflicts or later changes to a retained legacy record refuse rather than erase ownership. `--continue` prepares a fresh identity; retained-handle continuation uses
 native `followup_task`, refreshed issue context and status observations on the original handle.
+An old-version run keeps its original host identity. Preparing a current-version child requires
+current qualification and fresh actual completion evidence for the old handle; no force option
+disposes of an uncertain child.
 Automated cleanup conservatively requires local ancestor integration and nonforced deletion;
 squash/rebase merged lanes remain preserved pending explicit disposition. Extending that route
 must preserve unintegrated commits and sole copies, not bypass its refusal.
 
-The dispatcher emits `Record language: English`. Root AGENTS declarations still govern the
-repository-wide record, so a non-English adoption must return that conflicting packet before
-writing. Reading the established declaration into the packet is a command follow-up; the restored
-language/translation rule is not permission to start a mixed record.
+The dispatcher reads the root `AGENTS.md` record-language declaration into the fresh packet;
+absence means English. An explicit declaration must be singular and readable, otherwise dispatch
+refuses rather than guessing or starting a mixed record. Initial input/output briefs and refreshed
+continuation briefs travel verbatim; missing required input is returned before launching work.
 
-Native installation, actual role hooks/context, account model availability, handle recovery after
-restart, and a live remote lifecycle need captured evidence before runtime-ready claims. Test the
+Target 0.160.0 role discovery/context and ordinary role denials have captured evidence. Account
+model availability, main-session resume/clear/compaction delivery, handle recovery after restart,
+and a live remote lifecycle still need separate evidence before broader readiness claims. Test the
 ordinary shipped paths against the declared threat boundary; fixtures establish only the properties
 they actually reach. Do not claim the source's runtime success as the target's.
 

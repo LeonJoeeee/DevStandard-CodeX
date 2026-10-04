@@ -17,7 +17,7 @@ SCRIPT = ROOT / '.github/test-native-runtime.py'
 
 
 def native_request(marker):
-    """Representative 0.159.2 wire catalog: nested tools are not outer members."""
+    """Representative 0.160.0 wire catalog: nested tools are not outer members."""
     return {'input': [{'role': 'user', 'content': marker},
         {'type': 'additional_tools', 'tools': [
             {'type': 'namespace', 'name': 'functions', 'tools': [
@@ -53,7 +53,7 @@ class NativeRuntimeFixtureTest(unittest.TestCase):
         self.assertTrue(SCRIPT.exists(), 'native runtime qualification script is missing')
         directory = tempfile.TemporaryDirectory(dir=os.environ.get('TMPDIR'))
         self.addCleanup(directory.cleanup)
-        self.scratch = Path(directory.name)
+        self.scratch = Path(directory.name).resolve()
         self.project = self.scratch / 'project'
         roles = self.project / '.codex/agents'
         roles.mkdir(parents=True)
@@ -78,6 +78,29 @@ class NativeRuntimeFixtureTest(unittest.TestCase):
         self.assertIsNotNone(match, 'custom exec must receive raw JavaScript and surface the result')
         return json.loads(match[1])
 
+    def test_actual_hook_inventory_uses_resolved_hashes_and_rejects_other_sources(self):
+        f = self.fixture
+        prefix = f.PLUGIN_ID + ':hooks/hooks.json:'
+        hooks = [{'key': prefix + event + ':0:0', 'currentHash': 'sha256:' + 'a' * 64}
+                 for event in ('session_start', 'pre_tool_use')]
+        response = {'result': {'data': [{'hooks': hooks, 'errors': []}]}}
+        self.assertEqual(f.trusted_inventory(response),
+                         [{'key': hook['key'], 'hash': hook['currentHash']} for hook in hooks])
+        for wrong in ({'error': {'message': 'refused'}}, {'result': {'data': []}},
+                      {'result': {'data': [{'hooks': [dict(hooks[0], key='unrelated')]}]}},
+                      {'result': {'data': [{'hooks': [dict(hooks[0], currentHash='wrong')]}]}}):
+            with self.subTest(response=wrong), self.assertRaises(AssertionError):
+                f.trusted_inventory(wrong)
+
+    def test_reviewer_cross_role_spawn_is_an_actual_typed_native_call(self):
+        self.runtime.counts['reviewer'] = 3
+        item = self.runtime.response_item(self.request(self.fixture.REVIEW_TASK))
+        self.assertEqual(item['call_id'], 'reviewer_cross_role')
+        args = json.loads(item['arguments'])
+        self.assertEqual(args['agent_type'], 'method_worker')
+        self.assertEqual((args['model'], args['reasoning_effort'], args['fork_turns']),
+                         ('gpt-6.1-sol', 'high', 'none'))
+
     def test_prepare_registers_declared_readonly_control_without_rejected_cwd(self):
         f = self.fixture
         run_logged = f.run_logged
@@ -99,7 +122,10 @@ class NativeRuntimeFixtureTest(unittest.TestCase):
                 scratch = self.scratch / ('installed' if installer else 'fallback')
                 scratch.mkdir()
                 env = f.isolated_env(scratch)
-                with patch.object(f, 'run_logged', side_effect=local_setup):
+                with patch.object(f, 'run_logged', side_effect=local_setup), \
+                        patch.object(f, 'discover_hook_trust', return_value=[
+                            {'key': f.PLUGIN_ID + ':hooks/hooks.json:pre_tool_use:0:0',
+                             'hash': 'sha256:' + 'a' * 64}]):
                     project, command, fake = f.prepare('unused-codex', scratch, env, installer, {})
                 roles = project / '.codex/agents'
                 control = tomllib.loads((roles / 'runtime_readonly_control.toml').read_text())
@@ -258,6 +284,10 @@ class NativeRuntimeFixtureTest(unittest.TestCase):
             records.append(self.hook_record(tool, {key: command}, role))
             runtime.outputs[call] = 'refused: hook denied operation'
         runtime.outputs['reviewer_patch'] = 'refused: hook denied operation'
+        records.append(self.hook_record('collaborationspawn_agent', {
+            'agent_type': 'method_worker', 'task_name': 'rejected_cross_role',
+            'fork_turns': 'none', 'model': f.MODEL, 'reasoning_effort': f.EFFORT}, 'method_reviewer'))
+        runtime.outputs['reviewer_cross_role'] = 'refused: hook denied operation'
         records.append({'payload': {'agent_type': 'runtime_readonly_control'}, 'ungated_control': True})
         return records
 
@@ -495,18 +525,6 @@ class NativeRuntimeFixtureTest(unittest.TestCase):
             self.assertEqual(env['TMPDIR'], str(Path(directory) / 'tmp'))
             for key in ('OPENAI_API_KEY', 'GH_TOKEN', 'HTTPS_PROXY'):
                 self.assertNotIn(key, env)
-
-    def test_hook_trust_changes_when_command_or_timeout_changes(self):
-        f = self.fixture
-        handler = {'type': 'command', 'command': 'fixture command', 'timeout': 30}
-        baseline = f.hook_hash('PreToolUse', '.*', handler)
-        self.assertTrue(baseline.startswith('sha256:'))
-        self.assertEqual(baseline, f.hook_hash('PreToolUse', '.*',
-                                              dict(handler, **{'async': False})))
-        self.assertNotEqual(baseline, f.hook_hash('PreToolUse', '.*',
-                                                 dict(handler, timeout=31)))
-        self.assertNotEqual(baseline, f.hook_hash('PreToolUse', '.*',
-                                                 dict(handler, command='other')))
 
     def test_inventory_stops_at_real_fixture_git_root(self):
         f = self.fixture

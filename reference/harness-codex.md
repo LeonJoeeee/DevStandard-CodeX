@@ -6,20 +6,36 @@ The worker page owns the task contract; the filled review packet owns a reviewer
 
 ## Qualified host and role delivery
 
-The version-specific baseline is Codex **rust-v0.159.2**. Source qualification established
-`gpt-6.1-sol` with `high` effort in its model metadata and V2 as its default collaboration
-protocol. Metadata presence does not establish an account's access or a successful production
-model call. Installation and live behavior must be demonstrated for the actual target.
+The supported host is Codex **0.160.0**, native V2; the probes below qualify its mechanics.
+Target probes
+captured loaded role discovery, full worker/reviewer role bytes, explicit `gpt-6.1-sol`/`high`,
+`fork_turns="none"`, allowed `pwd`, and ordinary worker merge, reviewer write and reviewer
+cross-role refusals. A controlled provider establishes host mechanics rather than production
+worker execution or uncoached compliance. A separate production Sol/high typed reviewer call with
+an explicitly active role-config layer retained prompt heading/end marker and omitted a parent-only
+token; an earlier inactive-config discovery block remains recorded. This establishes that call
+rather than universal account access or user-level installation. The earlier 0.159.2 source
+qualification is
+historical evidence, not current support. Unknown versions refuse until explicitly qualified.
 
 The legacy `.codex-plugin/plugin.json` package delivers hooks and skills. Project role files
 under `.codex/agents/*.toml` are discovered separately; `scripts/install` generates the
 `method_worker`, `method_reviewer`, `method_helper`, and `method_review_helper` roles for an
-explicit target. Installing a plugin does not itself install those project roles. Role files
+explicit project, or under `$CODEX_HOME/agents` (default `~/.codex/agents`) only with explicit `--user`. Installing a plugin
+does not itself install those roles. User-level files do not guarantee discovery in every project;
+verify the active role-config layer and target session. Role discovery precedes dispatch: native
+V2 exposes
+`agent_type` only when agent roles are loaded, and a new trusted session discovers installed
+roles. Role files
 carry `developer_instructions` only. The native call supplies model and effort explicitly;
-Codex applies role settings after call overrides, so fixing them in TOML would silently undo
-arbitration or helper routing. Role files do not supply effective per-role `cwd`, sandbox,
+Codex applies role settings after call overrides; omit model settings from TOML and state the
+default `gpt-6.1-sol`/`high` explicitly in every native child call, unless a direct, specific human
+instruction overrides its named dispatch. Role files do not supply effective per-role `cwd`, sandbox,
 or hook settings. Child permissions and cwd are inherited from the
-parent. The package-level hook uses the actual `agent_type` payload and a structured deny.
+parent. The package hook resolves from the host-provided `PLUGIN_ROOT` and uses actual `agent_type`
+with a structured deny. Native role files cannot install hooks. SessionStart matches startup,
+resume, clear and compact; too few configured handlers stop before delivering a partial page.
+Capture live context for each lifecycle claim rather than inferring it from those matchers.
 
 The worker role's instructions carry this page and `reference/worker.md`; its spawn message
 carries the freshly assembled task packet. Helpers receive their narrower task and applicable
@@ -47,14 +63,17 @@ qualified argument shape, shown as data:
 
 Gating review uses `method_reviewer`; a fresh design challenge or pre-PR arbitration uses
 `method_review_helper`. Ordinary task helpers use `method_helper`; a reviewer's helpers keep
-`method_review_helper` and the caller's nonediting restriction. Choose helper model and effort
-from the supplied `Helpers:` binding. Do not add `cwd`, `hook_settings`, `prompt`,
+`method_review_helper` and the caller's nonediting restriction. Every helper uses explicit `gpt-6.1-sol` at `high`
+under the supplied `Helpers:` binding. Do not add `cwd`, `hook_settings`, `prompt`,
 `subagent_type`, or `run_in_background` to this V2 call.
 
 A prepared receipt is not a launched child. Record the actual returned native handle with its
 issue and lane; observe native completion before reuse or cleanup. Read the child's full
 return. The dispatcher cannot attest a handle it did not observe. A live or uncertain child
-blocks a second writer. If a requested model, effort, role, or native tool is unavailable,
+blocks a second writer. Lane receipts and retained briefs are shared across checkouts in the Git
+common directory under `codex-method/lanes`. An older run keeps its observed version; preparing a
+current-version child requires fresh actual completion evidence for the old handle and current
+host qualification. Conflicting legacy receipts are preserved and refused, not overwritten. If a requested model, effort, role, or native tool is unavailable,
 report the limitation; model availability and quota never silently change the setting or gate.
 
 ## Worktree and permission boundary
@@ -77,7 +96,7 @@ The native handle lives in its spawning session's agent tree. `dispatch --contin
 fresh child identity in the existing lane; it is not a native handle-resume command. For a retained
 child, freshly fetch the issue/ordered comments and current authorized continuation, deliver that
 self-contained brief yourself, and keep observing the original recorded handle with
-`dispatch ISSUE --record-status <actual-list-agents-capture> --host-version 0.159.2`.
+`dispatch ISSUE --record-status <actual-list-agents-capture> --host-version 0.160.0`.
 Continue a stopped child with
 `followup_task` on that actual handle, carrying the newly fetched continuation brief. Inspect
 native status first; messages to a live child steer that child and do not license another writer.
@@ -101,11 +120,13 @@ Neither role loosens permissions, bypasses a hook, or copies secrets to make the
 
 ## Qualification limits
 
-Source inspection qualifies the schema and inheritance statements above. It does not prove
-installed hook delivery, whole-context arrival, native continuation after restart, live GitHub
-review publication, protected integration, clear/compaction behavior, or uncoached compliance.
+The 0.160.0 target probes qualify loaded role discovery, native schema, child role context and
+ordinary-path denials described above. The separately captured production reviewer call qualifies
+that call only. These probes do not prove universal account access, user-level installation, main
+startup/resume/clear/compaction delivery, persistent native continuation after restart, live GitHub
+review publication, protected integration, or uncoached compliance.
 Validate those properties on the explicit target; keep captured evidence distinct from fixtures
 and from DevStandard's historical cross-host probes. See `docs/architecture.md` for source
 routing and deferred capabilities. General host guidance is in the
 [official OpenAI subagent documentation](https://learn.chatgpt.com/docs/agent-configuration/subagents);
-the pinned source qualification governs the version-specific contract here.
+the version-specific target qualification governs the contract here.

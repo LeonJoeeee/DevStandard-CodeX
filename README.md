@@ -21,9 +21,13 @@ The [reviewer contract](reference/code-review-prompt.md) is the sole judging con
 
 ## Requirements and settings
 
-The qualified source baseline is Codex **0.159.2**, native V2. `gpt-6.1-sol` at `high` is the
-default for the main session, worker, and reviewer. [Model and effort](reference/orchestrator.md)
-states explicit helper and arbitration settings. A requested model's absence or quota exhaustion
+The supported host is Codex **0.160.0**, native V2; target probes qualify the mechanics below.
+Every worker, reviewer, helper and
+arbitration uses explicit `gpt-6.1-sol` at `high`. The main session retains the human's model and
+service tier. [Model and effort](reference/orchestrator.md) states those role settings.
+A direct, specific human instruction may override a child setting for
+that dispatch; there is no automatic model or effort escalation. A requested model's absence or
+quota exhaustion
 is reported; neither silently substitutes another model or lowers a gate. All agents and helpers
 use Codex's built-in tools.
 
@@ -46,27 +50,33 @@ codex plugin add superpowers@superpowers-dev
 ```
 
 The source project recorded these command forms on Codex 0.153.4; this adaptation has not
-installed or runtime-tested that dependency path on 0.159.2. Inspect the target host's plugin
-help and resulting skill discovery before relying on it. No Claude frontmatter or role label
-installs a Codex skill. Missing required skills stop the dependent task with an explicit gap.
+installed or runtime-tested that dependency path on 0.160.0. Inspect the target host's plugin
+help and resulting skill discovery before relying on it. A role label alone does not install a
+Codex skill. Missing required skills stop the dependent task with an explicit gap.
 
 ## Install and verify
 
 The `.codex-plugin/plugin.json` package carries method hooks. Load that package through the
-qualified host's plugin facility and establish host trust. Project agent definitions are a
-separate discovery path; generate them only in the explicitly selected project:
+qualified host's plugin facility and establish host trust. Native role definitions are a separate discovery path. Install into the explicitly selected
+project by default, or explicitly install user-level roles:
 
 ```sh
-/path/to/codex-method/scripts/install --project /path/to/project --host-version 0.159.2
-/path/to/codex-method/scripts/install --project /path/to/project --host-version 0.159.2 --check
+/path/to/codex-method/scripts/install --project /path/to/project --host-version 0.160.0
+/path/to/codex-method/scripts/install --project /path/to/project --host-version 0.160.0 --check
+# Explicit opt-in: install user-level roles; verify active discovery in the target session
+/path/to/codex-method/scripts/install --user --host-version 0.160.0
 ```
 
 The installer preserves unrelated project settings and refuses role collisions. It generates
 `method_worker`, `method_reviewer`, `method_helper`, and `method_review_helper`, with V2 settings.
-It does not edit user configuration or install the plugin/dependency. Restart the trusted target
-session, verify role discovery, whole orchestrator delivery, a fresh native child with explicit
-model/effort, its allowed command and actual role refusal, and continuation to its real handle.
-An installer success or fixture is not evidence of that live qualification.
+Project installation preserves unrelated settings and user configuration. Explicit `--user`
+installs roles under `$CODEX_HOME/agents` (default `~/.codex/agents`); active configuration layers still govern discovery in a
+new chat. User-level installation is not automatic registration for every project and does not
+change the main session's model or service tier.
+Both paths refuse unowned collisions; neither installs the plugin or craft dependency. Restart
+the trusted target session to discover the roles. The native schema exposes `agent_type` when
+roles are loaded; its absence before discovery is not permission to substitute task-name routing.
+Verify whole orchestrator delivery and continuation to the actual handle as well as discovery.
 
 ## Commands and lifecycle
 
@@ -76,8 +86,8 @@ may extend the orchestrator's authority through merge; releases need their own a
 Existing projects adopt documents when their triggers fire; a small task does not invent a PRD.
 
 ```sh
-scripts/dispatch 123 --purpose worker --base origin/main --host-version 0.159.2 --project /path/to/project
-scripts/review-packet start 124 --issue 123 --architecture-level no --output /path/to/scratch --host-version 0.159.2 --project /path/to/project
+scripts/dispatch 123 --purpose worker --base origin/main --host-version 0.160.0 --project /path/to/project
+scripts/review-packet start 124 --issue 123 --architecture-level no --output /path/to/scratch --host-version 0.160.0 --project /path/to/project
 scripts/review-packet publish 124 --issue 123 --attempt COMMENT_ID --verdict /path/to/scratch/verdict.md --project /path/to/project
 scripts/review-packet status 124 --issue 123 --project /path/to/project
 scripts/guard merge --repo OWNER/REPO --pr 124 --project /path/to/project
@@ -98,11 +108,17 @@ exemptions. See [the architecture](docs/architecture.md) for these dispositions.
 
 ## Evidence and layout
 
-This checkout is an adaptation deliverable, not a claim that the package has been installed or
-that the complete live worker/PR/review/merge lifecycle has passed. Source qualification for
-0.159.2 establishes interface and inheritance behavior; production account access, installed
-hook behavior, clear/compaction, and end-to-end integration need captured target evidence.
-DevStandard's historical probes are not inherited runtime evidence.
+Codex 0.160.0 target probes captured loaded native role discovery, complete worker/reviewer
+context bytes, explicit `gpt-6.1-sol`/`high`, `fork_turns="none"`, allowed `pwd`, and ordinary
+worker-merge, reviewer-write and reviewer-cross-role refusals. Those mechanics probes used a
+controlled provider. A separate production call with an explicitly
+active role-config layer ran a typed fresh reviewer at Sol/high, retained the supplied prompt
+heading and end marker, and omitted a parent-only token; an earlier inactive-config discovery
+block remains recorded. This qualifies that reviewer call, not every account, worker execution,
+uncoached behavior, user-scope installation or the remote worker/PR/review/merge lifecycle.
+Resume, clear/compaction and persistent handle recovery need
+separate captured evidence. Codex 0.159.2 source qualification and DevStandard's earlier probes
+are historical evidence, not current host support.
 
 ```sh
 python3 -m unittest discover -s tests -t .
@@ -112,7 +128,7 @@ python3 .github/check-routing.py
 `reference/` holds operative roles, templates, and procedures. `scripts/` and `hooks/` carry the
 mechanical lifecycle and ordinary-path restrictions; `.codex-plugin/` is the host package;
 `docs/` holds this project's PRD, architecture, and fresh ADR log. Repository-maintenance
-instructions remain in existing `CLAUDE.md`; `AGENTS.md` is the narrow Codex operational entry.
+instructions live in `docs/maintenance.md`; `AGENTS.md` is the narrow Codex operational entry.
 The source-to-target routing in the architecture explains retained content, replacements,
 intentional historical omissions, and deferred capabilities.
 

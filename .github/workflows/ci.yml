@@ -24,14 +24,14 @@ jobs:
         run: python3 .github/check-release.py
       - name: No @path references in shipped pages
         run: |
-          ! grep -rn "@[a-zA-Z0-9_-]*/" reference/ --include='*.md' | grep -v actions/ | grep -v anthropic | grep .
+          ! grep -rn "@[a-zA-Z0-9_-]*/" reference/ --include='*.md' | grep -v actions/ | grep .
       - name: The anchored table keeps its cell form
         run: python3 .github/check-routing.py
       - name: ADR amendment announcements remain discoverable
         run: python3 .github/check-adr-index.py
 
   native:
-    name: native-runtime / Codex 0.159.2
+    name: native-runtime / Codex 0.160.0
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -47,7 +47,7 @@ jobs:
           sudo apparmor_parser -r /etc/apparmor.d/bwrap-userns-restrict
           bwrap --unshare-user --unshare-net --ro-bind / / /bin/true
       - name: Install the qualified native host
-        run: npm install --global @openai/codex@0.159.2
+        run: npm install --global @openai/codex@0.160.0
       - name: Exercise installed roles and hooks with an auth-free local provider
         env:
           TMPDIR: ${{ runner.temp }}/codex-method-native

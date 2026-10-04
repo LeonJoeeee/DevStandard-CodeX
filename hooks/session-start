@@ -56,6 +56,11 @@ def split_points(data, cap):
 
 points = split_points(data, cap)
 total = max(1, len(points) - 1)
+if total > parts_declared:
+    print(json.dumps({'continue': False, 'stopReason':
+                      f'codex-method: role page needs {total} parts but only '
+                      f'{parts_declared} hook handlers are configured; refusing partial context'}))
+    raise SystemExit(0)
 if part > total:
     raise SystemExit(0)
 chunk = data[points[part - 1]:points[part]]
