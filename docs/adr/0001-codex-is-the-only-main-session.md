@@ -158,3 +158,30 @@ and pinned [0.160.0 spiller](https://github.com/openai/codex/blob/a956835d020762
 provide the host-setting basis. Actual provider captures must prove full inline bytes and one
 invocation; a script stop response alone is not evidence that the host stopped a turn. Native
 qualification and lifecycle captures remain distinct from unit/configuration checks.
+
+
+**Amendment (2026-10-04, Issue 8 shared collaboration migration):** General collaboration is
+maintained once in the marked Shared collaboration agreements section of the orchestrator.
+SessionStart already delivers that complete page; the installer extracts the section and inlines
+it once into every self-contained worker/reviewer/helper role, without giving children main-session
+operations or requiring them to reload a second shared core. This adapts the source role-self-
+containment and contract/mechanics separation principles rather than restoring competing rule copies.
+The qualified dispatch message now carries only the dynamic task; installed-role drift refusal and
+lane identity remain. Formal judging, original evidence and whole unedited verdict publication stand.
+
+Explicit human task instructions or prior confirmation authorize work within bounds without a
+second handover approval. Method defaults, including skill menus and paths, yield to that authority
+and established project workflow; they do not waive explicit integration/review gates. Ordinary
+helper contracts do not own a lane or formal PR gate. Unsupported wakeups are not promised,
+and settings reports distinguish requested/configured values from observable live metadata.
+The generated operational AGENTS template is a suggestion, not a universal host content fence;
+useful project instructions remain. Architecture prose edits use ordinary authorization while
+consequential structural decisions retain ADR admission and human direction.
+
+For hosted allowance/capacity refusal, safe already-authorized temporary repo-only self-hosted
+Actions run equivalent workflows with retained logs and cleanup, maintaining normal checks.
+This is separate from the unqualified degraded local merge waiver. This amendment records the
+source contract; installation, fresh no-global-AGENTS role delivery and lifecycle captures must
+qualify these new bytes before retiring the global file. A stable backup precedes retirement;
+no permanent duplicate bootstrap is required. The original ADR bodies and prior runtime facts
+remain historical evidence, not proof of the new runtime.

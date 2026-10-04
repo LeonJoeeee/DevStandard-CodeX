@@ -24,11 +24,12 @@ inheriting one is the defect, not permission to entrench it.
      record-language declaration to put in it.
 
    The trigger is always required. Arms 2 and 3 cannot admit an ADR whose admission test failed, a
-   spec no change earned, or content outside `AGENTS.md`'s fence. Trigger gating is separate from path
-   selection: the paths above are canonical relative to the scope whose lifecycle ran, while arm 2
+   spec no change earned. The AGENTS operational template is a suggestion, not a content fence.
+   Trigger gating is separate from path selection: paths above are canonical relative to the scope
+   whose lifecycle ran, while arm 2
    may supply an adopted repository's established location. `docs/architecture.md`, the repo-root
-   `AGENTS.md`, and `AGENTS.md`'s content fence are reserved: the first two remain the entry points a
-   session can find without another pointer, and the content fence admits no substitute.
+   `AGENTS.md` remain the entry points a session can find without another pointer. Preserve human-
+   authorized and established project instructions in AGENTS; do not impose the operational template.
    `README.md` is admitted only as founding-scaffolder output named by the accepted setup design; a
    scaffolder introduced later licenses nothing.
 
@@ -56,7 +57,7 @@ documents; use `{CONVENTION_BASE_SHA}` only to decide whether a convention licen
 Anything passing no arm is invented. “A session ended” or “work changed hands” is never sufficient
 under any arm or file format. An invented document is usually a message wearing a filename: put the
 handoff, summary, or status on the issue, in the PR description, or in a comment instead.
-<!-- END IN-REPO-WRITES PREDICATE (51 payload lines) -->
+<!-- END IN-REPO-WRITES PREDICATE (52 payload lines) -->
 
 This page governs what may be added *inside* the repo. For a write outside it, use
 `reference/out-of-repo-writes.md`; for the final working-tree inventory, use

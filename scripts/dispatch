@@ -388,7 +388,6 @@ def prepare(project, record, args, installer):
     brief, receipt = scratch / 'brief.txt', scratch / 'native-spawn.json'
     baseline = run('git', 'status', '--porcelain', '--untracked-files=all', cwd=worktree)
     role_name = 'method_' + purpose
-    role = tomllib.loads(installer['role_files']()[role_name + '.toml'])['developer_instructions']
     record_text = '\n\n'.join(
         f"Comment {c['id']} — {c['created_at']} — {c['user']['login']}\n"
         f"----- BEGIN COMMENT {c['id']} -----\n{c['body']}\n----- END COMMENT {c['id']} -----"
@@ -407,7 +406,9 @@ def prepare(project, record, args, installer):
              'operations; it is not adversarial credential isolation.\n'
              '\n----- BEGIN ISSUE BODY -----\n' + issue['body'] + '\n----- END ISSUE BODY -----\n'
              '\nWhole ordered issue record (all comments, verbatim):\n' + record_text + '\n'
-             '\nFull role contract:\n' + role + '\n')
+             f'\nDiscovered native role: {role_name}. Its installed developer instructions '
+             'supply the shared agreements, complete static role contract and native mechanics; '
+             'this message supplies the fresh task binding.\n')
     if args.brief:
         label = 'Continuation brief' if args.cont else 'Inputs and expected output'
         text += '\n' + label + ' (verbatim):\n' + extra + '\n'

@@ -1,5 +1,12 @@
 # Code reviewer prompt
 
+The PR contract below applies to formal gating review. A task-local review helper doing ordinary
+research or a pre-PR design challenge follows its caller's explicit goal, bounds, pinned inputs
+and output contract. Its installed helper applicability contract governs; an absent PR or unfilled
+PR template is not a defect in that ordinary task. It remains independent and nonediting, returns
+its complete findings and limitations to the caller, and does not manufacture a formal merge
+verdict or publish it. This does not relax formal gating evidence, identity or publication duties.
+
 Use the shipped `scripts/review-packet start` to reserve an ordinary review from current
 sources. It fills the fenced contract below and returns a native fresh-context review brief and
 local receipt. The caller invokes the native reviewer, captures its raw whole return, and uses

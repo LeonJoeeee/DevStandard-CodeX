@@ -3,6 +3,7 @@ import json
 import os
 import subprocess
 import sys
+import tomllib
 import unittest
 from pathlib import Path
 
@@ -334,14 +335,19 @@ class DispatchNativeTest(unittest.TestCase):
                 self.assertNotEqual(result.returncode, 0)
                 self.assertFalse(self.record.exists())
 
-    def test_receipt_has_only_real_v2_fields_and_whole_role_and_ordered_record(self):
+    def test_receipt_has_only_real_v2_fields_one_static_role_and_whole_ordered_record(self):
         data = self.prepared()
         spawn = json.loads(Path(data['instruction']).read_text())
         self.assertEqual(set(spawn), {'task_name','message','agent_type','fork_turns','model','reasoning_effort'})
         self.assertEqual(spawn['agent_type'], 'method_worker')
         self.assertEqual(spawn['fork_turns'], 'none')
         self.assertEqual((spawn['model'],spawn['reasoning_effort']), ('gpt-6.1-sol','high'))
-        self.assertIn((ROOT / 'reference/worker.md').read_text(), spawn['message'])
+        installed = tomllib.loads((self.f.project / '.codex/agents/method_worker.toml').read_text())['developer_instructions']
+        source = (ROOT / 'reference/worker.md').read_text()
+        self.assertEqual(installed.count(source), 1)
+        self.assertNotIn(source, spawn['message'])
+        self.assertNotIn('Full role contract:', spawn['message'])
+        self.assertIn('Discovered native role: method_worker', spawn['message'])
         self.assertIn(self.f.state()['issue'], spawn['message'])
         self.assertIn(self.long_comment, spawn['message'])
         self.assertLess(spawn['message'].index('RECORD END'), spawn['message'].index('Dispatch receipt is'))
@@ -407,7 +413,9 @@ class DispatchNativeTest(unittest.TestCase):
         receipt = json.loads(Path(json.loads(result.stdout)['instruction']).read_text())
         self.assertEqual(receipt['agent_type'], 'method_reviewer')
         self.assertEqual(receipt['fork_turns'], 'none')
-        self.assertIn((ROOT / 'reference/code-review-prompt.md').read_text(), receipt['message'])
+        installed = tomllib.loads((self.f.project / '.codex/agents/method_reviewer.toml').read_text())['developer_instructions']
+        self.assertIn((ROOT / 'reference/code-review-prompt.md').read_text(), installed)
+        self.assertNotIn((ROOT / 'reference/code-review-prompt.md').read_text(), receipt['message'])
         self.assertIn(packet.read_text(), receipt['message'])
 
     def test_fresh_review_of_worker_lane_preserves_the_worker_lifecycle_record(self):

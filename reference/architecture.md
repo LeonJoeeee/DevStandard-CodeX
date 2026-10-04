@@ -7,7 +7,7 @@ return here for this document's content and location.
 
 ## Sections
 
-1. **Header rule** (verbatim): "Shared baseline for all parallel work. Read before any task. Changing anything here = touching the core: public merge + human approval + an ADR."
+1. **Header rule** (verbatim): "Shared baseline for all parallel work. Read before any task. Structural or costly-to-reverse decisions require human direction and an ADR; factual or wording corrections use ordinary authorized changes."
 2. **Context** — what this system is and what it talks to (a paragraph; a simple diagram only if it pays for itself).
 3. **Structure** — the level-1 picture: the main components/modules, what each owns, and the interfaces/boundaries between them. This is the map parallel tasks navigate by.
 4. **Key quality goals** — the 3–5 properties that drive structural choices (e.g. latency, simplicity, portability). These are tie-breakers for future decisions.
@@ -19,7 +19,7 @@ return here for this document's content and location.
 ## Rules
 
 - **Altitude discipline** — the #1 staleness trap is detail creep. The architecture doc holds what is *slow-changing and cross-cutting*. Per-task design detail does not belong here; volatile reasoning goes to ADRs (append-only); implementation detail stays in code.
-- **Update-in-same-change**: any merge that changes the structure updates this doc in the same merge (plus an ADR). A baseline that drifts from reality is worse than none — people build against it.
+- **Update-in-same-change**: any merge that changes the structure updates this doc in the same merge; apply `reference/adr.md`'s admission test to the decision. A baseline that drifts from reality is worse than none — people build against it.
 - **The doc states the stable present** — not history (that lives in ADRs and git), and not future promises or time-relative hedges ("currently", "for now", "temporarily", "until the migration lands"). Such lines read as true but go stale with no signal, misleading the parallel workers who build against this doc. A change that's coming becomes an ADR when it lands — never a promise written here.
 
 ## When the project outgrows one page: split on zoom
@@ -36,7 +36,7 @@ The overview stays THE single 1–3-page doc — it never grows past that. When 
 # <Project> — Architecture
 
 > Shared baseline for all parallel work. Read before any task.
-> Changing anything here = touching the core: public merge + human approval + an ADR.
+> Structural or costly-to-reverse decisions require human direction and an ADR; factual or wording corrections use ordinary authorized changes.
 
 ## Context
 <what this is, what it talks to>

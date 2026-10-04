@@ -13,7 +13,13 @@ The method adds:
 - Fresh independent Goal/Floor review and green CI for the exact merge result before guarded
   integration. Notes remain useful observations and never create review rounds.
 - Durable product, architecture, decision, and substantial-design records at their triggers;
-  root `AGENTS.md` holds only operational facts and record language.
+  the generated root `AGENTS.md` template suggests operational facts and record language while preserving project instructions.
+
+The single Shared collaboration agreements section in the orchestrator applies to ordinary
+research and document tasks as well as repository lanes. The hook delivers it to main; the
+installer inlines it once into each complete native role. Helpers keep their caller's task
+contract without inventing an issue, worktree or PR. General rules need no permanent user-level
+AGENTS bootstrap. Preserve useful project-specific AGENTS files.
 
 Start with [the orchestrator](reference/orchestrator.md). Workers receive
 [their contract](reference/worker.md) and [native Codex mechanics](reference/harness-codex.md).
@@ -81,6 +87,14 @@ Both paths refuse unowned collisions; neither installs the plugin or craft depen
 the trusted target session to discover the roles. The native schema exposes `agent_type` when
 roles are loaded; its absence before discovery is not permission to substitute task-name routing.
 Verify whole orchestrator delivery and continuation to the actual handle as well as discovery.
+Configured bytes do not prove an existing chat has switched. Before retiring a user-level
+collaboration file, retain a stable backup and migration map and qualify the new shared bytes
+in fresh main/worker/reviewer/helper requests without that file. Check applicable overrides and
+configuration layers. Disabled/untrusted plugins or another host/profile do not automatically
+load these rules; use a supported method entry or explicit task carrier. Inspect the actual
+native schema: an admitted ordinary helper interface without `agent_type` requires the exact
+shared section and assigned role contract explicitly in its message, without typed-discovery
+or hook-enforcement claims. Formal gating review retains its qualified typed route.
 
 ## Commands and lifecycle
 
@@ -97,6 +111,7 @@ scripts/review-packet status 124 --issue 123 --project /path/to/project
 scripts/guard merge --repo OWNER/REPO --pr 124 --project /path/to/project
 ```
 
+Dispatch carries the dynamic task binding; the discovered role supplies its static contract once.
 Dispatch and review start prepare native invocation data; the main session must call the real
 native tool with `fork_turns="none"`, record the returned handle, and publish the reviewer's
 unedited whole return. For review, the discovered typed role automatically supplies the complete
@@ -114,7 +129,10 @@ guard only within existing merge authorization. Review start requires current in
 and returns the exact native JSON at its `instruction` path; recovery follows the orchestrator's
 **Review packets** section. Use each command's `--help` for its full contract.
 
-The CI-fallback design remains documented, but its CLI route refuses as unqualified. Rebase
+Safe already-authorized temporary self-hosted Actions for hosted allowance/capacity refusal
+keep ordinary review and CI gates; [the CI guidance](reference/ci-pipelines.md) owns diagnosis,
+trust/isolation, equivalence, retained logs and cleanup. The separate degraded local merge-waiver
+design remains documented, but its CLI route refuses as unqualified. Rebase
 comparison is diagnostic patch/tree equality and does not authorize acceptance reuse; changed
 heads need fresh check 1. Version-only review waivers are source principles, not implemented guard
 exemptions. See [the architecture](docs/architecture.md) for these dispositions.
@@ -141,7 +159,8 @@ python3 .github/check-routing.py
 `reference/` holds operative roles, templates, and procedures. `scripts/` and `hooks/` carry the
 mechanical lifecycle and ordinary-path restrictions; `.codex-plugin/` is the host package;
 `docs/` holds this project's PRD, architecture, and fresh ADR log. Repository-maintenance
-instructions live in `docs/maintenance.md`; `AGENTS.md` is the narrow Codex operational entry.
+instructions live in `docs/maintenance.md`; project `AGENTS.md` preserves native project instructions
+and useful operational facts.
 The source-to-target routing in the architecture explains retained content, replacements,
 intentional historical omissions, and deferred capabilities.
 

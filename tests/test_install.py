@@ -1,6 +1,7 @@
 """Generate and check real project-discovered agent role files, without user config writes."""
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -53,6 +54,45 @@ class InstallTest(unittest.TestCase):
         self.assertEqual(self.install('--check').returncode, 0)
         self.assertEqual(self.install().returncode, 0)
         self.assertEqual(config.read_bytes(), first)
+
+    def test_shared_agreements_reach_each_role_once_without_promoting_children(self):
+        result = self.install()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        source = (ROOT / 'reference/orchestrator.md').read_text()
+        start = '<!-- BEGIN SHARED COLLABORATION AGREEMENTS -->'
+        end = '<!-- END SHARED COLLABORATION AGREEMENTS -->'
+        self.assertIn(start, source, 'shared instructions have no extractable source')
+        shared = source.split(start, 1)[1].split(end, 1)[0].strip()
+        self.assertTrue(shared)
+        for role in ('method_worker', 'method_reviewer', 'method_helper', 'method_review_helper'):
+            with self.subTest(role=role):
+                instructions = tomllib.loads((self.project / '.codex/agents' / (role + '.toml')).read_text())['developer_instructions']
+                self.assertEqual(instructions.count(shared), 1)
+                self.assertNotIn('# Orchestrator\n', instructions)
+                if role.endswith('helper'):
+                    self.assertTrue(instructions.startswith('# Task-local helper contract\n'))
+                    self.assertIn('Lane receipt and PR judging requirements apply only', instructions)
+
+    def test_missing_ambiguous_or_empty_shared_source_refuses_before_any_write(self):
+        package = self.project / 'package'
+        (package / 'scripts').mkdir(parents=True)
+        shutil.copy2(ROOT / 'scripts/install', package / 'scripts/install')
+        shutil.copy2(ROOT / 'scripts/hard_edges.py', package / 'scripts/hard_edges.py')
+        shutil.copytree(ROOT / 'reference', package / 'reference')
+        page = package / 'reference/orchestrator.md'
+        start = '<!-- BEGIN SHARED COLLABORATION AGREEMENTS -->'
+        end = '<!-- END SHARED COLLABORATION AGREEMENTS -->'
+        for text in ('# No shared section\n', start + '\n' + end,
+                     start + '\nx\n' + end + '\n' + start + '\ny\n' + end):
+            with self.subTest(text=text):
+                page.write_text(text)
+                target = self.project / 'target'
+                target.mkdir(exist_ok=True)
+                result = subprocess.run([sys.executable, str(package / 'scripts/install'), '--project',
+                                         str(target), '--host-version', '0.160.0'], capture_output=True, text=True)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn('shared collaboration', result.stderr)
+                self.assertFalse((target / '.codex').exists())
 
     def test_check_detects_missing_install_and_drift_without_writing(self):
         result = self.install('--check')
