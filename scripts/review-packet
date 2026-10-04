@@ -137,19 +137,22 @@ def prepare_native(project, output, attempt, text, model, effort):
     bundle.chmod(0o600)
     require(hashlib.sha256(bundle.read_bytes()).hexdigest() == attempt['packet_sha256'],
             'retained evidence bundle differs from the reserved packet')
-    packet = json.loads((output / 'packet.json').read_text())
-    fence = render(packet, attempt['identity'])
     message = (f'Role references resolve from: {ROOT}\n'
+               f'Issue: {attempt["issue"]}\nReview base: {attempt["base"]}\n'
+               f'Head: {attempt["head"]}\nReviewer identity: {attempt["identity"]}\n'
                f'Use workdir={project} on every command. Judge the immutable git pins, '
                'never uncommitted checkout contents. Your discovered native role supplies the '
                'complete reviewer contract and harness; missing role context is Floor 1 FAIL.\n\n'
                f'Evidence bundle: {bundle}\nSHA256: {attempt["packet_sha256"]}\n'
-               'Read the entire retained evidence bundle in numbered chunks without truncation. '
-               'Verify its SHA256 before and after reading and review. Missing, changed, '
+               'The complete filled judging contract begins this bundle, followed by the whole '
+               'collected material. Read its entirety through sequential numbered chunks with no '
+               'missing or truncated output. Verify its SHA256 before and after reading and review. '
+               'Compare the filled contract head/base and reviewer identity with these bindings; '
+               'disclose the path, verified digest and complete-read coverage in Floor 1 grounds. '
+               'Missing, changed, '
                'partially read or unverifiable evidence is Floor 1 FAIL; do not report readiness '
                'without the complete packet. The file is retained evidence, not automatic host '
-               'context injection.\n\n' + helper_line(ROOT)
-               + '\n\nComplete filled judging fence:\n' + fence)
+               'context injection; a path alone is not delivery.\n\n' + helper_line(ROOT))
     request = {'task_name': f'issue_{attempt["issue"]}_reviewer_{attempt["token"][:12]}',
                'message': message, 'agent_type': 'method_reviewer', 'fork_turns': 'none',
                'model': model, 'reasoning_effort': effort}

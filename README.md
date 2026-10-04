@@ -79,6 +79,9 @@ project by default, or explicitly install user-level roles:
 
 The installer preserves unrelated project settings and refuses role collisions. It generates
 `method_worker`, `method_reviewer`, `method_helper`, and `method_review_helper`, with V2 settings.
+Formal roles retain their complete worker/reviewer sources and native harness. Task-local helpers
+receive [their bounded contract](reference/task-helper.md), shared agreements and only the relevant
+native mechanics; ordinary material work does not inherit a formal PR workflow.
 Project installation preserves unrelated settings and user configuration. Explicit `--user`
 installs roles under `$CODEX_HOME/agents` (default `~/.codex/agents`); active configuration layers still govern discovery in a
 new chat. User-level installation is not automatic registration for every project and does not
@@ -115,10 +118,10 @@ Dispatch carries the dynamic task binding; the discovered role supplies its stat
 Dispatch and review start prepare native invocation data; the main session must call the real
 native tool with `fork_turns="none"`, record the returned handle, and publish the reviewer's
 unedited whole return. For review, the discovered typed role automatically supplies the complete
-static contract and harness. The ordinary native message carries the complete filled judging
-fence plus workdir, an absolute retained evidence-bundle path and its SHA-256; it does not repeat
-that role or inline the whole large bundle. The reviewer must hash the bundle before and after,
-read every numbered chunk, and match the filled fence to its pinned packet. A missing, changed
+static contract and harness. For ordinary `review-packet start`, the short native message binds
+issue, head, base, reviewer identity and workdir to one absolute retained bundle path and SHA-256.
+The bundle alone carries the complete filled contract and evidence. The reviewer must hash it
+before and after, read every numbered chunk, and match its contract to those immutable bindings. A missing, changed
 or partially read bundle fails Floor 1. This uses ordinary read tools; the host does not follow
 file references or read the bundle automatically. Its UTF-8 digest is the existing packet SHA;
 `status` validates new file carriers while retaining historical inline recovery. Publish a returned

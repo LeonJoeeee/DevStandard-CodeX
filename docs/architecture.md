@@ -24,8 +24,9 @@ shipped lifecycle's relationship to its public record; it is not another task tr
 |---|---|
 | Orchestrator role | `reference/orchestrator.md` is the complete main-session contract, including the single marked Shared collaboration agreements source: persistent human authorization, responsive event loop, dispatch, design challenge, acceptance, integration, recovery, cleanup, release, and requirements craft. |
 | Worker role | `reference/worker.md` plus `reference/harness-codex.md` supplies one lane's execution, evidence, escalation, and native recovery obligations. Its freshly fetched packet carries the whole ordered issue, named base, branch, worktree, inputs, output duty, language and attribution. |
-| Reviewer role | The discovered typed role automatically supplies the complete canonical judging contract and harness. The native message carries the complete filled fence, workdir and a retained complete packet path plus SHA-256. The child explicitly hashes before/after and reads all numbered chunks; missing, partial, changed or inconsistent evidence fails Floor 1. The packet retains exact pins, claims, authority, diff forms, status captures and gaps. No implementation craft or publication authority. |
-| Native delivery | Package hooks use `.codex-plugin/plugin.json` and the host-provided `PLUGIN_ROOT`. SessionStart covers startup/resume/clear/compact through one synchronous handler with `additionalContextLimit: 0`. Complete inline additionalContext (root/path header plus raw UTF-8 page) has a fixed 64,000-byte method budget; missing, empty, invalid UTF-8 or oversized pages return a stop response without partial rules. `scripts/install` separately generates project `.codex/agents/*.toml` roles: `method_worker`, `method_reviewer`, `method_helper`, `method_review_helper`. The installer inlines the shared section once into every complete role; helpers prefix task-local applicability so ordinary work does not acquire lane/PR duties. Roles carry developer instructions only; actual native calls supply model/effort so role config cannot silently override the invocation. Hook configuration belongs to the package. |
+| Reviewer role | The discovered typed role automatically supplies the complete canonical judging contract and harness. For ordinary review start, the short native message binds issue/head/base/reviewer/workdir to a retained complete packet path and SHA-256; the filled contract and evidence occur once in the bundle. The child explicitly hashes before/after and reads all numbered chunks; missing, partial, changed or inconsistent evidence fails Floor 1. The packet retains exact pins, claims, authority, diff forms, status captures and gaps. No implementation craft or publication authority. |
+| Task-local helpers | `reference/task-helper.md` owns the bounded subtask contract; the caller retains lane, acceptance and publication. Both helpers receive the unchanged shared agreements and only relevant native mechanics. Review helpers remain nonediting and cannot replace a formal review. |
+| Native delivery | Package hooks use `.codex-plugin/plugin.json` and the host-provided `PLUGIN_ROOT`. SessionStart covers startup/resume/clear/compact through one synchronous handler with `additionalContextLimit: 0`. Complete inline additionalContext (root/path header plus raw UTF-8 page) has a fixed 64,000-byte method budget; missing, empty, invalid UTF-8 or oversized pages return a stop response without partial rules. `scripts/install` separately generates project `.codex/agents/*.toml` roles: `method_worker`, `method_reviewer`, `method_helper`, `method_review_helper`. The installer inlines the shared section once into every complete role; helpers instead receive `reference/task-helper.md`, their role-specific bounds and a validated native-helper excerpt from the harness, without complete formal lane/PR pages. Roles carry developer instructions only; actual native calls supply model/effort so role config cannot silently override the invocation. Hook configuration belongs to the package. |
 | Dispatcher | `scripts/dispatch` creates or validates a lane and prepares native invocation data. Lane receipts, locks and retained briefs live in the Git common directory under `codex-method/lanes`; a repository-wide ownership lock prevents different checkouts from admitting overlapping writers. The installed typed role supplies static instructions once; the message carries only the dynamic task binding. Missing/stale roles refuse. The caller launches, observes, records and continues the real child. A resolver remains an ordinary lane worker. |
 | Review lifecycle | `scripts/review-packet`, packet assembly, and `scripts/review_state.py` use one shared parser and ledger in the common git directory: `codex-method/reviews/OWNER/REPO/PR.json`. Start qualifies installed roles and prepares the fresh six-field native instruction. Reservation id/token, issue/head/base, identity/author, packet SHA (also the retained UTF-8 bundle), instruction SHA, raw verdict SHA and exact comment SHA bind start, publish, status and guard. Short native transport avoids role duplication and large inline evidence without dropping bundle bytes. Pending intent is durable before remote mutation; status recovers only exact association, never retries an unknown outcome. |
 | Integration and protection | `scripts/guard` verifies the current default branch, current-base ancestry, exact accepted receipt/head/base, and green `merged-result / BASE_SHA / HEAD_SHA` from GitHub Actions app `15368`, with no failed head checks. It re-fetches before execute and merges with `--match-head-commit`. No automatic remote-branch deletion. Protection is provisioned deliberately with explicit required check names. |
@@ -248,16 +249,17 @@ prepared message duplicated the static role and inlined a roughly 224 KB packet.
 role probes and green CI remain evidence for their own versions and properties; they did not
 qualify this large-message caller path.
 
-The corrected route keeps the six native fields and automatic typed-role delivery. Its message
-contains the complete filled judging fence, explicit workdir and an absolute retained token-directory
-bundle path with SHA-256. The original complete bundle remains intact. The reviewer verifies the
-digest before and after, explicitly reads all numbered chunks, and checks the inline/bundle contract
-match; absent access, drift, mismatches or partial reads fail Floor 1. This is ordinary tool reading,
-not automatic host file-reference loading or a special code-mode-only route. Receipt recovery
-retains the bundle and instruction identities. The existing packet SHA identifies the complete
-UTF-8 file bytes; the instruction SHA binds the inline fence, path and digest. New local receipts
-mark `packet_carrier: file-sha256-v1` so status refuses missing or changed carrier files without
-reinterpreting historical inline attempts. Raw Floor-failing verdict publication remains possible
-even when its carrier is missing, so failure evidence is not lost. Updated role bytes and the
-default caller route
-need fresh qualification; the earlier 0.2.0 results do not prove this correction.
+The ordinary review-start route keeps the six native fields and automatic typed-role delivery.
+Its short message binds issue, head, base, reviewer identity and workdir to an absolute retained
+bundle path with SHA-256. The bundle is the sole carrier of this review's complete filled contract
+and original evidence. The reviewer verifies the digest before and after, explicitly reads all
+numbered chunks, and checks the contract against those immutable bindings; absent access, drift,
+mismatches or partial reads fail Floor 1. This uses ordinary read tools; the host does not load a
+file reference automatically. The static role still supplies the governing template and mechanics.
+Receipt recovery retains bundle and instruction identities. The packet SHA identifies all UTF-8
+bundle bytes; the instruction SHA binds transport metadata, path and digest. `file-sha256-v1`
+continues to refuse missing or changed files without reinterpreting historical inline attempts or
+already-prepared file instructions. Separate inline dispatcher consumers keep their existing
+carrier. Raw Floor-failing verdict publication remains possible even when its bundle is missing.
+Changed role and caller bytes require fresh qualification; earlier results prove their own bytes
+and properties, not these changes.

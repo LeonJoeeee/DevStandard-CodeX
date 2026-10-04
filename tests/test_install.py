@@ -46,7 +46,8 @@ class InstallTest(unittest.TestCase):
             for forbidden in ('model', 'model_reasoning_effort', 'cwd', 'sandbox_mode', 'approval_policy', 'hooks'):
                 self.assertNotIn(forbidden, parsed)
             instructions = parsed['developer_instructions']
-            source = 'code-review-prompt.md' if 'review' in role else 'worker.md'
+            source = ('task-helper.md' if role.endswith('helper') else
+                      'code-review-prompt.md' if 'review' in role else 'worker.md')
             self.assertIn((ROOT / 'reference' / source).read_text(), instructions)
             self.assertIn('method_review_helper', instructions)
             self.assertIn('fork_turns', instructions)
@@ -70,8 +71,7 @@ class InstallTest(unittest.TestCase):
                 self.assertEqual(instructions.count(shared), 1)
                 self.assertNotIn('# Orchestrator\n', instructions)
                 if role.endswith('helper'):
-                    self.assertTrue(instructions.startswith('# Task-local helper contract\n'))
-                    self.assertIn('Lane receipt and PR judging requirements apply only', instructions)
+                    self.assertIn((ROOT / 'reference/task-helper.md').read_text(), instructions)
 
     def test_missing_ambiguous_or_empty_shared_source_refuses_before_any_write(self):
         package = self.project / 'package'
@@ -93,6 +93,117 @@ class InstallTest(unittest.TestCase):
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn('shared collaboration', result.stderr)
                 self.assertFalse((target / '.codex').exists())
+
+    def test_helpers_select_only_task_source_and_native_excerpt(self):
+        result = self.install()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        helper_source = ROOT / 'reference/task-helper.md'
+        self.assertTrue(helper_source.is_file(), 'neutral helper source is missing')
+        harness = (ROOT / 'reference/harness-codex.md').read_text()
+        start = '<!-- BEGIN NATIVE HELPER MECHANICS -->'
+        end = '<!-- END NATIVE HELPER MECHANICS -->'
+        self.assertIn(start, harness, 'helper mechanics selector is missing')
+        excerpt = harness.split(start, 1)[1].split(end, 1)[0].strip()
+        for role in ('method_helper', 'method_review_helper'):
+            instructions = tomllib.loads((self.project / '.codex/agents' / (role + '.toml')).read_text())['developer_instructions']
+            self.assertEqual(instructions.count(helper_source.read_text()), 1)
+            self.assertEqual(instructions.count(excerpt), 1)
+            for source in ('worker.md', 'code-review-prompt.md'):
+                self.assertNotIn((ROOT / 'reference' / source).read_text(), instructions)
+            self.assertNotIn(harness, instructions)
+            self.assertNotIn('## Driving a PR to green', instructions)
+            self.assertNotIn('Ready-to-merge:', instructions)
+        ordinary = tomllib.loads((self.project / '.codex/agents/method_helper.toml').read_text())['developer_instructions']
+        review = tomllib.loads((self.project / '.codex/agents/method_review_helper.toml').read_text())['developer_instructions']
+        self.assertIn('superpowers:test-driven-development', ordinary)
+        self.assertNotIn('superpowers:test-driven-development', review)
+
+    def test_invalid_helper_sources_refuse_without_config_role_or_backup_writes(self):
+        package = self.project / 'package'
+        shutil.copytree(ROOT / 'scripts', package / 'scripts')
+        shutil.copytree(ROOT / 'reference', package / 'reference')
+        page = package / 'reference/harness-codex.md'
+        original = page.read_text()
+        start = '<!-- BEGIN NATIVE HELPER MECHANICS -->'
+        end = '<!-- END NATIVE HELPER MECHANICS -->'
+        target = self.project / 'target'
+        target.mkdir()
+        installed = subprocess.run([sys.executable, str(ROOT / 'scripts/install'), '--project',
+                                    str(target), '--host-version', '0.160.0'], capture_output=True, text=True)
+        self.assertEqual(installed.returncode, 0, installed.stderr)
+        before = {str(p.relative_to(target)): p.read_bytes() for p in target.rglob('*') if p.is_file()}
+        for text in ('# No marked mechanics\n', start, end, start + '\n' + end,
+                     start + '\nx\n' + end + '\n' + start + '\ny\n' + end,
+                     end + '\nx\n' + start):
+            with self.subTest(text=text):
+                page.write_text(text)
+                result = subprocess.run([sys.executable, str(package / 'scripts/install'), '--project',
+                                         str(target), '--host-version', '0.160.0'], capture_output=True, text=True)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn('native helper mechanics', result.stderr)
+                self.assertEqual({str(p.relative_to(target)): p.read_bytes() for p in target.rglob('*') if p.is_file()}, before)
+        page.unlink()
+        missing_harness = subprocess.run([sys.executable, str(package / 'scripts/install'), '--project',
+                                         str(target), '--host-version', '0.160.0'], capture_output=True, text=True)
+        self.assertNotEqual(missing_harness.returncode, 0)
+        self.assertEqual({str(p.relative_to(target)): p.read_bytes() for p in target.rglob('*') if p.is_file()}, before)
+        page.write_text(original)
+        helper = package / 'reference/task-helper.md'
+        for absent in (False, True):
+            with self.subTest(absent=absent):
+                if absent:
+                    helper.unlink()
+                else:
+                    helper.write_text('')
+                result = subprocess.run([sys.executable, str(package / 'scripts/install'), '--project',
+                                         str(target), '--host-version', '0.160.0'], capture_output=True, text=True)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual({str(p.relative_to(target)): p.read_bytes() for p in target.rglob('*') if p.is_file()}, before)
+
+    def test_stale_helpers_block_formal_consumers_until_complete_reinstall(self):
+        from tests.github_fixture import GitHubFixture
+        for helper in ('method_helper', 'method_review_helper'):
+            with self.subTest(helper=helper):
+                fixture = GitHubFixture()
+                self.addCleanup(fixture.close)
+                fixture.env['TMPDIR'] = str(fixture.root)
+                fake = fixture.root / 'bin/gh'
+                fake.write_text(fake.read_text().replace(
+                    "out({'body': s['issue'], 'state': 'OPEN'",
+                    "out({'number': 2, 'body': s['issue'], 'state': 'OPEN'"))
+                fixture.git('checkout', 'main')
+                lane = fixture.root / 'lane'
+                fixture.git('worktree', 'add', lane, 'task/2-acceptance')
+                path = fixture.project / '.codex/agents' / (helper + '.toml')
+                formal = 'method_reviewer' if 'review' in helper else 'method_worker'
+                previous = (fixture.project / '.codex/agents' / (formal + '.toml')).read_text().replace(
+                    'name = "' + formal + '"', 'name = "' + helper + '"')
+                path.write_text(previous)
+                # Current user-scope roles cannot hide a stale project helper.
+                fixture.env['CODEX_HOME'] = str(fixture.root / 'user-config')
+                user_install = subprocess.run([sys.executable, str(ROOT / 'scripts/install'), '--user',
+                    '--host-version', '0.160.0'], env=fixture.env, capture_output=True, text=True)
+                self.assertEqual(user_install.returncode, 0, user_install.stderr)
+                args = ('2', '--purpose', 'worker', '--adopt', '--branch', 'task/2-acceptance',
+                        '--worktree', str(lane), '--base', 'main', '--host-version', '0.160.0')
+                dispatch = fixture.command('dispatch', *args)
+                review = fixture.start()
+                for result in (dispatch, review):
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn('drift', result.stderr)
+                self.assertFalse((fixture.project / '.git/codex-method/lanes/2.json').exists())
+                self.assertFalse(fixture.state()['comments'])
+                self.assertEqual(path.read_text(), previous)
+                installed = fixture.command('install', '--host-version', '0.160.0')
+                self.assertEqual(installed.returncode, 0, installed.stderr)
+                backups = [Path(item) for item in json.loads(installed.stdout)['backups']]
+                self.assertEqual(len(backups), 1)
+                self.assertEqual(backups[0].read_text(), previous)
+                self.assertNotIn(path.parent, backups[0].parents)
+                dispatched = fixture.command('dispatch', *args)
+                self.assertEqual(dispatched.returncode, 0, dispatched.stderr)
+                reviewed = fixture.start()
+                self.assertEqual(reviewed.returncode, 0, reviewed.stderr)
 
     def test_check_detects_missing_install_and_drift_without_writing(self):
         result = self.install('--check')

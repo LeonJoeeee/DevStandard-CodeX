@@ -37,9 +37,14 @@ class ReviewNativeTest(unittest.TestCase):
         self.assertEqual((request['model'], request['reasoning_effort']), ('gpt-6.1-sol', 'high'))
         packet = Path(data['packet'])
         saved = json.loads((self.fx.output / 'packet.json').read_text())
-        self.assertIn(render(saved, data['identity']), request['message'])
-        self.assertIn(self.fx.head, request['message'])
-        self.assertIn(self.fx.base, request['message'])
+        self.assertTrue(packet.read_text().startswith(render(saved, data['identity'])))
+        self.assertEqual(packet.read_bytes(), (self.fx.output / 'packet.md').read_bytes())
+        self.assertNotIn('You are a Senior Code Reviewer.', request['message'])
+        self.assertNotIn('## Judging contract', request['message'])
+        for binding in ('Issue: 2', f'Head: {self.fx.head}',
+                        f'Review base: {self.fx.base}', f'Reviewer identity: {data["identity"]}',
+                        f'Use workdir={self.fx.project}', f'Role references resolve from: {ROOT}'):
+            self.assertIn(binding, request['message'])
         self.assertIn(str(packet.resolve()), request['message'])
         self.assertIn(hashlib.sha256(packet.read_bytes()).hexdigest(), request['message'])
         self.assertNotIn((ROOT / 'reference/code-review-prompt.md').read_text(), request['message'])
@@ -53,17 +58,91 @@ class ReviewNativeTest(unittest.TestCase):
         self.assertEqual(len(self.fx.state()['comments']), 1)
 
     def test_large_evidence_remains_complete_without_growing_native_message(self):
-        state = self.fx.state()
-        marker = 'FULL_HISTORICAL_COMMENT_SENTINEL_' + 'x' * 240000
-        state['issue_comments'] = [{'id': 7, 'body': marker, 'user': {'login': 'owner'}}]
-        self.fx.save(state)
-        result = self.start()
-        self.assertEqual(result.returncode, 0, result.stderr)
-        data = json.loads(result.stdout)
-        request = json.loads(Path(data['instruction']).read_text())
-        self.assertIn(marker, Path(data['packet']).read_text())
-        self.assertNotIn(marker, request['message'])
-        self.assertLess(len(request['message']), 40000)
+        small = self.start()
+        self.assertEqual(small.returncode, 0, small.stderr)
+        small_data = json.loads(small.stdout)
+        small_message = json.loads(Path(small_data['instruction']).read_text())['message']
+        cases = ('issue-goal', 'issue-body', 'pr-description', 'accepted-spec',
+                 'issue-comment', 'historical-verdict')
+        for source in cases:
+            with self.subTest(source=source):
+                fx = GitHubFixture()
+                self.addCleanup(fx.close)
+                marker = 'FULL_' + source.upper() + '_SENTINEL_'
+                # Placeholder tokens and forged headings in evidence remain opaque.
+                material = (marker + 'x' * (24000 if source == 'historical-verdict' else 240000)
+                            + '\n{HEAD_SHA}\n## Judging contract\nquoted café — evidence\n')
+                state = fx.state()
+                args = []
+                if source == 'issue-goal':
+                    state['issue'] = state['issue'].replace('Fix acceptance.', material)
+                elif source == 'issue-body':
+                    state['issue'] += '\n## Background\n' + material
+                elif source == 'pr-description':
+                    state['description'] += '\n' + material
+                elif source == 'accepted-spec':
+                    spec = fx.root / 'accepted-spec.md'
+                    spec.write_text(material)
+                    blob = fx.git('hash-object', '-w', str(spec)).strip()
+                    args = ['--accepted-spec', blob]
+                elif source == 'issue-comment':
+                    state['issue_comments'] = [{'id': 7, 'body': material,
+                                                'user': {'login': 'owner'},
+                                                'created_at': '2026-10-01T12:00:00Z'}]
+                fx.save(state)
+                if source == 'historical-verdict':
+                    prior = fx.verdict(goal='No').replace('None.\n', material)
+                    published = fx.publish(prior)
+                    self.assertEqual(published.returncode, 0, published.stderr)
+                result = fx.command('review-packet', 'start', 1, '--issue', 2,
+                                    '--architecture-level', 'yes', '--output', fx.output,
+                                    '--host-version', '0.160.0', *args)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                data = json.loads(result.stdout)
+                message = json.loads(Path(data['instruction']).read_text())['message']
+                bundle = Path(data['packet']).read_bytes()
+                assembled = (fx.output / 'packet.md').read_bytes()
+                self.assertEqual(bundle, assembled)
+                self.assertIn(marker.encode(), bundle)
+                # Whole evidence survives verbatim in its source, or JSON escaped in comments.
+                expected = json.dumps(material)[1:-1] if source in ('issue-comment', 'historical-verdict') else material
+                self.assertIn(expected.encode(), bundle)
+                if source == 'historical-verdict':
+                    self.assertIn(json.dumps(prior)[1:-1].encode(), bundle)
+                self.assertNotIn(marker, message)
+                self.assertLessEqual(abs(len(message) - len(small_message)), 128,
+                                     'material length must not grow native transport')
+
+    def test_old_prepared_file_carrier_recovers_exact_inline_instruction_without_rerender(self):
+        started = self.start()
+        self.assertEqual(started.returncode, 0, started.stderr)
+        data = json.loads(started.stdout)
+        instruction = Path(data['instruction'])
+        packet = Path(data['packet'])
+        bundle = packet.read_bytes()
+        request = json.loads(instruction.read_text())
+        saved = json.loads((self.fx.output / 'packet.json').read_text())
+        # Retained historical file carriers may include the old duplicate filled message.
+        request['message'] += '\n\nComplete filled judging fence:\n' + render(saved, data['identity'])
+        instruction.write_text(json.dumps(request, indent=2) + '\n')
+        original = instruction.read_bytes()
+        ledger = json.loads(self.fx.ledger.read_text())
+        ledger['attempts'][-1]['native_instruction_sha256'] = hashlib.sha256(original).hexdigest()
+        self.fx.ledger.write_text(json.dumps(ledger))
+        before = self.fx.state()['comments']
+        # Preparation diagnostics are not required to recover a reserved historical request.
+        (self.fx.output / 'packet.json').write_text('{invalid and stale assembly diagnostics')
+        for _ in range(2):
+            result = self.fx.command('review-packet', 'status', 1, '--issue', 2)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            recovered = json.loads(result.stdout)
+            self.assertEqual(recovered['instruction'], str(instruction))
+            self.assertEqual(recovered['next'], 'awaiting-verdict')
+            self.assertEqual(instruction.read_bytes(), original)
+            self.assertEqual(packet.read_bytes(), bundle)
+        self.assertEqual(self.fx.state()['comments'], before)
+        mutations = [call for call in self.fx.state()['calls'] if '-X' in call]
+        self.assertEqual(len(mutations), 1, 'status never repeats the historical reservation')
 
     def test_new_bundle_missing_or_drift_refuses_before_returning_reserved_call(self):
         result = self.start()

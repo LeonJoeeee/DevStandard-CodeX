@@ -120,11 +120,12 @@ def validate_request(request, role, full_role):
     require(request.get('model') == MODEL, role + ': actual model routing changed')
     require(request.get('reasoning', {}).get('effort') == EFFORT,
             role + ': actual reasoning effort routing changed')
-    if role == 'reviewer':
+    if role in ('reviewer', 'helper', 'review_helper'):
         carried = '\n'.join(fragments([request.get('instructions', ''), request.get('input', [])]))
-        require(PRIVATE_PARENT not in carried, 'reviewer received private parent conversation')
-        require(PRIVATE_WORKER not in carried, 'reviewer received private worker sentinel')
-        require(full_role and full_role in carried, 'reviewer did not receive the full review role')
+        require(PRIVATE_PARENT not in carried, role + ' received private parent conversation')
+        require(PRIVATE_WORKER not in carried, role + ' received private worker sentinel')
+        if role == 'reviewer':
+            require(full_role and full_role in carried, 'reviewer did not receive the full review role')
 
 
 def validate_root_context(request, page):
@@ -435,9 +436,14 @@ def prepare(binary, scratch, env, installer, evidence):
     for name in (('method_worker', 'method_reviewer', 'method_helper', 'method_review_helper')
                  if installer else ('method_worker', 'method_reviewer')):
         role = tomllib.loads((roles / (name + '.toml')).read_text())
-        source = 'code-review-prompt.md' if 'review' in name else 'worker.md'
+        source = ('task-helper.md' if name.endswith('helper') else
+                  'code-review-prompt.md' if 'review' in name else 'worker.md')
         require((package / 'reference' / source).read_text() in role.get('developer_instructions', ''),
                 name + ': installed role does not carry the full shipped role')
+        if name.endswith('helper'):
+            excerpt = runpy.run_path(str(ROOT / 'scripts/install'))['native_helper_mechanics']()
+            require(excerpt in role['developer_instructions'],
+                    name + ': installed helper mechanics are incomplete')
         for key in ('model', 'model_reasoning_effort'):
             # If an installer fixes these values, they must agree with the requested
             # spawn route. Never rewrite installed role settings to manufacture a pass.
@@ -631,11 +637,21 @@ class ResponsesFixture:
                     message='Local refusal probe; this child must never start.',
                     agent_type='method_worker', fork_turns='none', model=MODEL,
                     reasoning_effort=EFFORT), 'reviewer_cross_role')
-        elif role in ('helper', 'review_helper') and index == 0:
-            return self.shell(request, 'cat helper-material.txt', role + '_material', self.project)
+        elif role in ('helper', 'review_helper'):
+            if index == 0:
+                return self.shell(request, 'cat helper-material.txt', role + '_material', self.project)
+            if role == 'helper' and index == 1:
+                return self.shell(request, 'git merge fixture-never-merge', 'helper_merge', self.project)
+            if role == 'review_helper' and index == 1:
+                return self.shell(request, 'touch review-helper-shell.txt', 'review_helper_shell', self.project)
+            if role == 'review_helper' and index == 2:
+                return self.call(request, 'spawn_agent', dict(task_name='rejected_helper_cross_role',
+                    message='Local refusal probe; this child must never start.',
+                    agent_type='method_helper', fork_turns='none', model=MODEL,
+                    reasoning_effort=EFFORT), 'review_helper_cross_role')
         elif role == 'control' and index == 0:
             return self.shell(request, self.control_command, 'control_write')
-        require(index == {'worker': 3, 'reviewer': 4, 'control': 1, 'helper': 1, 'review_helper': 1}[role],
+        require(index == {'worker': 3, 'reviewer': 4, 'control': 1, 'helper': 2, 'review_helper': 3}[role],
                 role + ': unexpected continuation after final')
         return self.final(role)
 
@@ -701,7 +717,8 @@ class ResponsesFixture:
         require(not self.errors, 'provider errors: ' + repr(self.errors))
         require(self.root_stage == self.finished_stage and DONE['root'] in events, 'root did not complete qualification')
         require(set(self.handles) == set(self.sequence), 'missing native spawn handles')
-        for call in ('root_pwd', 'worker_lane_pwd', 'worker_session_pwd', 'control_write'):
+        for call in ('root_pwd', 'worker_lane_pwd', 'worker_session_pwd', 'control_write',
+                     'helper_material', 'review_helper_material'):
             setup_errors = [line.strip() for line in self.outputs.get(call, '').splitlines()
                             if line.strip().startswith('bwrap:')]
             require(not setup_errors, call + ': sandbox setup failed: ' + '; '.join(setup_errors))
@@ -710,7 +727,7 @@ class ResponsesFixture:
             require(str(expected) in self.outputs.get(call, '').splitlines(), call + ': actual cwd mismatch')
         require((self.project / 'inherited-permissions.txt').exists(),
                 'per-role read-only negative control did not actually write under parent permissions')
-        for name in ('reviewer-patch.txt', 'reviewer-shell.txt'):
+        for name in ('reviewer-patch.txt', 'reviewer-shell.txt', 'review-helper-shell.txt'):
             require(not (self.project / name).exists(), 'reviewer sentinel was written: ' + name)
         fake_calls = [json.loads(line) for line in (self.project / 'fake-gh-calls.jsonl').read_text().splitlines()]
         require(fake_calls == [['--version']], 'reviewer remote probe reached the fake gh executable')
@@ -732,33 +749,36 @@ class ResponsesFixture:
         hook_log = self.project / 'hook-payloads.jsonl'
         require(hook_log.exists(), 'installed plugin hook did not run')
         records = [json.loads(line) for line in hook_log.read_text().splitlines()]
-        denied, reviewer_calls, worker_denied = [], [], []
+        expected = {
+            'worker_merge': ('method_worker', 'shell', 'git merge fixture-never-merge'),
+            'reviewer_patch': ('method_reviewer', 'apply_patch', None),
+            'reviewer_shell': ('method_reviewer', 'shell', 'touch reviewer-shell.txt'),
+            'reviewer_remote': ('method_reviewer', 'shell', shlex.quote(str(self.fake)) + ' issue comment 1 --body fixture'),
+            'reviewer_cross_role': ('method_reviewer', 'collaborationspawn_agent', 'method_worker')}
+        if 'helper' in self.sequence:
+            expected['helper_merge'] = ('method_helper', 'shell', 'git merge fixture-never-merge')
+            expected['review_helper_shell'] = ('method_review_helper', 'shell', 'touch review-helper-shell.txt')
+            expected['review_helper_cross_role'] = ('method_review_helper', 'collaborationspawn_agent', 'method_helper')
+        observed = {}
         for record in records:
             payload = record['payload']
-            role = payload.get('agent_type')
-            tool = payload.get('tool_name')
+            role, tool = payload.get('agent_type'), payload.get('tool_name')
             inputs = payload.get('tool_input') or {}
             command = inputs.get('command', inputs.get('cmd', ''))
-            shell_tool = tool in ('Bash', 'exec_command')
-            worker_merge = (role == 'method_worker' and shell_tool
-                            and command == 'git merge fixture-never-merge')
-            if role != 'method_reviewer' and not worker_merge:
+            matches = [call for call, (wanted_role, wanted_tool, target) in expected.items()
+                       if role == wanted_role and (
+                           (wanted_tool == 'shell' and tool in ('Bash', 'exec_command') and command == target)
+                           or (wanted_tool == tool and (target is None or inputs.get('agent_type') == target)))]
+            if not matches:
+                require(role != 'method_reviewer',
+                        'unexpected reviewer hook tool or command: ' + str(tool) + ' ' + str(command))
+                if role == 'method_review_helper':
+                    require(tool in ('Bash', 'exec_command') and command == 'cat helper-material.txt',
+                            'unexpected review-helper hook tool or command: ' + str(tool) + ' ' + str(command))
                 continue
+            require(len(matches) == 1, 'ambiguous boundary probe')
+            call_id = matches[0]
             require(payload.get('agent_id'), role + ' hook has no native child identity')
-            if worker_merge:
-                call_id = 'worker_merge'
-            elif tool == 'apply_patch':
-                call_id = 'reviewer_patch'
-            elif tool == 'collaborationspawn_agent':
-                require(inputs.get('agent_type') == 'method_worker',
-                        'cross-role probe used an unexpected native role')
-                call_id = 'reviewer_cross_role'
-            else:
-                require(shell_tool, 'unexpected reviewer hook tool: ' + str(tool))
-                commands = {'touch reviewer-shell.txt': 'reviewer_shell',
-                            shlex.quote(str(self.fake)) + ' issue comment 1 --body fixture': 'reviewer_remote'}
-                require(command in commands, 'unexpected reviewer hook command: ' + str(command))
-                call_id = commands[command]
             reason = record['stderr'] if record['exit_code'] == 2 else ''
             if record['exit_code'] == 0 and record['stdout'].strip():
                 output = json.loads(record['stdout']).get('hookSpecificOutput', {})
@@ -769,15 +789,13 @@ class ResponsesFixture:
                     call_id + ': blocking denial did not reach native tool output')
             require(record['plugin_root'] and str(self.scratch) in record['plugin_root'],
                     'hook did not bind fixture PLUGIN_ROOT')
-            if worker_merge:
-                worker_denied.append(tool)
-            else:
-                denied.append(tool)
-                reviewer_calls.append(call_id)
-        require(Counter(reviewer_calls) == Counter({'reviewer_patch': 1, 'reviewer_shell': 1,
-                                                   'reviewer_remote': 1, 'reviewer_cross_role': 1}),
-                'did not observe the four actual reviewer hook denials: ' + repr(denied))
-        require(len(worker_denied) == 1, 'did not observe the actual worker merge hook denial')
+            require(call_id not in observed, call_id + ': duplicate boundary denial')
+            observed[call_id] = tool
+        require(observed.keys() == expected.keys(),
+                'did not observe all actual worker/reviewer/helper hook denials: '
+                + repr(sorted(expected.keys() - observed.keys())))
+        denied = [tool for call, tool in observed.items() if call.startswith('reviewer_')]
+        worker_denied = [observed['worker_merge']]
         require(sum(record['ungated_control'] for record in records) == 1,
                 'exact ungated per-role sandbox control was not observed')
         helpers = [role for role in self.sequence if role.endswith('helper')]
@@ -795,6 +813,8 @@ class ResponsesFixture:
                 'worker_explicit_lane_cwd': True,
                 'child_session_cwd': str(self.project), 'reviewer_denials': denied,
                 'worker_merge_denials': worker_denied,
+                'helper_merge_denials': [observed['helper_merge']] if 'helper_merge' in observed else [],
+                'review_helper_denials': [tool for call, tool in observed.items() if call.startswith('review_helper_')],
                 'unknown_fields': 'actual V2 handler rejected cwd and fork_context',
                 'mailbox_completion': ', '.join(self.sequence) + ' completion delivered to root',
                 'per_role_readonly': "UNSUPPORTED: declared read-only role's exact ungated child write "

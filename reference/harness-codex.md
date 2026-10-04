@@ -43,16 +43,18 @@ live context and actual stopping behavior for each claim rather than inferring t
 
 The installer extracts the single marked Shared collaboration agreements section from
 `reference/orchestrator.md` and inlines it once into all four roles. Children receive that section,
-not the whole orchestrator, and do not reread its main-session duties. Helper roles prefix a
-narrow applicability contract: the caller retains lane ownership and publication, and ordinary
+not the whole orchestrator, and do not reread its main-session duties. Helper roles receive
+`reference/task-helper.md`, a role-specific boundary and the single marked Native helper mechanics
+excerpt: the caller retains lane ownership and publication, and ordinary
 non-PR work does not inherit Issue/lane/fence requirements. The worker role's instructions carry
 this page and `reference/worker.md`; its spawn message
 carries the freshly assembled task packet without a second static role copy. Installation drift
 and missing roles refuse before a lane is prepared. Helpers receive their narrower task and applicable
 role boundary. Reviewer roles automatically deliver the complete nonediting contract and native mechanics,
-with no implementation skills. Their short native message supplies the complete filled judging
-fence and binds the full retained evidence bundle by absolute path and SHA-256. The reviewer
-explicitly reads and verifies that complete bundle before judging; a path is not automatic
+with no implementation skills. Their short native message binds the issue, review base, head,
+reviewer identity, workdir
+and full retained evidence bundle by absolute path and SHA-256. The bundle supplies the complete
+filled judging contract. The reviewer explicitly reads and verifies that complete bundle before judging; a path is not automatic
 delivery. A child receives neither the main session's conversation nor
 an assumed startup delivery of the orchestrator page.
 
@@ -74,54 +76,74 @@ qualified argument shape, shown as data:
 }
 ```
 
-For gating review, the native message includes the complete filled judging fence, explicit
-workdir and the digest-pinned token-directory `review-brief.md` path with SHA-256. It does not duplicate
-the static role or inline the full evidence bundle. Hash the bundle before reading, read every
-numbered chunk in order with no omitted or truncated output, then hash it again. Both hashes must
-match the supplied digest and the complete bundle must agree with the inline contract. Missing
-access, drift, mismatches or partial reads fail Floor 1; do not rule readiness from the shorter
-fence or an evidence summary alone. Native schema and role fields stay unchanged. This route
-uses normal native calls and ordinary read tools, with no code-mode flag or file-reference API
-required; the host does not read the path for you. The file's UTF-8 hash is the existing packet
-SHA; the native instruction SHA binds its fence, path and digest. Status validates new file
-carriers without changing historical inline attempts or suppressing publication of a failed verdict.
+For gating review, the short native message binds `Issue`, `Review base`, `Head`, `Reviewer
+identity`, explicit workdir, method root and the token-directory `review-brief.md` absolute path
+with SHA-256. The bundle begins with the complete filled judging contract and retains all material;
+the message does not duplicate static role text or the filled contract. Hash the bundle before
+reading, read every sequential numbered chunk with no omitted or truncated output, then hash it
+again after reading/review. Both hashes must match the supplied digest, and the receipt pins and
+identity must agree with the filled contract. Disclose path, digest and full coverage in Floor 1
+grounds. Missing access, drift, mismatches or partial reads fail Floor 1; do not rule readiness
+from receipt pins or an evidence summary alone. A supported inline packet must be read completely;
+a supplied file carrier still requires exact hashing, full reads and inline/bundle agreement.
+Native schema and role fields stay unchanged. This route uses normal native calls and ordinary
+read tools, with no code-mode flag or file-reference API required; the host does not read the path
+for you. Original bundle bytes and instruction hashes remain retained for acceptance and recovery.
 
-Gating review uses `method_reviewer`; a fresh design challenge or pre-PR arbitration uses
-`method_review_helper`. Ordinary task helpers use `method_helper`; a reviewer's helpers keep
-`method_review_helper` and the caller's nonediting restriction. Every helper uses explicit `gpt-6.1-sol` at `high`
-under the delivered native `Helpers:` binding. Do not add `cwd`, `hook_settings`, `prompt`,
-`subagent_type`, or `run_in_background` to this V2 call.
+Gating review uses `method_reviewer`; its native message follows the formal transport above.
 
-Inspect the actual native schema before invoking it. Where an admitted native interface lacks
-`agent_type`, an ordinary task-local helper's message must explicitly carry the exact shared
-section (the installer's `shared_agreements()` output) and a self-contained assigned role/task
-contract with applicable write or nonediting bounds. Use only supported fields. This carrier
-is not typed role discovery or proof of role-hook enforcement; formal gating review still needs
-its qualified typed route and identity. If the interface or hook refuses, return the limitation
-rather than bypassing it. Do not infer universal desktop compatibility from app-server probes.
+<!-- BEGIN NATIVE HELPER MECHANICS -->
+## Native helper mechanics
 
-A prepared receipt is not a launched child. Record the actual returned native handle with its
-issue and lane; observe native completion before reuse or cleanup. Read the child's full
-return. The dispatcher cannot attest a handle it did not observe. A live or uncertain child
-blocks a second writer. Lane receipts and retained briefs are shared across checkouts in the Git
-common directory under `codex-method/lanes`. An older run keeps its observed version; preparing a
-current-version child requires fresh actual completion evidence for the old handle and current
-host qualification. Conflicting legacy receipts are preserved and refused, not overwritten. If a requested model, effort, role, or native tool is unavailable,
-report the limitation; model availability and quota never silently change the setting or gate.
+Inspect the actual native schema before invoking it. Qualified Codex 0.160.0 V2 accepts
+`task_name`, `message`, `agent_type`, `fork_turns="none"`, `model` and `reasoning_effort`.
+Ordinary task helpers use `method_helper`; fresh design challenge and pre-PR arbitration use
+`method_review_helper`. A reviewer's helpers keep `method_review_helper` and its nonediting
+restriction; use only fresh review-helper descendants for authorized review help, never a generic
+writer. Every helper passes model and effort explicitly under the delivered `Helpers:` binding.
+If a requested setting, role or native tool is unavailable, return the limitation; availability and
+quota never silently change the setting or gate. Do not add unsupported `cwd`, `sandbox`,
+`hook_settings`, `prompt`, `subagent_type`, `fork_context` or `run_in_background` spawn fields.
+
+Children inherit the parent's cwd and permissions. Run every command with the supplied working
+directory explicitly selected; a task path is an instruction, not cwd isolation or an OS sandbox.
+Fresh context and a nonediting contract plus the trusted ordinary-path role hook are not OS-enforced
+read-only isolation. The hook does not contain arbitrary MCP writes or hostile same-credential code.
+
+Where an admitted native interface lacks `agent_type`, an ordinary task-local helper's message must
+explicitly carry the exact shared section (the installer's `shared_agreements()` output) and the
+complete assigned helper role/task contract with applicable write or nonediting bounds. Use only
+supported fields. This carrier is not typed role discovery or proof of role-hook enforcement;
+formal gating review still needs its qualified typed route and identity. Return interface/hook
+refusals under the shared rule rather than bypassing them. Do not infer universal desktop
+compatibility from app-server probes.
+
+A prepared task is not a launched child. Record its actual returned native handle; observe native
+status/completion and read the full return before reuse or cleanup. A live or uncertain child blocks
+an overlapping writer. Inspect status before task-local continuation on the actual retained handle,
+and supply the refreshed self-contained task. Before replacing it, establish that the old child
+cannot still write. After lost context, stop dependent work and recover the exact role, goal, bounds,
+checks, working directory and observed task status from the caller; invent no lane fields. This route
+makes no promise about persistence across restarted sessions. Refusals and retained state return
+under the shared agreements while independent authorized work continues.
+<!-- END NATIVE HELPER MECHANICS -->
+
+For a dispatched repository lane, record the actual native handle with its issue and lane. The
+dispatcher cannot attest a handle it did not observe. Lane receipts and retained briefs are shared
+across checkouts in the Git common directory under `codex-method/lanes`. An older run keeps its
+observed version; preparing a current-version child requires fresh actual completion evidence for
+the old handle and current host qualification. Conflicting legacy receipts are preserved and
+refused, not overwritten.
 
 ## Worktree and permission boundary
 
-A child starts in the parent's directory. Its worktree path is an instruction, **not cwd
-isolation or a new OS sandbox**. Before any task write, validate the exact recorded branch,
-linked-worktree identity, and named base under the worker page; run commands with that
-worktree explicitly selected. Parent permission grants may reach other lanes and shared git
+Before any lane write, validate the exact recorded branch, linked-worktree identity and named
+base under the worker page; run commands with that worktree explicitly selected. Parent permission grants may reach other lanes and shared git
 metadata; the assigned-lane restriction remains a role obligation.
 
-An independent native reviewer means a fresh context (`fork_turns="none"`), a nonediting
-contract, and the ordinary-path role hook. It does **not** mean an OS-enforced read-only child.
-The host's inherited sandbox still applies. The hook's full rules and exclusions live in
-`reference/orchestrator.md`'s The role hook section. Do not describe same-credential malicious
-agent containment or arbitrary MCP-write isolation as a property of this arrangement.
+An independent gating reviewer follows the same fresh-context, nonediting and ordinary-path
+boundary described above; the host's inherited sandbox still applies. The hook's full rules and
+exclusions live in `reference/orchestrator.md`'s The role hook section.
 
 ## Continuation and binding recovery
 
@@ -137,10 +159,8 @@ A retained stopped handle is preferred because it retains context. With no recov
 first establish that the old child cannot still write, then create a fresh child for the same
 lane with the full role and refreshed packet. An uncertain lifetime remains blocked.
 
-After compaction or loss of binding, stop dependent task writes. For an ordinary helper recover
-its exact role, goal, bounds, checks, working directory and observed task status from the caller;
-no lane fields are invented. For a repository lane follow the recovery below. Ask the orchestrator on the actual
-native channel to resend the exact original packet and current authorized continuation,
+After compaction or loss of a repository lane binding, stop dependent task writes. Ask the
+orchestrator on the actual native channel to resend the exact original packet and current authorized continuation,
 including issue, branch, worktree, named base, Bounds, Done-check, and method root. Match all
 identities to the recorded lane and reread the role sources. A caller's cwd, a guessed issue,
 a partial checkout summary, or a different lane's receipt does not recover this binding.
