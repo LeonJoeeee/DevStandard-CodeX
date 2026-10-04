@@ -95,7 +95,16 @@ scripts/guard merge --repo OWNER/REPO --pr 124 --project /path/to/project
 
 Dispatch and review start prepare native invocation data; the main session must call the real
 native tool with `fork_turns="none"`, record the returned handle, and publish the reviewer's
-unedited whole return. The shared-git local review receipt binds exact head, base, packet, verdict,
+unedited whole return. For review, the discovered typed role automatically supplies the complete
+static contract and harness. The ordinary native message carries the complete filled judging
+fence plus workdir, an absolute retained evidence-bundle path and its SHA-256; it does not repeat
+that role or inline the whole large bundle. The reviewer must hash the bundle before and after,
+read every numbered chunk, and match the filled fence to its pinned packet. A missing, changed
+or partially read bundle fails Floor 1. This uses ordinary read tools; the host does not follow
+file references or read the bundle automatically. Its UTF-8 digest is the existing packet SHA;
+`status` validates new file carriers while retaining historical inline recovery. Publish a returned
+Floor-failing verdict whole even when its bundle is missing. The shared-git local review receipt
+binds exact head, base, packet, verdict,
 and published comment. Remote metadata alone never authorizes acceptance. Add `--execute` to the
 guard only within existing merge authorization. Review start requires current installed roles
 and returns the exact native JSON at its `instruction` path; recovery follows the orchestrator's

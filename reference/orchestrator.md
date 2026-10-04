@@ -320,8 +320,21 @@ alone defines judging: Goal and both Floors decide readiness. Record failed atte
 `start` requires the observed host version and current installed roles, reserves an attempt,
 and returns an `instruction` path containing the complete native call. Pass that JSON unchanged
 to native spawn: a fresh `method_reviewer`, `fork_turns="none"`, and the receipt's exact model and
-effort. Record the actual returned handle on the issue, observe completion, capture its unedited
-whole verdict, then publish with `review-packet publish`. `status` verifies the retained instruction
+effort. Its discovered role delivers the complete static judging contract and native mechanics.
+The message carries the complete filled judging fence, workdir and the retained full bundle's
+absolute path and SHA-256. It omits duplicate role text and the large inline evidence bundle.
+The reviewer must hash before and after, read the whole bundle in numbered chunks without output
+truncation, and check its filled contract against the inline fence. Missing reads, changed bytes
+or inconsistent contracts fail Floor 1; neither a summary nor a path alone proves delivery.
+This is explicit reading through ordinary tools, not host automatic file-reference loading.
+The retained bundle's UTF-8 SHA-256 equals the existing packet SHA; the native instruction hash
+binds the inline fence, path and digest together. `status` checks new file carriers for missing
+or changed bytes, while historical inline attempts keep their original recovery contract.
+Keep the retained bundle intact through acceptance and publication recovery. A returned Floor 1
+failure is still published whole even if its bundle is missing; publication never hides the
+failure. Record the actual
+returned handle on the issue, observe completion, capture its unedited whole verdict, then
+publish with `review-packet publish`. `status` verifies the retained instruction
 bytes before returning that path; it does not attest a stopped child or authorize a second spawn.
 Use `--help` for the exact receipt and attempt flags.
 
@@ -333,7 +346,8 @@ unqualified. Do not treat a named comment as a waiver.
 
 One local ledger in the shared git directory,
 `codex-method/reviews/OWNER/REPO/PR.json`, binds the reservation id/token, head/base, reviewer
-identity, author, packet SHA, raw verdict SHA and exact published comment SHA. Start, publish,
+identity, author, packet SHA (also the retained bundle bytes), native instruction SHA, raw verdict
+SHA and exact published comment SHA. Start, publish,
 status and guard use the same parser and receipt. The remote `codex-method-attempt-v2` envelope
 is metadata, not authorization. A missing local receipt blocks acceptance; it is not regenerated
 from a remote marker. The envelope's token is a correlation identifier, not a secret or

@@ -16,8 +16,9 @@ integrates.**
 
 **Dispatched work goes to this host's own built-in subagent.** There is no cross-host executor:
 the dispatcher prepares a Codex native-worker receipt and the caller hands it to Codex's native
-spawn. The brief is your only carrier — it names your role, model, effort and commit trailer, and
-every dispatched worker receives `reference/worker.md` before acting.
+spawn. The discovered native role supplies the complete static worker contract and host mechanics;
+the dispatcher brief supplies the fresh task packet, model, effort and commit trailer. Every
+dispatched worker receives both before acting.
 
 This method governs the GitHub collaboration layer—issue, lane, PR, review, and integration—and
 nothing below your role. Your own subagents may research, check a diff, or parallelize task-local

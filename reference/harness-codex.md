@@ -39,15 +39,18 @@ Capture live context for each lifecycle claim rather than inferring it from thos
 
 The worker role's instructions carry this page and `reference/worker.md`; its spawn message
 carries the freshly assembled task packet. Helpers receive their narrower task and applicable
-role boundary. Reviewer roles receive a nonediting contract and the complete current packet,
-with no implementation skills. A child receives neither the main session's conversation nor
+role boundary. Reviewer roles automatically deliver the complete nonediting contract and native mechanics,
+with no implementation skills. Their short native message supplies the complete filled judging
+fence and binds the full retained evidence bundle by absolute path and SHA-256. The reviewer
+explicitly reads and verifies that complete bundle before judging; a path is not automatic
+delivery. A child receives neither the main session's conversation nor
 an assumed startup delivery of the orchestrator page.
 
 ## Native V2 invocation
 
 Prepare the worker receipt with `scripts/dispatch`, or the gating-review receipt with
 `scripts/review-packet start` under the orchestrator's **Review packets** section. Pass the
-returned instruction's complete message and exact settings to the native tool. This is the
+returned instruction's message and exact settings unchanged to the native tool. This is the
 qualified argument shape, shown as data:
 
 ```json
@@ -60,6 +63,18 @@ qualified argument shape, shown as data:
   "reasoning_effort": "high"
 }
 ```
+
+For gating review, the native message includes the complete filled judging fence, explicit
+workdir and the digest-pinned token-directory `review-brief.md` path with SHA-256. It does not duplicate
+the static role or inline the full evidence bundle. Hash the bundle before reading, read every
+numbered chunk in order with no omitted or truncated output, then hash it again. Both hashes must
+match the supplied digest and the complete bundle must agree with the inline contract. Missing
+access, drift, mismatches or partial reads fail Floor 1; do not rule readiness from the shorter
+fence or an evidence summary alone. Native schema and role fields stay unchanged. This route
+uses normal native calls and ordinary read tools, with no code-mode flag or file-reference API
+required; the host does not read the path for you. The file's UTF-8 hash is the existing packet
+SHA; the native instruction SHA binds its fence, path and digest. Status validates new file
+carriers without changing historical inline attempts or suppressing publication of a failed verdict.
 
 Gating review uses `method_reviewer`; a fresh design challenge or pre-PR arbitration uses
 `method_review_helper`. Ordinary task helpers use `method_helper`; a reviewer's helpers keep

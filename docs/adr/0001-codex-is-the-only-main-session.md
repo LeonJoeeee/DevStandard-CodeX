@@ -121,3 +121,19 @@ paths, without scanning inert search prose as a command. Worker pushes require e
 and branch targets. These are ordinary-path checks; arbitrary MCP/script writes, interactive stdin
 and inherited parent permissions retain the declared limits. Live lifecycle qualification remains
 separate from matcher and fixture checks.
+
+
+**Amendment (2026-10-04, ordinary native review transport):** A formal review of 0.2.0 was
+blocked before child launch because its roughly 224 KB native message repeated the typed role
+and complete evidence packet. Earlier role/runtime probes and green CI remain their actual
+historical evidence, not proof of that default desktop caller path.
+
+The typed role still automatically delivers the complete static contract and native mechanics.
+The ordinary native message now carries the complete filled judging fence, workdir and an absolute
+retained complete-bundle path plus SHA-256; it does not duplicate role text or inline the large
+bundle. The child explicitly verifies the digest before and after reading every numbered chunk,
+checks inline/bundle contract agreement, and fails Floor 1 on missing access, drift, mismatch or
+partial reads. Original bundle bytes are retained for acceptance and recovery. This changes the
+carrier, not the judging contract, role schema or host API: no automatic file loading, special
+code-mode-only prerequisite or new dispatcher is introduced. Fresh qualification must use the
+updated role bytes and normal caller route; no old green result is claimed as that evidence.
