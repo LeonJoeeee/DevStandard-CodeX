@@ -8,9 +8,9 @@
 - ADR amendment check: `python3 .github/check-adr-index.py`
 
 ## Gotchas
-- Python tests use the repository root as their import root (`-t .`); if inherited `CLAUDE_JOB_DIR` points outside writable roots, use `env -u CLAUDE_JOB_DIR TMPDIR=/tmp` for the test command.
+- Python tests use the repository root as their import root (`-t .`); choose an explicitly writable scratch root for native runtime probes.
 - Native roles are discovered from target `.codex/agents/`; plugin hooks and skills use a separate package path.
-- Existing `CLAUDE.md` holds repository-maintenance guidance; consult it for the wording-sweep command and record practices.
+- `docs/maintenance.md` is the repository-maintenance authority; consult it for wording sweeps and record practices.
 
 ## New worktree: copy these untracked files
 - None. Do not copy untracked local inputs or secrets into a new lane.

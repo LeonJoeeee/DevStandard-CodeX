@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Qualify Codex 0.159.2 native agents against an auth-free LOCAL Responses provider.
+"""Qualify Codex 0.160.0 native agents against an auth-free LOCAL Responses provider.
 
 One `codex exec` hosts the root and actual native children. No worker/reviewer CLI
 processes, external provider, credentials, remote writes, or sandbox bypass are used.
@@ -7,13 +7,13 @@ Requires Python 3.11+ and loopback sockets. All fixture data and retained eviden
 live beneath --scratch-root (or TMPDIR). A blocked run exits 2; failed checks exit 1.
 
 Example:
-  TMPDIR=/path/to/job/scratch python3 .github/test-native-runtime.py --codex-version 0.159.2
+  TMPDIR=/path/to/job/scratch python3 .github/test-native-runtime.py --codex-version 0.160.0
 After scripts/install is finalized, add --installer scripts/install to qualify that
 consumer too. Without it, instructions-only fixture roles are explicitly reported
 as a missing installation consumer, even if the native runtime checks pass.
 
 SSE mechanics adapted from devstandard/.github/test-codex-runtime.py. Runtime
-contracts checked against openai/codex tag rust-v0.159.2, specifically native V2
+contracts checked against openai/codex tag rust-v0.160.0, specifically native V2
 spawn.rs, agent/child_config.rs, hooks/engine/discovery.rs, and config/fingerprint.rs.
 The copied hook executable is instrumented to record actual payloads/results. Its
 policy is unchanged for worker/reviewer. The sole ungated control is an exact local
@@ -30,6 +30,8 @@ import json
 import os
 from pathlib import Path
 import re
+import select
+import time
 import shlex
 import shutil
 import subprocess
@@ -41,15 +43,15 @@ import tomllib
 
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = '0.159.2'
+VERSION = '0.160.0'
 MODEL = 'gpt-6.1-sol'
 EFFORT = 'high'
-PRIVATE_PARENT = 'NATIVE_FIXTURE_PARENT_PRIVATE_1592'
-PRIVATE_WORKER = 'NATIVE_FIXTURE_WORKER_PRIVATE_1592'
-WORK_TASK = 'NATIVE_FIXTURE_WORK_TASK_1592'
-REVIEW_TASK = 'NATIVE_FIXTURE_REVIEW_TASK_1592'
-CONTROL_TASK = 'NATIVE_FIXTURE_CONTROL_TASK_1592'
-DONE = {role: 'NATIVE_FIXTURE_' + role.upper() + '_DONE_1592'
+PRIVATE_PARENT = 'NATIVE_FIXTURE_PARENT_PRIVATE_1600'
+PRIVATE_WORKER = 'NATIVE_FIXTURE_WORKER_PRIVATE_1600'
+WORK_TASK = 'NATIVE_FIXTURE_WORK_TASK_1600'
+REVIEW_TASK = 'NATIVE_FIXTURE_REVIEW_TASK_1600'
+CONTROL_TASK = 'NATIVE_FIXTURE_CONTROL_TASK_1600'
+DONE = {role: 'NATIVE_FIXTURE_' + role.upper() + '_DONE_1600'
         for role in ('root', 'worker', 'reviewer', 'control')}
 PLUGIN_ID = 'codex-method@codex-method'
 
@@ -119,6 +121,16 @@ def validate_request(request, role, full_role):
         require(PRIVATE_PARENT not in carried, 'reviewer received private parent conversation')
         require(PRIVATE_WORKER not in carried, 'reviewer received private worker sentinel')
         require(full_role and full_role in carried, 'reviewer did not receive the full review role')
+
+
+def validate_root_context(request, page):
+    """Require one complete inline carrier in actual provider input, never recovered spill text."""
+    marker = '--- codex-method whole context ---\n'
+    supplied = list(fragments([request.get('instructions', ''), request.get('input', [])]))
+    contexts = [text for text in supplied if marker in text]
+    require(page and len(contexts) == 1 and contexts[0].count(marker) == 1
+            and marker + page in contexts[0],
+            'root: one whole inline orchestrator page is required in provider input')
 
 
 def advertised_tools(request):
@@ -192,27 +204,77 @@ def toml(value):
     return json.dumps(value, ensure_ascii=False)
 
 
-def hook_hash(event, matcher, handler):
-    """Exact 0.159.2 normalized identity; TOML omits None, canonical JSON sorts keys.
+def trusted_inventory(response):
+    require('error' not in response, 'actual hooks/list failed: ' + repr(response.get('error')))
+    rows = response.get('result', {}).get('data', [])
+    require(len(rows) == 1, 'hooks/list did not return the exact fixture cwd')
+    row = rows[0]
+    require(not row.get('errors'), 'hook discovery errors: ' + repr(row.get('errors')))
+    hooks = row.get('hooks', [])
+    require(hooks, 'actual hooks/list discovered no shipped hooks')
+    trust = []
+    for hook in hooks:
+        key, digest = hook.get('key', ''), hook.get('currentHash', '')
+        require(key.startswith(PLUGIN_ID + ':hooks/hooks.json:'),
+                'unexpected hook source in isolated fixture: ' + key)
+        require(re.fullmatch(r'sha256:[0-9a-f]{64}', digest), 'invalid engine hook hash')
+        trust.append({'key': key, 'hash': digest})
+    require(any(':pre_tool_use:' in item['key'] for item in trust), 'no shipped PreToolUse hook')
+    require(any(':session_start:' in item['key'] for item in trust), 'no shipped SessionStart hook')
+    require(len({item['key'] for item in trust}) == len(trust), 'duplicate hook identity')
+    return trust
 
-    Hash the declaration BEFORE PLUGIN_ROOT substitution. This is invocation-local
-    trust in the fixture's isolated CODEX_HOME, never trust in the user's home.
-    """
-    require(handler['type'] == 'command', 'fixture only trusts command hooks')
-    normalized = {'type': 'command', 'command': handler['command'],
-                  'timeout': max(1, handler.get('timeout', 600)),
-                  'async': handler.get('async', False)}
-    if handler.get('statusMessage') is not None:
-        normalized['statusMessage'] = handler['statusMessage']
-    limit = handler.get('additionalContextLimit')
-    if limit is not None and limit != 2500:
-        normalized['additionalContextLimit'] = limit
-    label = re.sub(r'(?<!^)(?=[A-Z])', '_', event).lower()
-    identity = {'event_name': label, 'hooks': [normalized]}
-    if matcher is not None:
-        identity['matcher'] = matcher
-    encoded = json.dumps(identity, sort_keys=True, separators=(',', ':'), ensure_ascii=False).encode()
-    return 'sha256:' + hashlib.sha256(encoded).hexdigest()
+
+def discover_hook_trust(binary, env, project, scratch):
+    """Ask the actual engine for resolved hashes; do not emulate its hashing API."""
+    command = [binary, 'app-server', '--strict-config']
+    (scratch / 'hook-discovery.command.json').write_text(json.dumps(command) + '\n')
+    with (scratch / 'hook-discovery.stderr').open('w') as error_log, \
+            (scratch / 'hook-discovery.jsonl').open('w') as log:
+        process = subprocess.Popen(command, env=env, cwd=project, stdin=subprocess.PIPE,
+                                   stdout=subprocess.PIPE, stderr=error_log)
+        buffered = b''
+        def send(identity, method, params):
+            message = {'method': method, 'params': params}
+            if identity is not None:
+                message['id'] = identity
+            process.stdin.write((json.dumps(message) + '\n').encode())
+            process.stdin.flush()
+        def receive(identity):
+            nonlocal buffered
+            deadline = time.monotonic() + 20
+            while time.monotonic() < deadline:
+                while b'\n' in buffered:
+                    line, buffered = buffered.split(b'\n', 1)
+                    if not line:
+                        continue
+                    log.write(line.decode() + '\n')
+                    log.flush()
+                    response = json.loads(line)
+                    if response.get('id') == identity:
+                        return response
+                if not select.select([process.stdout], [], [], 0.25)[0]:
+                    continue
+                chunk = os.read(process.stdout.fileno(), 65536)
+                require(chunk, 'hook discovery app-server exited before its response')
+                buffered += chunk
+            raise TimeoutError('hook discovery response ' + str(identity))
+        try:
+            send(1, 'initialize', {'clientInfo': {'name': 'codex_method_qualification', 'version': '1'},
+                                  'capabilities': {'experimentalApi': True}})
+            require('error' not in receive(1), 'app-server initialize rejected')
+            send(None, 'initialized', {})
+            send(2, 'hooks/list', {'cwds': [str(project)]})
+            return trusted_inventory(receive(2))
+        finally:
+            process.terminate()
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait(timeout=5)
+            process.stdin.close()
+            process.stdout.close()
 
 
 def isolated_env(scratch, inherited=None):
@@ -224,7 +286,7 @@ def isolated_env(scratch, inherited=None):
         Path(env[key]).mkdir(parents=True, exist_ok=True)
     for key in ('XDG_CONFIG_HOME', 'XDG_CACHE_HOME', 'XDG_DATA_HOME'):
         env[key] = str(scratch / key.lower())
-        Path(env[key]).mkdir()
+        Path(env[key]).mkdir(exist_ok=True)
     return env
 
 
@@ -232,7 +294,7 @@ def inventory(project, codex_home):
     require((project / '.git/HEAD').is_file(), 'fixture must have a real local Git root')
     candidates = [Path('/etc/codex/config.toml'), Path('/etc/codex/requirements.toml'),
                   Path('/etc/codex/managed_config.toml')]
-    # 0.159.2 config/loader/mod.rs discovers project layers only between cwd and
+    # 0.160.0 config/loader/mod.rs discovers project layers only between cwd and
     # its nearest .git root, inclusive. This fixture's cwd IS that fresh root;
     # unrelated ancestor user homes are outside the loader's project boundary.
     candidates.extend(project / '.codex' / name for name in
@@ -241,7 +303,7 @@ def inventory(project, codex_home):
     candidates.extend(codex_home / name for name in ('hooks.json', 'requirements.toml'))
     found = sorted({str(path) for path in candidates if path.exists()})
     require(not found, 'external configuration/hook layers prevent fixture isolation: ' + repr(found))
-    return {'external_layers': [], 'hook_trust': 'exact normalized fixture hashes; no bypass',
+    return {'external_layers': [], 'hook_trust': 'actual hooks/list currentHash; no bypass',
             'environment': 'allowlisted; HOME and CODEX_HOME isolated', 'rules': 'preserved'}
 
 
@@ -279,12 +341,30 @@ else:
                             input=payload_text, capture_output=True, text=True)
     code, out, err = result.returncode, result.stdout, result.stderr
 record = {'payload': payload, 'exit_code': code, 'stdout': out, 'stderr': err,
-          'ungated_control': ungated, 'plugin_root': os.environ.get('PLUGIN_ROOT')}
+          'ungated_control': ungated, 'plugin_root': os.environ.get('PLUGIN_ROOT'),
+          'plugin_data': os.environ.get('PLUGIN_DATA')}
 with open(settings['log'], 'a') as stream:
     stream.write(json.dumps(record) + '\\n')
 sys.stdout.write(out)
 sys.stderr.write(err)
 sys.exit(code)
+'''
+
+
+SESSION_OBSERVER = '''#!/usr/bin/env python3
+import json, os, subprocess, sys
+from pathlib import Path
+payload_text = sys.stdin.read()
+settings = json.loads((Path(__file__).parent / 'fixture-observer.json').read_text())
+result = subprocess.run([str(Path(__file__).with_name('session-start.shipped')), *sys.argv[1:]],
+                        input=payload_text, capture_output=True, text=True)
+record = {'payload': json.loads(payload_text), 'exit_code': result.returncode,
+          'stdout': result.stdout, 'stderr': result.stderr, 'plugin_root': os.environ.get('PLUGIN_ROOT')}
+with open(settings['session_log'], 'a') as stream:
+    stream.write(json.dumps(record) + '\\n')
+sys.stdout.write(result.stdout)
+sys.stderr.write(result.stderr)
+sys.exit(result.returncode)
 '''
 
 
@@ -315,7 +395,13 @@ def prepare(binary, scratch, env, installer, evidence):
     observer.write_text(HOOK_OBSERVER)
     observer.chmod(0o755)
     (observer.parent / 'fixture-observer.json').write_text(json.dumps({
-        'log': str(project / 'hook-payloads.jsonl'), 'control_command': control_command}))
+        'log': str(project / 'hook-payloads.jsonl'), 'control_command': control_command,
+        'session_log': str(project / 'session-start-payloads.jsonl')}))
+    session = package / 'hooks/session-start'
+    evidence['shipped_session_start_sha256'] = hashlib.sha256(session.read_bytes()).hexdigest()
+    session.rename(session.with_name('session-start.shipped'))
+    session.write_text(SESSION_OBSERVER)
+    session.chmod(0o755)
     evidence['instrumentation'] = 'payload observer; exact control bypass only; shipped policy delegated'
 
     home_config = Path(env['CODEX_HOME']) / 'config.toml'
@@ -352,7 +438,7 @@ def prepare(binary, scratch, env, installer, evidence):
             if key in role:
                 require(role[key] == (MODEL if key == 'model' else EFFORT),
                         name + ': installed role overrides the qualification route')
-    # Codex 0.159.2's role loader accepts sandbox_mode="read-only" but rejects
+    # Codex 0.160.0's role loader accepts sandbox_mode="read-only" but rejects
     # cwd as an unknown field and ignores the entire role. Keep the accepted
     # sandbox declaration: the exact ungated filesystem write is the negative
     # control for per-role OS isolation, not an instructions-only write probe.
@@ -362,21 +448,11 @@ def prepare(binary, scratch, env, installer, evidence):
     (roles / 'runtime_readonly_control.toml').write_text('\n'.join(
         key + '=' + toml(value) for key, value in control.items()) + '\n')
 
-    hook_config = json.loads((package / 'hooks/hooks.json').read_text())['hooks']
-    trust = []
-    for event, groups in hook_config.items():
-        require(event in ('SessionStart', 'PreToolUse'), 'unexpected shipped hook event: ' + event)
-        label = 'session_start' if event == 'SessionStart' else 'pre_tool_use'
-        for gi, group in enumerate(groups):
-            for hi, handler in enumerate(group['hooks']):
-                require(not handler.get('async', False), 'required fixture hook is asynchronous')
-                key = f'{PLUGIN_ID}:hooks/hooks.json:{label}:{gi}:{hi}'
-                digest = hook_hash(event, group.get('matcher'), handler)
-                trust.append({'key': key, 'hash': digest})
-                with home_config.open('a') as stream:
-                    stream.write('\n[hooks.state.' + toml(key) + ']\nenabled=true\ntrusted_hash='
-                                 + toml(digest) + '\n')
-    require(any('pre_tool_use' in item['key'] for item in trust), 'no shipped PreToolUse hook')
+    trust = discover_hook_trust(binary, env, project, scratch)
+    for item in trust:
+        with home_config.open('a') as stream:
+            stream.write('\n[hooks.state.' + toml(item['key']) + ']\nenabled=true\ntrusted_hash='
+                         + toml(item['hash']) + '\n')
     (scratch / 'hook-trust.json').write_text(json.dumps(trust, indent=2) + '\n')
     evidence['trusted_hook_count'] = len(trust)
     fake = project / 'fixture-bin/gh'
@@ -397,6 +473,7 @@ class ResponsesFixture:
         self.counts, self.waits = Counter(), Counter()
         self.spawn_fields = None
         self.root_stage = 0
+        self.root_context_verified = False
         self.review_role = tomllib.loads((project / '.codex/agents/method_reviewer.toml').read_text())[
             'developer_instructions']
         self.lock = threading.Lock()
@@ -496,11 +573,13 @@ class ResponsesFixture:
             if item.get('type') in ('function_call_output', 'custom_tool_call_output'):
                 self.outputs[item['call_id']] = output_text(item.get('output', ''))
         index = self.counts[role]
-        self.counts[role] += 1
         if index == 0:
             (self.scratch / (role + '.tools.json')).write_text(json.dumps(advertised_tools(request), indent=2))
             if role == 'root':
+                validate_root_context(request, (ROOT / 'reference/orchestrator.md').read_bytes().decode('utf-8'))
+                self.root_context_verified = True
                 self.spawn_fields = validate_spawn_schema(request)
+        self.counts[role] += 1
         if role == 'root':
             return self.root_response(request)
         if role == 'worker':
@@ -520,9 +599,14 @@ class ResponsesFixture:
             if index == 2:
                 return self.shell(request, shlex.quote(str(self.fake)) + ' issue comment 1 --body fixture',
                                   'reviewer_remote', self.project)
+            if index == 3:
+                return self.call(request, 'spawn_agent', dict(task_name='rejected_cross_role',
+                    message='Local refusal probe; this child must never start.',
+                    agent_type='method_worker', fork_turns='none', model=MODEL,
+                    reasoning_effort=EFFORT), 'reviewer_cross_role')
         elif role == 'control' and index == 0:
             return self.shell(request, self.control_command, 'control_write')
-        require(index == {'worker': 3, 'reviewer': 3, 'control': 1}[role],
+        require(index == {'worker': 3, 'reviewer': 4, 'control': 1}[role],
                 role + ': unexpected continuation after final')
         return self.final(role)
 
@@ -601,6 +685,21 @@ class ResponsesFixture:
             require(not (self.project / name).exists(), 'reviewer sentinel was written: ' + name)
         fake_calls = [json.loads(line) for line in (self.project / 'fake-gh-calls.jsonl').read_text().splitlines()]
         require(fake_calls == [['--version']], 'reviewer remote probe reached the fake gh executable')
+        require(self.root_context_verified, 'whole inline orchestrator was not observed at the provider')
+        session_log = self.project / 'session-start-payloads.jsonl'
+        require(session_log.exists(), 'actual SessionStart invocation was not observed')
+        starts = [json.loads(line) for line in session_log.read_text().splitlines()]
+        require(len(starts) == 1 and starts[0]['payload'].get('source') == 'startup',
+                'expected one SessionStart invocation for root startup, without extra part calls')
+        start = starts[0]
+        require(start['exit_code'] == 0 and not start['stderr'], 'SessionStart command failed')
+        output = json.loads(start['stdout'])
+        context = output.get('hookSpecificOutput', {}).get('additionalContext', '')
+        marker = '--- codex-method whole context ---\n'
+        require(context.partition(marker)[2].encode('utf-8') == (ROOT / 'reference/orchestrator.md').read_bytes()
+                and context.count(marker) == 1 and len(context.encode('utf-8')) <= 64000
+                and start['plugin_root'] in context.partition(marker)[0],
+                'SessionStart did not deliver one complete budgeted page from its actual plugin root')
         hook_log = self.project / 'hook-payloads.jsonl'
         require(hook_log.exists(), 'installed plugin hook did not run')
         records = [json.loads(line) for line in hook_log.read_text().splitlines()]
@@ -621,6 +720,10 @@ class ResponsesFixture:
                 call_id = 'worker_merge'
             elif tool == 'apply_patch':
                 call_id = 'reviewer_patch'
+            elif tool == 'collaborationspawn_agent':
+                require(inputs.get('agent_type') == 'method_worker',
+                        'cross-role probe used an unexpected native role')
+                call_id = 'reviewer_cross_role'
             else:
                 require(shell_tool, 'unexpected reviewer hook tool: ' + str(tool))
                 commands = {'touch reviewer-shell.txt': 'reviewer_shell',
@@ -643,15 +746,17 @@ class ResponsesFixture:
                 denied.append(tool)
                 reviewer_calls.append(call_id)
         require(Counter(reviewer_calls) == Counter({'reviewer_patch': 1, 'reviewer_shell': 1,
-                                                   'reviewer_remote': 1}),
-                'did not observe the three actual reviewer hook denials: ' + repr(denied))
+                                                   'reviewer_remote': 1, 'reviewer_cross_role': 1}),
+                'did not observe the four actual reviewer hook denials: ' + repr(denied))
         require(len(worker_denied) == 1, 'did not observe the actual worker merge hook denial')
         require(sum(record['ungated_control'] for record in records) == 1,
                 'exact ungated per-role sandbox control was not observed')
-        return {'native_handles': self.handles, 'provider_requests_by_role': dict(self.counts),
+        return {'single_session_start_whole_inline': True, 'session_start_invocations': len(starts),
+                'native_handles': self.handles, 'provider_requests_by_role': dict(self.counts),
                 'actual_spawn_schema_fields': self.spawn_fields,
                 'canonical_targets': 'actual send_message accepted each returned task_name',
-                'fresh_reviewer_full_role': True, 'worker_explicit_lane_cwd': True,
+                'fresh_reviewer_full_role': True, 'reviewer_cross_role_spawn_denied': True,
+                'worker_explicit_lane_cwd': True,
                 'child_session_cwd': str(self.project), 'reviewer_denials': denied,
                 'worker_merge_denials': worker_denied,
                 'unknown_fields': 'actual V2 handler rejected cwd and fork_context',
@@ -662,7 +767,7 @@ class ResponsesFixture:
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--codex-version', default=VERSION, help='exact qualification pin, only 0.159.2')
+    parser.add_argument('--codex-version', default=VERSION, help='exact qualification pin, only 0.160.0')
     parser.add_argument('--codex', default='codex', help='CLI executable')
     parser.add_argument('--scratch-root', type=Path, default=os.environ.get('TMPDIR'))
     parser.add_argument('--log-dir', type=Path, help='optional additional summary location within scratch-root')
@@ -679,6 +784,8 @@ def main():
     evidence = {'status': 'failed', 'qualified': False, 'installed_end_to_end': False,
                 'pinned_version': VERSION, 'source_tag': 'rust-v' + VERSION,
                 'model': MODEL, 'effort': EFFORT, 'root_sessions_started': 0,
+                'qualification_kind': 'deterministic-local-provider', 'production_model_validated': False,
+                'desktop_ui_validated': False,
                 'evidence_dir': str(scratch)}
     fixture = None
     phase = 'setup'

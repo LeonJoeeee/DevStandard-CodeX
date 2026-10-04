@@ -5,6 +5,7 @@ The local integrating-session receipt and the GitHub comment are both required.
 A marker alone is never a verdict. This command does not launch a CLI executor.
 """
 import argparse
+import hashlib
 from copy import deepcopy
 import json
 import runpy
@@ -17,7 +18,7 @@ from hard_edges import Refusal, anchored_roles, api, helper_line, require, resol
 from review_packet import (FORMAT, UNPINNED, ci_configuration_paths, issue_contract, predicate,
                            render, template)  # noqa: E402
 from review_state import (associated, digest, envelope, finish_pending, ledger_path, locked, new_attempt,
-                          publish, recover_pending, save, status, write_pending)  # noqa: E402
+                          publish, recover_pending, save, status, validate_packet_carrier, write_pending)  # noqa: E402
 
 
 def repo_of(project):
@@ -127,26 +128,37 @@ def reconcile(project, repo, number, ledger, history):
         save(ledger_path(project, repo, number), ledger)
 
 
-def prepare_native(project, output, installer, attempt, text, model, effort):
-    import tomllib
-
-    role = tomllib.loads(installer['role_files']()['method_reviewer.toml'])['developer_instructions']
+def prepare_native(project, output, attempt, text, model, effort):
     directory = output.resolve() / attempt['token']
     directory.mkdir()
-    brief = text + '\n\n' + helper_line(ROOT)
-    (directory / 'review-brief.md').write_text(brief)
+    # Retain the complete packet once; its existing receipt hash binds these exact UTF-8 bytes.
+    bundle = directory / 'review-brief.md'
+    bundle.write_bytes(text.encode('utf-8'))
+    bundle.chmod(0o600)
+    require(hashlib.sha256(bundle.read_bytes()).hexdigest() == attempt['packet_sha256'],
+            'retained evidence bundle differs from the reserved packet')
+    packet = json.loads((output / 'packet.json').read_text())
+    fence = render(packet, attempt['identity'])
+    message = (f'Role references resolve from: {ROOT}\n'
+               f'Use workdir={project} on every command. Judge the immutable git pins, '
+               'never uncommitted checkout contents. Your discovered native role supplies the '
+               'complete reviewer contract and harness; missing role context is Floor 1 FAIL.\n\n'
+               f'Evidence bundle: {bundle}\nSHA256: {attempt["packet_sha256"]}\n'
+               'Read the entire retained evidence bundle in numbered chunks without truncation. '
+               'Verify its SHA256 before and after reading and review. Missing, changed, '
+               'partially read or unverifiable evidence is Floor 1 FAIL; do not report readiness '
+               'without the complete packet. The file is retained evidence, not automatic host '
+               'context injection.\n\n' + helper_line(ROOT)
+               + '\n\nComplete filled judging fence:\n' + fence)
     request = {'task_name': f'issue_{attempt["issue"]}_reviewer_{attempt["token"][:12]}',
-               'message': (role + f'\n\nRole references resolve from: {ROOT}\n'
-                           f'Use workdir={project} on every command. Judge the packet\'s immutable '
-                           'git pins, never treat uncommitted checkout contents as the reviewed tree.\n\n'
-                           + brief),
-               'agent_type': 'method_reviewer', 'fork_turns': 'none',
+               'message': message, 'agent_type': 'method_reviewer', 'fork_turns': 'none',
                'model': model, 'reasoning_effort': effort}
     instruction = directory / 'native-spawn.json'
     save(instruction, request)
     attempt['native_instruction'] = str(instruction)
     attempt['native_instruction_sha256'] = digest(instruction.read_text())
-    attempt['packet_path'] = str(directory / 'review-brief.md')
+    attempt['packet_path'] = str(bundle)
+    attempt['packet_carrier'] = 'file-sha256-v1'
     return instruction
 
 
@@ -154,6 +166,7 @@ def native_instruction(attempt):
     instruction = Path(attempt['native_instruction'])
     require(digest(instruction.read_text()) == attempt['native_instruction_sha256'],
             'native instruction differs from the reserved receipt; retain it and do not launch')
+    validate_packet_carrier(attempt)
     return str(instruction)
 
 
@@ -244,7 +257,7 @@ def main():
         reconcile(project, repo, number, ledger, history)
         status(ledger, history)
         attempt = new_attempt(ledger, issue, head, base, identity, author, text)
-        prepare_native(project, args.output, installer, attempt, text, model, effort)
+        prepare_native(project, args.output, attempt, text, model, effort)
         body = envelope(attempt, 'Reviewer reserved; native invocation and whole returned verdict pending.')
         attempt = remote_comment(project, repo, number, issue, ledger, attempt, body)
     print(json.dumps({'kind':'reservation','comment_id':attempt['comment_id'],'head':head,'base':base,

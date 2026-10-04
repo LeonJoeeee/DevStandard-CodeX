@@ -17,7 +17,7 @@ SCRIPT = ROOT / '.github/test-native-runtime.py'
 
 
 def native_request(marker):
-    """Representative 0.159.2 wire catalog: nested tools are not outer members."""
+    """Representative 0.160.0 wire catalog: nested tools are not outer members."""
     return {'input': [{'role': 'user', 'content': marker},
         {'type': 'additional_tools', 'tools': [
             {'type': 'namespace', 'name': 'functions', 'tools': [
@@ -53,11 +53,17 @@ class NativeRuntimeFixtureTest(unittest.TestCase):
         self.assertTrue(SCRIPT.exists(), 'native runtime qualification script is missing')
         directory = tempfile.TemporaryDirectory(dir=os.environ.get('TMPDIR'))
         self.addCleanup(directory.cleanup)
-        self.scratch = Path(directory.name)
+        self.scratch = Path(directory.name).resolve()
         self.project = self.scratch / 'project'
         roles = self.project / '.codex/agents'
         roles.mkdir(parents=True)
         (roles / 'method_reviewer.toml').write_text('developer_instructions="full review role"\n')
+        delivered = subprocess.run([str(ROOT / 'hooks/session-start'), 'orchestrator'],
+            capture_output=True, text=True, check=True)
+        self.whole_context = json.loads(delivered.stdout)['hookSpecificOutput']['additionalContext']
+        self.session_record = {'payload': {'source': 'startup', 'hook_event_name': 'SessionStart'},
+            'exit_code': delivered.returncode, 'stdout': delivered.stdout, 'stderr': delivered.stderr,
+            'plugin_root': str(ROOT)}
         self.runtime = self.fixture.ResponsesFixture(self.project, self.scratch,
             'touch ' + str(self.project / 'inherited-permissions.txt'), self.project / 'gh')
 
@@ -67,6 +73,8 @@ class NativeRuntimeFixtureTest(unittest.TestCase):
         request.update(model=f.MODEL, reasoning={'effort': f.EFFORT})
         if marker == f.REVIEW_TASK:
             request['input'].append({'role': 'developer', 'content': 'full review role'})
+        elif marker == f.PRIVATE_PARENT:
+            request['input'].append({'role': 'developer', 'content': self.whole_context})
         return request
 
     def nested_arguments(self, item, tool):
@@ -77,6 +85,52 @@ class NativeRuntimeFixtureTest(unittest.TestCase):
                              item['input'])
         self.assertIsNotNone(match, 'custom exec must receive raw JavaScript and surface the result')
         return json.loads(match[1])
+
+    def test_root_provider_requires_one_complete_inline_orchestrator(self):
+        page = (ROOT / 'reference/orchestrator.md').read_bytes().decode('utf-8')
+        marker = '--- codex-method whole context ---\n'
+        for content in (marker + page[:8000],
+                        marker + page[:8000] + '\nSaved full output to file /scratch/spill.txt',
+                        marker + page + marker + page):
+            with self.subTest(content=content[:50]):
+                request = self.request(self.fixture.PRIVATE_PARENT)
+                request['input'] = [item for item in request['input'] if item.get('role') != 'developer']
+                request['input'].append({'role': 'developer', 'content': content})
+                with self.assertRaisesRegex(AssertionError, 'whole inline orchestrator'):
+                    self.runtime.response_item(request)
+
+    def test_root_provider_rejects_context_reassembled_across_fragments(self):
+        page = (ROOT / 'reference/orchestrator.md').read_bytes().decode('utf-8')
+        request = self.request(self.fixture.PRIVATE_PARENT)
+        request['input'] = [item for item in request['input'] if item.get('role') != 'developer']
+        request['input'].extend([{'role': 'developer', 'content':
+            '--- codex-method whole context ---\n' + page[:8000]},
+            {'role': 'developer', 'content': page[8000:]}])
+        with self.assertRaisesRegex(AssertionError, 'whole inline orchestrator'):
+            self.runtime.response_item(request)
+
+    def test_actual_hook_inventory_uses_resolved_hashes_and_rejects_other_sources(self):
+        f = self.fixture
+        prefix = f.PLUGIN_ID + ':hooks/hooks.json:'
+        hooks = [{'key': prefix + event + ':0:0', 'currentHash': 'sha256:' + 'a' * 64}
+                 for event in ('session_start', 'pre_tool_use')]
+        response = {'result': {'data': [{'hooks': hooks, 'errors': []}]}}
+        self.assertEqual(f.trusted_inventory(response),
+                         [{'key': hook['key'], 'hash': hook['currentHash']} for hook in hooks])
+        for wrong in ({'error': {'message': 'refused'}}, {'result': {'data': []}},
+                      {'result': {'data': [{'hooks': [dict(hooks[0], key='unrelated')]}]}},
+                      {'result': {'data': [{'hooks': [dict(hooks[0], currentHash='wrong')]}]}}):
+            with self.subTest(response=wrong), self.assertRaises(AssertionError):
+                f.trusted_inventory(wrong)
+
+    def test_reviewer_cross_role_spawn_is_an_actual_typed_native_call(self):
+        self.runtime.counts['reviewer'] = 3
+        item = self.runtime.response_item(self.request(self.fixture.REVIEW_TASK))
+        self.assertEqual(item['call_id'], 'reviewer_cross_role')
+        args = json.loads(item['arguments'])
+        self.assertEqual(args['agent_type'], 'method_worker')
+        self.assertEqual((args['model'], args['reasoning_effort'], args['fork_turns']),
+                         ('gpt-6.1-sol', 'high', 'none'))
 
     def test_prepare_registers_declared_readonly_control_without_rejected_cwd(self):
         f = self.fixture
@@ -99,7 +153,10 @@ class NativeRuntimeFixtureTest(unittest.TestCase):
                 scratch = self.scratch / ('installed' if installer else 'fallback')
                 scratch.mkdir()
                 env = f.isolated_env(scratch)
-                with patch.object(f, 'run_logged', side_effect=local_setup):
+                with patch.object(f, 'run_logged', side_effect=local_setup), \
+                        patch.object(f, 'discover_hook_trust', return_value=[
+                            {'key': f.PLUGIN_ID + ':hooks/hooks.json:pre_tool_use:0:0',
+                             'hash': 'sha256:' + 'a' * 64}]):
                     project, command, fake = f.prepare('unused-codex', scratch, env, installer, {})
                 roles = project / '.codex/agents'
                 control = tomllib.loads((roles / 'runtime_readonly_control.toml').read_text())
@@ -245,6 +302,8 @@ class NativeRuntimeFixtureTest(unittest.TestCase):
     def verification_records(self, tool='Bash', key='command'):
         f, runtime = self.fixture, self.runtime
         runtime.root_stage = 8
+        runtime.response_item(self.request(f.PRIVATE_PARENT))
+        (self.project / 'session-start-payloads.jsonl').write_text(json.dumps(self.session_record) + '\n')
         runtime.handles = {role: '/root/' + role for role in ('worker', 'reviewer', 'control')}
         runtime.outputs.update(root_pwd=str(self.project), worker_lane_pwd=str(self.project / 'worker-lane'),
                                worker_session_pwd=str(self.project))
@@ -258,6 +317,10 @@ class NativeRuntimeFixtureTest(unittest.TestCase):
             records.append(self.hook_record(tool, {key: command}, role))
             runtime.outputs[call] = 'refused: hook denied operation'
         runtime.outputs['reviewer_patch'] = 'refused: hook denied operation'
+        records.append(self.hook_record('collaborationspawn_agent', {
+            'agent_type': 'method_worker', 'task_name': 'rejected_cross_role',
+            'fork_turns': 'none', 'model': f.MODEL, 'reasoning_effort': f.EFFORT}, 'method_reviewer'))
+        runtime.outputs['reviewer_cross_role'] = 'refused: hook denied operation'
         records.append({'payload': {'agent_type': 'runtime_readonly_control'}, 'ungated_control': True})
         return records
 
@@ -265,6 +328,17 @@ class NativeRuntimeFixtureTest(unittest.TestCase):
         (self.project / 'hook-payloads.jsonl').write_text(
             ''.join(json.dumps(record) + '\n' for record in records))
         return self.runtime.verify(self.fixture.DONE['root'])
+
+    def test_extra_session_start_invocations_fail_runtime_verification(self):
+        records = self.verification_records()
+        path = self.project / 'session-start-payloads.jsonl'
+        path.write_text(path.read_text() * 8)
+        with self.assertRaisesRegex(AssertionError, 'one SessionStart invocation'):
+            self.verify_records(records)
+
+    def test_root_provider_accepts_whole_inline_page(self):
+        self.runtime.response_item(self.request(self.fixture.PRIVATE_PARENT))
+        self.assertTrue(self.runtime.root_context_verified)
 
     def test_bwrap_setup_failure_is_diagnosed_and_never_passes_probe_assertions(self):
         error = 'bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted\n'
@@ -495,18 +569,6 @@ class NativeRuntimeFixtureTest(unittest.TestCase):
             self.assertEqual(env['TMPDIR'], str(Path(directory) / 'tmp'))
             for key in ('OPENAI_API_KEY', 'GH_TOKEN', 'HTTPS_PROXY'):
                 self.assertNotIn(key, env)
-
-    def test_hook_trust_changes_when_command_or_timeout_changes(self):
-        f = self.fixture
-        handler = {'type': 'command', 'command': 'fixture command', 'timeout': 30}
-        baseline = f.hook_hash('PreToolUse', '.*', handler)
-        self.assertTrue(baseline.startswith('sha256:'))
-        self.assertEqual(baseline, f.hook_hash('PreToolUse', '.*',
-                                              dict(handler, **{'async': False})))
-        self.assertNotEqual(baseline, f.hook_hash('PreToolUse', '.*',
-                                                 dict(handler, timeout=31)))
-        self.assertNotEqual(baseline, f.hook_hash('PreToolUse', '.*',
-                                                 dict(handler, command='other')))
 
     def test_inventory_stops_at_real_fixture_git_root(self):
         f = self.fixture

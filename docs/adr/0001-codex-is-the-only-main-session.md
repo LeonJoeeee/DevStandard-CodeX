@@ -1,6 +1,6 @@
 # 0001 — Codex is the only main session, and every worker is its own built-in subagent
 
-Status: Accepted (2026-09-29); Amended (2026-10-03).
+Status: Accepted (2026-09-29); Amended (2026-10-03); Amended (2026-10-04).
 
 *This ADR decides what this method ships. A reader in any seeded project should take it as method.*
 
@@ -62,3 +62,99 @@ state the qualification limits. Review acceptance uses a shared-git local receip
 published raw verdict; remote metadata is not authorization. Fallback and rebase-proof reuse
 remain documented source capabilities that the shipped guard does not qualify. Installation,
 production calls, and a complete remote lifecycle need captured evidence before they are claimed.
+
+
+**Amendment (2026-10-04, human-approved Codex-only cleanup):** Every worker, reviewer,
+helper and arbitration uses explicit `gpt-6.1-sol` at `high`. The earlier model-tier routing and
+model/effort escalation are historical settings; unavailable settings are reported rather than
+substituted. This does not change the main session's selected model or service tier.
+
+The target no longer uses a second host's maintenance entry: applicable repository-only practices
+move from the old target `CLAUDE.md` to `docs/maintenance.md`, with one pointer in `AGENTS.md`.
+Operative pages and routing checks use only native Codex roles. Source filenames, old carrier
+choices and provenance remain historical facts in the reconciliation, not execution instructions.
+Host compatibility is qualified on explicit versions with actual role discovery, tool schema,
+hook/context delivery and continuation evidence; an unknown version or a configured role is not
+proof of runtime readiness. Session resume must recover complete operating context before task
+actions. The exact qualified versions and remaining evidence limits belong in the harness and
+architecture rather than being inferred from this amendment.
+
+
+**Amendment (2026-10-04, target host qualification):** Current native role support is Codex
+0.160.0 V2. Loaded roles expose the six-field spawn schema including `agent_type`; target probes
+captured full worker/reviewer context bytes, explicit Sol/high, no conversation-history fork,
+allowed `pwd`, worker merge refusal, reviewer write refusal and reviewer cross-role refusal.
+The probe used a controlled provider and does not qualify production calls or a remote lifecycle.
+The original 0.159.2 source record remains history rather than current support. Unknown versions
+are not admitted by inference.
+
+The project installer remains explicitly scoped by default. `--user` is a deliberate opt-in to
+native roles in `~/.codex/agents` for new chats; unrelated settings and main-session choices are
+preserved, and unowned collisions refuse. Native role discovery must precede dispatch. No
+fallback registry keyed on `task_name` replaces the host's role identity. Resume, clear and
+compaction claims require their own actual host evidence.
+
+
+**Amendment (2026-10-04, explicit settings and production reviewer evidence):** Sol/high is
+fixed for every child by default. A direct, specific human instruction overrides the global
+setting only for its named dispatch; no automatic model/effort escalation or quota fallback is
+introduced. Main-session settings remain untouched.
+
+A production typed fresh reviewer call with its role-config layer explicitly active retained the
+supplied prompt heading/end marker and omitted a parent-only token. The first discovery attempt
+was blocked because that layer was inactive; it remains recorded rather than erased by the
+successful call. This evidence does not establish user-scope discovery in all projects, worker
+execution or a complete remote lifecycle. The current Codex loader supplies `PLUGIN_ROOT`;
+package hooks consume that host key without the removed second-host compatibility fallback.
+
+
+**Amendment (2026-10-04, native hook and shared-lane correction):** Lane receipts, ownership
+locks and retained briefs are shared in the Git common directory across checkouts. Legacy local
+receipts are imported only when uniquely consistent, with originals and hashes preserved; unknown
+children and conflicting records still block reuse. Initial and continuation briefs remain raw,
+and root record-language declarations are resolved before ownership changes.
+
+SessionStart covers startup, resume, clear and compact, refuses insufficient configured part
+capacity rather than delivering a partial page, and uses the Codex loader's plugin root. The role
+hook recognizes actual native spawn aliases and command argv, including wrappers and absolute
+paths, without scanning inert search prose as a command. Worker pushes require explicit remote
+and branch targets. These are ordinary-path checks; arbitrary MCP/script writes, interactive stdin
+and inherited parent permissions retain the declared limits. Live lifecycle qualification remains
+separate from matcher and fixture checks.
+
+
+**Amendment (2026-10-04, ordinary native review transport):** A formal review of 0.2.0 was
+blocked before child launch because its roughly 224 KB native message repeated the typed role
+and complete evidence packet. Earlier role/runtime probes and green CI remain their actual
+historical evidence, not proof of that default desktop caller path.
+
+The typed role still automatically delivers the complete static contract and native mechanics.
+The ordinary native message now carries the complete filled judging fence, workdir and an absolute
+retained complete-bundle path plus SHA-256; it does not duplicate role text or inline the large
+bundle. The child explicitly verifies the digest before and after reading every numbered chunk,
+checks inline/bundle contract agreement, and fails Floor 1 on missing access, drift, mismatch or
+partial reads. Original bundle bytes are retained for acceptance and recovery. This changes the
+carrier, not the judging contract, role schema or host API: no automatic file loading, special
+code-mode-only prerequisite or new dispatcher is introduced. Fresh qualification must use the
+updated role bytes and normal caller route; no old green result is claimed as that evidence.
+
+
+**Amendment (2026-10-04, one whole inline SessionStart output):** The earlier ordered-part
+carrier and insufficient-handler rules above remain historical facts and are superseded. Codex
+0.160.0 supports `additionalContextLimit: 0`, which forwards the complete additionalContext
+inline without a spill-file preview. The handler now runs once synchronously for startup,
+resume, clear or compact and emits the entire original UTF-8 page, preceded by a stable whole
+context marker and actual plugin-root/path header. It has no numbered-part reconstruction,
+per-part arguments or configurable `CODEX_METHOD_CAP_BYTES`.
+
+A fixed 64,000 UTF-8 byte budget applies to the **complete additionalContext**, including the
+header. This conservatively reuses the former eight-times-8,000 aggregate budget; it is a
+method safety limit, not a Codex cap. Missing, empty, invalid UTF-8 or oversized pages return
+`continue: false` with a stop reason and no partial context. No body trimming or spill retrieval
+replaces delivery. Ordinary PreToolUse checks, role contracts and integration policy stand.
+
+The official [large hook output guide](https://learn.chatgpt.com/docs/hooks#large-hook-output)
+and pinned [0.160.0 spiller](https://github.com/openai/codex/blob/a956835d020762cb2b570053af06f643a11c0ecc/codex-rs/hooks/src/output_spill.rs)
+provide the host-setting basis. Actual provider captures must prove full inline bytes and one
+invocation; a script stop response alone is not evidence that the host stopped a turn. Native
+qualification and lifecycle captures remain distinct from unit/configuration checks.

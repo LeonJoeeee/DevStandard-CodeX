@@ -101,9 +101,8 @@ sys.exit(2)
 
 class GitHubFixture:
     def __init__(self):
-        scratch = os.environ.get('CLAUDE_JOB_DIR')
-        self.temp = tempfile.TemporaryDirectory(dir=str(Path(scratch) / 'tmp') if scratch else None)
-        self.root = Path(self.temp.name)
+        self.temp = tempfile.TemporaryDirectory(dir=os.environ.get('TMPDIR'))
+        self.root = Path(self.temp.name).resolve()
         self.project = self.root / 'project'
         self.project.mkdir()
         self.env = {**os.environ, 'GH_FIXTURE': str(self.root / 'github.json')}
@@ -134,7 +133,7 @@ class GitHubFixture:
         (bins / 'gh').chmod(0o755)
         self.env['PATH'] = str(bins) + os.pathsep + os.environ['PATH']
         self.output = self.root / 'packet'
-        installed = self.command('install', '--host-version', '0.159.2')
+        installed = self.command('install', '--host-version', '0.160.0')
         if installed.returncode:
             raise AssertionError(installed.stderr)
 
@@ -156,7 +155,7 @@ class GitHubFixture:
     def start(self):
         return self.command('review-packet','start',1,'--issue',2,
                             '--architecture-level','yes','--output',self.output,
-                            '--model',MODEL,'--effort','high','--host-version','0.159.2')
+                            '--model',MODEL,'--effort','high','--host-version','0.160.0')
 
     def publish(self, verdict=None):
         started = self.start()

@@ -1,6 +1,6 @@
 {
   "name": "codex-method",
-  "version": "0.1.0",
+  "version": "0.2.2",
   "description": "Issue lanes, native Codex roles, independent review, and guarded integration.",
   "hooks": "./hooks/hooks.json"
 }

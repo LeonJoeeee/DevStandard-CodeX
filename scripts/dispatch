@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prepare fresh Codex 0.159.2 V2 spawn arguments; no agent process is executed.
+"""Prepare fresh Codex 0.160.0 V2 spawn arguments; no agent process is executed.
 
 The caller uses native spawn_agent, records its returned task_name with --record-spawn, and
 captures list_agents output with --record-status. Receipts are caller-supplied observations, not
@@ -22,6 +22,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'scripts'))
 from hard_edges import Refusal, anchored_roles, filled, require, resolved, run
+from review_state import digest, save as durable_save
 
 
 def route_setting(purpose, model=None, effort=None):
@@ -45,27 +46,155 @@ def read_json(path):
 
 
 def write_json(path, data):
-    temp = path.with_name(path.name + '.tmp')
-    temp.write_text(json.dumps(data, indent=2, ensure_ascii=False) + '\n')
-    temp.replace(path)
+    durable_save(path, data)
+
+
+def lanes_directory(project):
+    common = run('git', 'rev-parse', '--path-format=absolute', '--git-common-dir', cwd=project).strip()
+    return resolved(common, 'common git directory') / 'codex-method' / 'lanes'
+
+
+def record_name(issue, purpose):
+    return f'{issue}' + ('-reviewer' if purpose == 'reviewer' else '') + '.json'
+
+
+def validate_record(record, path):
+    require(isinstance(record, dict) and record.get('interface') == 'codex-v2',
+            f'unqualified lane record: {path}; preserve it and inspect its originating run')
+    issue, purpose = record.get('issue'), record.get('purpose')
+    require(isinstance(issue, int) and issue > 0 and purpose in ('worker', 'reviewer')
+            and path.name == record_name(issue, purpose), f'lane record identity differs: {path}')
+    require(all(isinstance(record.get(key), str) and record[key]
+                for key in ('repo', 'lane_id', 'branch', 'worktree', 'base', 'status'))
+            and isinstance(record.get('runs'), list) and record['runs'],
+            f'incomplete lane receipt: {path}; do not infer completion')
+    require(all(isinstance(item, dict) and item.get('lane_id') and item.get('task_name')
+                for item in record['runs']), f'incomplete native run history: {path}')
+    require(isinstance(record.get('host_version'), str) and record['host_version'],
+            f'missing historical native host version: {path}; preserve the original receipt')
+    for item in record['runs']:
+        item.setdefault('host_version', record['host_version'])
+        require(isinstance(item['host_version'], str) and item['host_version'],
+                f'missing historical native run version: {path}')
+    return record
+
+
+def same_lane_history(older, current):
+    keys = ('issue', 'repo', 'purpose', 'branch', 'base')
+    return (all(older[key] == current[key] for key in keys)
+            and resolved(older['worktree'], 'worktree') == resolved(current['worktree'], 'worktree')
+            and [(r['lane_id'], r['task_name']) for r in older['runs']]
+            == [(r['lane_id'], r['task_name']) for r in current['runs'][:len(older['runs'])]]
+            and all(old['host_version'] == live['host_version']
+                    and (not old.get('native_task_name')
+                         or old['native_task_name'] == live.get('native_task_name'))
+                    for old, live in zip(older['runs'], current['runs'])))
+
+
+def reconcile_legacy(project, lanes):
+    """Import one unambiguous old receipt under the shared lock; keep every old copy."""
+    listed = run('git', 'worktree', 'list', '--porcelain', '-z', cwd=project)
+    checkouts = [Path(item[len('worktree '):]) for item in listed.split('\0')
+                 if item.startswith('worktree ')]
+    candidates = {}
+    for checkout in checkouts:
+        for path in (checkout / '.codex-method/lanes').glob('*.json'):
+            record = validate_record(read_json(path), path)
+            candidates.setdefault(path.name, []).append((path, record, digest(path.read_bytes().decode('utf-8'))))
+    imports = []
+    for name, copies in candidates.items():
+        target = lanes / name
+        if target.exists():
+            current = validate_record(read_json(target), target)
+            require(all(same_lane_history(record, current) for _, record, _ in copies),
+                    f'conflicting legacy lane records for {name}; preserve them and inspect native handles')
+            sources = current.get('legacy_records', {})
+            require(isinstance(sources, dict), 'legacy receipt history is malformed')
+            for path, _, fingerprint in copies:
+                require(str(path) not in sources or sources[str(path)] == fingerprint,
+                        f'legacy receipt changed after migration: {path}; inspect its original native handles')
+            refreshed = {**sources, **{str(path): fingerprint for path, _, fingerprint in copies}}
+            if refreshed != sources:
+                current['legacy_records'] = refreshed
+                imports.append((target, current))
+        else:
+            first = copies[0][1]
+            require(all(record == first for _, record, _ in copies),
+                    f'conflicting legacy lane records for {name}; preserve them and inspect native handles')
+            imports.append((target, {**first, 'legacy_records':
+                                     {str(path): fingerprint for path, _, fingerprint in copies}}))
+    # Validate the entire inventory before creating any reconciled receipt.
+    for target, record in imports:
+        write_json(target, record)
+
+
+def writer_ownership(project, issue, branch, worktree):
+    for path in lanes_directory(project).glob('*.json'):
+        record = validate_record(read_json(path), path)
+        if record['purpose'] != 'worker' or record['status'] == 'cleaned' or record['issue'] == issue:
+            continue
+        require(record['branch'] != branch and resolved(record['worktree'], 'worktree') != worktree,
+                f'issue {record["issue"]} already owns this branch/worktree; preserve its writer and receipt')
+
+
+def record_language(project):
+    path = project / 'AGENTS.md'
+    if not path.exists():
+        return 'English'
+    text = path.read_text()
+    headings = list(re.finditer(r'^##[ \t]+(?:Record language|记录语言)[ \t]*$', text, re.M | re.I))
+    if not headings:
+        return 'English'
+    require(len(headings) == 1, 'ambiguous root AGENTS.md record-language declarations')
+    tail = text[headings[0].end():]
+    end = re.search(r'^#{1,2}[ \t]', tail, re.M)
+    section = tail[:end.start()] if end else tail
+    languages = []
+    for line in section.splitlines():
+        line = re.sub(r'^\s*[-*]\s+', '', line).strip()
+        for pattern in (r'^(.+?)\s+is\s+(?:the\s+)?canonical\b',
+                        r'^(?:Canonical record language|Record language|规范记录语言|记录语言|规范语言)\s*[:：]\s*([^.;；。]+)',
+                        r'^([^是为：:]+?)[ \t]*(?:是|为).*(?:规范|正式|统一).*(?:语言|记录)'):
+            match = re.match(pattern, line, re.I)
+            if match:
+                languages.append(match[1].strip().strip('`*_'))
+                break
+    require(len(languages) == 1 and languages[0],
+            'root AGENTS.md must declare one explicit canonical record language; do not guess')
+    return languages[0]
 
 
 @contextmanager
 def locked(project, issue, purpose):
-    lanes = project / '.codex-method' / 'lanes'
+    lanes = lanes_directory(project)
     lanes.mkdir(parents=True, exist_ok=True)
-    with (lanes / f'{issue}.lock').open('a') as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX)
-        suffix = '-reviewer' if purpose == 'reviewer' else ''
-        yield lanes / f'{issue}{suffix}.json'
+    with (lanes / 'ownership.lock').open('a') as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise Refusal('lane ownership is locked; inspect the originating dispatch before retrying')
+        reconcile_legacy(project, lanes)
+        yield lanes / record_name(issue, purpose)
 
 
 def qualify(project, version):
-    require(version == '0.159.2', 'only an observed Codex 0.159.2 V2 host is qualified; use --host-version')
+    require(version == '0.160.0', 'only an observed Codex 0.160.0 V2 host is qualified; upgrade and use --host-version')
     installer = runpy.run_path(str(ROOT / 'scripts/install'))
     expected = installer['planned'](project)
-    require(all(path.is_file() and path.read_text() == text for path, text in expected.items()),
-            'project roles or V2 config are missing/stale; run scripts/install for this project')
+    roles = [path for path in expected if path.parent.name == 'agents']
+    if any(path.exists() for path in roles):
+        require(all(path.is_file() and path.read_text() == text for path, text in expected.items()),
+                'project roles or V2 config are missing/stale; repair project installation, never hide drift with user roles')
+    else:
+        config = project / '.codex/config.toml'
+        features = (tomllib.loads(config.read_text()).get('features', {}).get('multi_agent_v2', {})
+                    if config.exists() else {})
+        require(all(key not in features or features[key] is True
+                    for key in ('enabled', 'expose_spawn_agent_model_overrides')),
+                'project disables native V2/overrides; repair that declaration before using user roles')
+        expected = installer['planned_user'](installer['user_directory']())
+        require(all(path.is_file() and path.read_text() == text for path, text in expected.items()),
+                'native user roles or V2 config are missing/stale; run scripts/install --user or install project roles')
     return installer
 
 
@@ -142,7 +271,7 @@ def cleanup(project, record, args):
     for past in record['runs'][:-1]:
         _, _, past_finished = captured_status({'runs':[past]}, args.native_status, fresh=True)
         require(past_finished, 'a retained native handle is unfinished; preserve the lane')
-    review_path = project / '.codex-method/lanes' / f"{record['issue']}-reviewer.json"
+    review_path = lanes_directory(project) / record_name(record['issue'], 'reviewer')
     if review_path.exists():
         review = read_json(review_path)
         require(review.get('interface') == 'codex-v2', 'reviewer lifetime is unqualified')
@@ -164,13 +293,18 @@ def cleanup(project, record, args):
             'tracked, untracked, ignored or sole-copy leftovers must be preserved before cleanup')
     base = pr['base'].get('ref')
     require(base, 'merged PR base branch is missing')
+    base_ref = 'refs/heads/' + base
     # No force-delete: admit only local integration evidence. Squash/rebase integrations are refused
     # until the non-ancestor commits' ownership and disposition are established.
-    integrated = subprocess.run(['git', 'merge-base', '--is-ancestor', head, base], cwd=project,
+    integrated = subprocess.run(['git', 'merge-base', '--is-ancestor', head, base_ref], cwd=project,
                                 capture_output=True, text=True)
     require(integrated.returncode == 0, 'lane commits are not integrated in the local PR base; preserve them')
     run('git', 'worktree', 'remove', str(worktree), cwd=project)
-    run('git', 'branch', '-d', record['branch'], cwd=project)
+    # Bind Git's own nonforced deletion check to the verified PR base, not this caller's HEAD.
+    # Command-local upstream settings leave the project's persistent branch config untouched.
+    run('git', '-c', f'branch.{record["branch"]}.remote=.',
+        '-c', f'branch.{record["branch"]}.merge={base_ref}',
+        'branch', '-d', record['branch'], cwd=project)
     run('git', 'worktree', 'prune', cwd=project)
     record['runs'][-1]['status_observation'] = {'observed_at': now(), 'result': data}
     record['runs'][-1]['finished'] = True
@@ -199,6 +333,7 @@ def issue_record(project, repo, issue):
 
 
 def prepare(project, record, args, installer):
+    extra, language = args.input_text, args.record_language
     if args.cont:
         require(record and record['status'] == 'finished' and record['runs'][-1].get('finished'),
                 'continuation requires recorded finished native evidence')
@@ -206,6 +341,9 @@ def prepare(project, record, args, installer):
         require(args.native_status, 'continuation requires fresh --native-status list_agents evidence')
         data, status, finished = captured_status(record, args.native_status, fresh=True)
         require(finished, 'native child is unfinished; continuation cannot create another writer')
+        if record['runs'][-1]['host_version'] != args.host_version:
+            require(isinstance(status, dict) and 'completed' in status,
+                    'upgrading a historical lane requires a fresh completed observation of its real handle')
         record['runs'][-1]['status_observation'] = {'observed_at': now(), 'result': data}
         for flag, value in (('branch', args.branch), ('worktree', args.worktree), ('purpose', args.purpose)):
             if value is not None:
@@ -236,6 +374,8 @@ def prepare(project, record, args, installer):
     branch = branch or f"task/{args.issue}-{slug(issue['title'])}"
     worktree = resolved(worktree or project / '.codex-method/worktrees' / f"{args.issue}-{slug(issue['title'])}", 'worktree')
     require(worktree != project, 'a lane must be a linked worktree, not the main checkout')
+    if purpose == 'worker':
+        writer_ownership(project, args.issue, branch, worktree)
     if not args.cont and not args.adopt:
         ignored = subprocess.run(['git', 'check-ignore', '-q', str(worktree / 'probe')], cwd=project).returncode == 0
         require(ignored, 'the worktree directory must be gitignored before creation')
@@ -243,7 +383,7 @@ def prepare(project, record, args, installer):
         run('git', 'worktree', 'add', str(worktree), '-b', branch, base, cwd=project)
     lane_check(project, branch, worktree, base)
     lane_id = f'{args.issue}-{uuid.uuid4().hex}'
-    scratch = project / '.codex-method/lanes' / str(args.issue) / lane_id
+    scratch = lanes_directory(project) / str(args.issue) / lane_id
     scratch.mkdir(parents=True)
     brief, receipt = scratch / 'brief.txt', scratch / 'native-spawn.json'
     baseline = run('git', 'status', '--porcelain', '--untracked-files=all', cwd=worktree)
@@ -253,11 +393,10 @@ def prepare(project, record, args, installer):
         f"Comment {c['id']} — {c['created_at']} — {c['user']['login']}\n"
         f"----- BEGIN COMMENT {c['id']} -----\n{c['body']}\n----- END COMMENT {c['id']} -----"
         for c in comments) or '(no comments)'
-    continuation = args.brief.read_text() if args.cont else ''
     text = (f'# Task packet\nIssue: https://github.com/{repo}/issues/{args.issue}\n'
             f'Branch: {branch}\nWorktree: {worktree}\nNamed base: {base}\n'
             f'Role references resolve from: {ROOT}\nRole: {purpose}\n'
-            f'Executor: Codex {model} at {effort}\nRecord language: English\n'
+            f'Executor: Codex {model} at {effort}\nRecord language: {language}\n'
             'Commit trailer: Co-Authored-By: codex-method worker <noreply@openai.com>\n')
     pr_url = record.get('pr') if record else (f'https://github.com/{repo}/pull/{args.pr}' if args.pr else None)
     if pr_url:
@@ -269,8 +408,9 @@ def prepare(project, record, args, installer):
              '\n----- BEGIN ISSUE BODY -----\n' + issue['body'] + '\n----- END ISSUE BODY -----\n'
              '\nWhole ordered issue record (all comments, verbatim):\n' + record_text + '\n'
              '\nFull role contract:\n' + role + '\n')
-    if continuation:
-        text += '\nContinuation brief (verbatim):\n' + continuation + '\n'
+    if args.brief:
+        label = 'Continuation brief' if args.cont else 'Inputs and expected output'
+        text += '\n' + label + ' (verbatim):\n' + extra + '\n'
     if packet:
         text += '\nReview packet (verbatim):\n' + packet + '\n'
     brief.write_text(text)
@@ -283,8 +423,9 @@ def prepare(project, record, args, installer):
             'model':model, 'effort':effort, 'brief':str(brief), 'instruction':str(receipt),
             'pr':pr_url, 'issue_state':issue['state'], 'status':'awaiting-native-spawn',
             'host_version':args.host_version, 'interface':'codex-v2',
+            **({'legacy_records': record['legacy_records']} if record and record.get('legacy_records') else {}),
             'runs': (record['runs'] if record else []) + [
-                {'lane_id':lane_id, 'task_name':task_name, 'brief':str(brief),
+                {'lane_id':lane_id, 'task_name':task_name, 'brief':str(brief), 'host_version':args.host_version,
                  'instruction':str(receipt), 'prepared_at':now(), 'pre_write_status':baseline,
                  'finished':False}],
             'notice':'Prepared only. Call native spawn_agent with native-spawn.json exactly; '
@@ -315,7 +456,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('issue', type=int, nargs='?')
     parser.add_argument('--project', type=Path, default=Path.cwd())
-    parser.add_argument('--host-version', help='observed host version; only 0.159.2 is qualified')
+    parser.add_argument('--host-version', help='observed host version; only 0.160.0 is qualified')
     parser.add_argument('--purpose', choices=['worker', 'reviewer'])
     parser.add_argument('--base')
     parser.add_argument('--branch')
@@ -336,9 +477,17 @@ def main():
     require(args.issue and args.issue > 0, 'an issue number is required')
     project = resolved(args.project, 'project')
     require(project.is_dir(), 'target project does not exist')
+    require(resolved(run('git', 'rev-parse', '--show-toplevel', cwd=project).strip(), 'project root') == project,
+            '--project must be the actual checkout root; root AGENTS.md is the language authority')
     installer = qualify(project, args.host_version)
+    if not (args.record_spawn or args.record_status or args.cleanup):
+        # A bad brief/declaration cannot create ownership files, import legacy state, or create a worktree.
+        args.input_text = args.brief.read_bytes().decode('utf-8') if args.brief else ''
+        args.record_language = record_language(project)
     with locked(project, args.issue, args.purpose) as path:
         record = read_json(path) if path.exists() else None
+        if record:
+            validate_record(record, path)
         if args.record_spawn or args.record_status or args.cleanup:
             require(record and record.get('interface') == 'codex-v2' and record.get('status') != 'cleaned',
                     'no active qualified native lane record')

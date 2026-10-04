@@ -27,6 +27,16 @@ def digest(text):
     return hashlib.sha256(text.encode('utf-8')).hexdigest()
 
 
+def validate_packet_carrier(attempt):
+    """Check exact local evidence only for receipts that selected the file carrier."""
+    if attempt.get('packet_carrier') != 'file-sha256-v1':
+        return
+    bundle = Path(attempt['packet_path'])
+    require(bundle.is_file(), 'reserved evidence bundle is missing; retain the receipt')
+    require(hashlib.sha256(bundle.read_bytes()).hexdigest() == attempt['packet_sha256'],
+            'reserved evidence bundle differs; retain the original receipt')
+
+
 def ledger_path(project, repo, pr):
     common = Path(run('git', 'rev-parse', '--git-common-dir', cwd=project).strip())
     if not common.is_absolute():
@@ -238,6 +248,7 @@ def accepted(project, repo, pr, comments, head, base):
     answer = results(text)
     require(answer == {'goal': 'Yes', 'floor1': 'Pass', 'floor2': 'Pass', 'ready': 'Yes'},
             'the latest verdict is not Goal Yes with both Floors passing')
+    validate_packet_carrier(attempt)
     return attempt, text
 
 
@@ -255,6 +266,8 @@ def status(ledger, comments):
             next_step = 'invalid-verdict'
         elif current['state'] == 'returned':
             result = current['results']
+            if result['ready'] == 'Yes':
+                validate_packet_carrier(current)
             next_step = ('accepted' if result['ready'] == 'Yes' else
                          'human-direction' if result['floor2'] == 'Fail' else 'needs-continuation')
         elif current['state'] == 'failed':

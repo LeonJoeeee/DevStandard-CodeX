@@ -28,13 +28,13 @@ python3 -m unittest discover -s tests -t .
 python3 .github/check-routing.py
 python3 .github/check-adr-index.py
 python3 .github/check-release.py
-! grep -rn "@[a-zA-Z0-9_-]*/" reference/ --include='*.md' | grep -v actions/ | grep -v anthropic | grep .
+rg -n '@[a-zA-Z0-9_-]*/' reference/ --glob '*.md'
 # Native runtime gate: use an explicitly writable scratch root; local bind refusals are blockers.
 python3 .github/test-native-runtime.py --installer scripts/install --scratch-root "$TMPDIR" --log-dir "$TMPDIR/native-evidence"
 ```
 
 ## Version bumps
 
-Fold the lockstep bump into the change PR and put the semver call in its description. An unavoidable
-bare bump needs no issue and no check 1 — the CI gate is its review — but still merges through
-`scripts/guard merge`.
+Fold the lockstep bump into the change PR and put the semver call in its description. Every shipped merge, including a bare version bump, requires an exact accepted check-1
+receipt and merged-result CI through `scripts/guard merge`. The source-only bare-bump waiver
+is not implemented in this target.
