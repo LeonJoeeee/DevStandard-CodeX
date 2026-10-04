@@ -336,14 +336,16 @@ alone defines judging: Goal and both Floors decide readiness. Record failed atte
 and returns an `instruction` path containing the complete native call. Pass that JSON unchanged
 to native spawn: a fresh `method_reviewer`, `fork_turns="none"`, and the receipt's exact model and
 effort. Its discovered role delivers the complete static judging contract and native mechanics.
-The message carries the complete filled judging fence, workdir and the retained full bundle's
-absolute path and SHA-256. It omits duplicate role text and the large inline evidence bundle.
-The reviewer must hash before and after, read the whole bundle in numbered chunks without output
-truncation, and check its filled contract against the inline fence. Missing reads, changed bytes
-or inconsistent contracts fail Floor 1; neither a summary nor a path alone proves delivery.
+For ordinary `review-packet start`, the message carries issue, head, base, reviewer identity,
+workdir and the retained full bundle's absolute path and SHA-256. The complete filled contract
+and evidence occur once in that bundle, without a second message render. The reviewer must
+hash before and after, read the whole bundle in numbered chunks without output truncation, and
+check its filled contract against those immutable bindings. Missing reads, changed bytes or
+inconsistent contracts fail Floor 1; neither a summary nor a path alone proves delivery.
 This is explicit reading through ordinary tools, not host automatic file-reference loading.
 The retained bundle's UTF-8 SHA-256 equals the existing packet SHA; the native instruction hash
-binds the inline fence, path and digest together. `status` checks new file carriers for missing
+binds the transport metadata, path and digest together. Existing inline dispatcher consumers
+and already-prepared instructions keep their exact original carrier. `status` checks file carriers for missing
 or changed bytes, while historical inline attempts keep their original recovery contract.
 Keep the retained bundle intact through acceptance and publication recovery. A returned Floor 1
 failure is still published whole even if its bundle is missing; publication never hides the

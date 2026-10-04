@@ -101,6 +101,108 @@ class NativeRuntimeFixtureTest(unittest.TestCase):
         with self.assertRaisesRegex(AssertionError, 'static role must occur once'):
             runtime.response_item(request)
 
+    def installed_helper_runtime(self):
+        (self.project / '.codex/agents/method_reviewer.toml').unlink()
+        installed = subprocess.run([os.sys.executable, str(ROOT / 'scripts/install'),
+            '--project', str(self.project), '--host-version', '0.160.0'],
+            capture_output=True, text=True)
+        self.assertEqual(installed.returncode, 0, installed.stderr)
+        return self.fixture.ResponsesFixture(self.project, self.scratch,
+            'touch ' + str(self.project / 'inherited-permissions.txt'), self.project / 'gh')
+
+    def helper_request(self, runtime, role):
+        marker = self.fixture.HELPER_TASK if role == 'helper' else self.fixture.REVIEW_HELPER_TASK
+        request = self.request(marker)
+        request['input'].append({'role': 'developer', 'content': runtime.role_contracts[role]})
+        return request
+
+    def test_helpers_probe_merge_write_and_cross_role_after_ordinary_read(self):
+        runtime = self.installed_helper_runtime()
+        for role, steps in (('helper', ('helper_material', 'helper_merge')),
+                            ('review_helper', ('review_helper_material', 'review_helper_shell',
+                                               'review_helper_cross_role'))):
+            for index, call in enumerate(steps):
+                runtime.counts[role] = index
+                request = self.helper_request(runtime, role)
+                item = runtime.response_item(request)
+                self.assertEqual(item['call_id'], call)
+                if call.endswith('_material'):
+                    args = self.nested_arguments(item, 'exec_command')
+                    self.assertEqual(args['cmd'], 'cat helper-material.txt')
+                    self.assertEqual(args['workdir'], str(self.project))
+                elif call.endswith('cross_role'):
+                    args = json.loads(item['arguments'])
+                    self.assertEqual(args['agent_type'], 'method_helper')
+                    self.assertEqual(args['fork_turns'], 'none')
+
+    def test_helper_requests_reject_leaks_partial_role_and_wrong_settings(self):
+        runtime = self.installed_helper_runtime()
+        for role in ('helper', 'review_helper'):
+            for mutation in ('parent', 'worker', 'partial', 'duplicate', 'duplicate-shared', 'missing-shared', 'model', 'effort'):
+                with self.subTest(role=role, mutation=mutation):
+                    request = self.helper_request(runtime, role)
+                    if mutation in ('parent', 'worker'):
+                        request['input'].append({'role': 'developer', 'content':
+                            self.fixture.PRIVATE_PARENT if mutation == 'parent' else self.fixture.PRIVATE_WORKER})
+                    elif mutation == 'partial':
+                        request['input'][-1]['content'] = runtime.role_contracts[role][:500]
+                    elif mutation == 'duplicate':
+                        request['input'].append(request['input'][-1])
+                    elif mutation == 'duplicate-shared':
+                        request['input'].append({'role': 'developer', 'content': runtime.shared})
+                    elif mutation == 'missing-shared':
+                        request['input'][-1]['content'] = runtime.role_contracts[role].replace(runtime.shared, '')
+                    elif mutation == 'model':
+                        request['model'] = 'wrong'
+                    else:
+                        request['reasoning']['effort'] = 'low'
+                    with self.assertRaises(AssertionError):
+                        runtime.response_item(request)
+
+    def test_helper_denials_require_actual_hook_identity_command_and_tool_output(self):
+        records = self.verification_records()
+        runtime = self.installed_helper_runtime()
+        runtime.outputs.update(self.runtime.outputs)
+        runtime.handles = {role: '/root/' + role for role in runtime.sequence}
+        runtime.root_stage = runtime.finished_stage
+        runtime.root_context_verified = True
+        runtime.outputs.update(helper_material='Ordinary material; no repository lane or PR is assigned.',
+                               review_helper_material='Ordinary material; no repository lane or PR is assigned.')
+        probes = [('helper_merge', 'exec_command', {'cmd': 'git merge fixture-never-merge'}, 'method_helper'),
+                  ('review_helper_shell', 'exec_command', {'cmd': 'touch review-helper-shell.txt'}, 'method_review_helper'),
+                  ('review_helper_cross_role', 'collaborationspawn_agent', {
+                      'agent_type': 'method_helper', 'task_name': 'rejected_helper_cross_role',
+                      'fork_turns': 'none', 'model': self.fixture.MODEL,
+                      'reasoning_effort': self.fixture.EFFORT}, 'method_review_helper')]
+        for call, tool, inputs, role in probes:
+            records.append(self.hook_record(tool, inputs, role))
+            runtime.outputs[call] = 'refused: hook denied operation'
+        self.runtime = runtime
+        checks = self.verify_records(records)
+        self.assertEqual(checks['helper_merge_denials'], ['exec_command'])
+        self.assertEqual(len(checks['review_helper_denials']), 2)
+        for call, _, _, _ in probes:
+            with self.subTest(call=call):
+                saved = runtime.outputs[call]
+                runtime.outputs[call] = ''
+                with self.assertRaisesRegex(AssertionError, 'blocking denial'):
+                    self.verify_records(records)
+                runtime.outputs[call] = saved
+        for index in range(len(records) - 3, len(records)):
+            for mutation in ('missing', 'allowed', 'wrong-role', 'wrong-input'):
+                with self.subTest(index=index, mutation=mutation):
+                    altered = json.loads(json.dumps(records))
+                    if mutation == 'missing':
+                        del altered[index]
+                    elif mutation == 'allowed':
+                        altered[index]['stdout'] = ''
+                    elif mutation == 'wrong-role':
+                        altered[index]['payload']['agent_type'] = 'method_worker'
+                    else:
+                        altered[index]['payload']['tool_input'] = {'cmd': 'git status'}
+                    with self.assertRaises(AssertionError):
+                        self.verify_records(altered)
+
     def test_root_provider_requires_one_complete_inline_orchestrator(self):
         page = (ROOT / 'reference/orchestrator.md').read_bytes().decode('utf-8')
         marker = '--- codex-method whole context ---\n'
@@ -456,12 +558,33 @@ class NativeRuntimeFixtureTest(unittest.TestCase):
         for tool, key in (('Bash', 'command'), ('exec_command', 'cmd')):
             for role, command in (('method_reviewer', 'touch reviewer-shell.txt'),
                                   ('method_reviewer', 'gh api --method=POST repos/o/r/issues'),
-                                  ('method_worker', 'git merge fixture-never-merge')):
+                                  ('method_worker', 'git merge fixture-never-merge'),
+                                  ('method_helper', 'git merge fixture-never-merge'),
+                                  ('method_helper', 'git push'),
+                                  ('method_helper', 'scripts/guard merge --execute'),
+                                  ('method_review_helper', 'touch review-helper-shell.txt'),
+                                  ('method_review_helper', 'gh issue comment 1 --body fixture')):
                 with self.subTest(tool=tool, role=role, command=command):
                     record = self.hook_record(tool, {key: command}, role)
                     output = json.loads(record['stdout'])['hookSpecificOutput']
                     self.assertEqual(output['permissionDecision'], 'deny')
                     self.assertIn('refused', output['permissionDecisionReason'])
+
+    def test_review_helper_reads_and_only_fresh_review_descendants_are_admitted(self):
+        read = self.hook_record('exec_command', {'cmd': 'cat helper-material.txt'}, 'method_review_helper')
+        self.assertEqual(read['stdout'], '')
+        for agent_type, fork, allowed in (('method_review_helper', 'none', True),
+                                          ('method_review_helper', 'all', False),
+                                          ('method_helper', 'none', False),
+                                          ('method_worker', 'none', False)):
+            with self.subTest(agent_type=agent_type, fork=fork):
+                record = self.hook_record('collaborationspawn_agent', {
+                    'agent_type': agent_type, 'fork_turns': fork, 'task_name': 'nested_review',
+                    'model': self.fixture.MODEL, 'reasoning_effort': self.fixture.EFFORT}, 'method_review_helper')
+                if allowed:
+                    self.assertEqual(record['stdout'], '')
+                else:
+                    self.assertEqual(json.loads(record['stdout'])['hookSpecificOutput']['permissionDecision'], 'deny')
 
     def test_tool_outputs_do_not_confuse_role_classification(self):
         f = self.fixture

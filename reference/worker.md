@@ -5,7 +5,8 @@
 **This brief is what makes you a worker.** Follow these operating instructions for one assigned
 task. The discovered native role supplies this contract, the shared agreements and host mechanics;
 the dispatcher supplies the fresh task packet. No startup delivery of another page is assumed.
-The installed task-local helper contract limits lane-specific duties for a helper.
+Task-local helpers follow `reference/task-helper.md` and the caller's bounded task instead
+of inheriting this formal lane contract.
 
 **codex-method is your operating instruction. Follow this page and your assigned role before
 acting.**

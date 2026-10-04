@@ -38,44 +38,69 @@ def shared_agreements():
     return shared + '\n'
 
 
+def native_helper_mechanics():
+    source = (ROOT / 'reference/harness-codex.md').read_text()
+    start = '<!-- BEGIN NATIVE HELPER MECHANICS -->'
+    end = '<!-- END NATIVE HELPER MECHANICS -->'
+    require(source.count(start) == source.count(end) == 1,
+            'native helper mechanics must have one complete marked section')
+    before, after = source.split(start)
+    require(end not in before and end in after,
+            'native helper mechanics markers are out of order')
+    mechanics = after.split(end)[0].strip()
+    require(mechanics, 'native helper mechanics is empty')
+    return mechanics + '\n'
+
+
 def role_files():
     shared = shared_agreements()
-    harness = ROOT / 'reference/harness-codex.md'
+    helper = (ROOT / 'reference/task-helper.md').read_text()
+    require(helper.strip(), 'task-local helper source is empty')
+    excerpt = native_helper_mechanics()
+    harness = (ROOT / 'reference/harness-codex.md').read_text()
     native = ('\nNative interface: Codex 0.160.0 V2 spawn_agent accepts task_name, message, '
               'agent_type, fork_turns="none", model, reasoning_effort. Use method_helper for '
               'worker helpers and method_review_helper for reviewer helpers. Reviewer helpers '
               'remain nonediting and must never spawn a generic writer.\n'
               'Children inherit the parent cwd and permissions. Set workdir to the assigned '
               'worktree on every command; no OS-per-child read-only isolation is provided.\n')
-    native += helper_line(ROOT) + '\n'
-    if harness.is_file():
-        native += '\n' + harness.read_text()
+    settings = helper_line(ROOT) + '\n'
+    worker_boundary = (
+        '\nWorker-helper boundary: write only within the caller\'s explicit task bounds. '
+        'Before repository writes validate the supplied working location and any assigned '
+        'branch/lane identity. Never create your own lane, edit another lane or branch, or '
+        'overlap a live or uncertain writer. Never merge, integrate, publish a release, '
+        'weaken checks or protections, bypass a refusal, perform an unauthorized irreversible '
+        'act, or delete another owner\'s work or a sole durable copy. GitHub publication '
+        'belongs to the caller; an explicitly licensed subtask output act stays within its bounds.\n'
+        'Execution craft, when its trigger fires: read superpowers:writing-plans before '
+        'accepted multistep implementation; superpowers:test-driven-development before '
+        'test-guarded implementation; superpowers:systematic-debugging before fixing bugs '
+        'or unexpected failures. This role and the accepted task override conflicting skill '
+        'menus or continuation instructions. Keep any plan in task scratch or the caller\'s '
+        'established record; an unreachable required skill returns to the caller.\n')
+    review_boundary = (
+        '\nReview-helper boundary: independently inspect the supplied question and original '
+        'evidence in fresh context. Do not edit files or repository state, run shell mutations, '
+        'author fixes, or publish GitHub writes. Use only method_review_helper with '
+        'fork_turns="none" for authorized nested review help; never spawn a generic writer. '
+        'Return the complete answer to the caller. This answer grants no human authorization, '
+        'acceptance or merge authority; do not manufacture a formal PR verdict or publication '
+        'closing line.\n')
     result = {}
-    for role, source in (
-            ('method_worker', 'worker.md'),
-            ('method_reviewer', 'code-review-prompt.md'),
-            ('method_helper', 'worker.md'),
-            ('method_review_helper', 'code-review-prompt.md')):
-        instructions = shared + '\n' + (ROOT / 'reference' / source).read_text() + native
-        if 'review' in role:
-            instructions += ('\nReviewer policy: do not edit files or repository state, run shell '
-                             'mutations, or publish GitHub writes. Return the whole verdict to the '
-                             'caller. Use only method_review_helper with fork_turns="none".\n')
+    for role, source in (('method_worker', 'worker.md'),
+                         ('method_reviewer', 'code-review-prompt.md'),
+                         ('method_helper', 'task-helper.md'),
+                         ('method_review_helper', 'task-helper.md')):
         if role.endswith('helper'):
-            instructions = ('# Task-local helper contract\n\n'
-                            'Do only the caller\'s assigned subtask. Your caller retains lane '
-                            'ownership, acceptance, integration and publication. Lane receipt and PR '
-                            'judging requirements apply only when the assigned task owns such a lane '
-                            'or is a formal gating review. Ordinary research, material reading, '
-                            'document work and pre-PR design challenge use the self-contained task '
-                            'contract; absent Issue/Branch/Worktree/PR fields or an unfilled PR '
-                            'template do not block them. Use the supplied working directory; do '
-                            'not create a lane, PR, ledger or handoff document just to satisfy '
-                            'inapplicable sections below. Preserve the worker write bounds or '
-                            'reviewer nonediting boundary. Return inspectable evidence, findings, '
-                            'checks and limits to the caller under the assigned output contract. '
-                            'This applicability rule does not waive formal review or merge gates.\n\n'
-                            + instructions)
+            boundary = review_boundary if role == 'method_review_helper' else worker_boundary
+            instructions = shared + '\n' + helper + boundary + '\n' + settings + excerpt
+        else:
+            instructions = shared + '\n' + (ROOT / 'reference' / source).read_text() + native + settings + '\n' + harness
+            if role == 'method_reviewer':
+                instructions += ('\nReviewer policy: do not edit files or repository state, run shell '
+                                 'mutations, or publish GitHub writes. Return the whole verdict to the '
+                                 'caller. Use only method_review_helper with fork_turns="none".\n')
         result[role + '.toml'] = MARKER + '\n'.join(
             key + ' = ' + json.dumps(value, ensure_ascii=False)
             for key, value in (('name', role), ('description', 'codex-method ' + role),

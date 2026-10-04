@@ -185,3 +185,25 @@ source contract; installation, fresh no-global-AGENTS role delivery and lifecycl
 qualify these new bytes before retiring the global file. A stable backup precedes retirement;
 no permanent duplicate bootstrap is required. The original ADR bodies and prior runtime facts
 remain historical evidence, not proof of the new runtime.
+
+
+**Amendment (2026-10-04, human-authorized review and helper payload refinement):** Ordinary
+`review-packet start` now keeps the complete filled judging contract and original evidence in
+one retained digest-bound bundle. Its short native request carries the exact issue/head/base,
+reviewer identity, workdir, absolute bundle path and digest, without a second filled render.
+Hash-before/hash-after, complete numbered reading, failure disclosure, original whole-verdict
+publication and exact acceptance remain. Only the canonical fence's transport wording changes;
+Goal/Floor/Notes judgment and output rules do not. Existing inline dispatcher consumers and
+already-prepared file or inline receipts retain their original bytes and validation semantics.
+
+Task-local helpers receive one dedicated bounded-subtask source and a validated native-helper
+excerpt rather than complete formal worker/reviewer pages behind a disclaimer. The exact shared
+agreements still reach each role once; formal roles remain complete. Caller ownership, explicit
+default settings, helper no-merge, reviewer-helper nonediting and review-helper-only nesting
+remain. New payload bytes require actual target-role delivery and refusal checks before they
+are called qualified; static composition alone is not behavioral evidence.
+
+The human explicitly excluded short-core orchestrator loading and lifecycle injection dedup.
+Whole startup/resume/clear/compact injection and necessary diff/failure evidence remain. This
+refinement grants no merge or release permission; optimization integration still awaits the
+human's explicit approval of the resulting PR.
