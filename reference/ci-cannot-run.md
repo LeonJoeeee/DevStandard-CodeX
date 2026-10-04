@@ -8,11 +8,14 @@ This page preserves the source method's fallback design and evidence requirement
 `review-packet` and `guard merge --ci-fallback` routes deliberately refuse as unqualified.
 A `CI-FALLBACK` marker or comment URL alone cannot authorize integration. No agent may lower
 protection, bypass a required check, substitute a partial suite, or ship a release under this
-route. Resolve the provider limitation and wait for ordinary CI. Qualifying a future fallback
+route. First follow `reference/ci-pipelines.md`'s When hosted CI cannot start section: safe,
+already-authorized temporary self-hosted Actions keep ordinary checks and are a separate route.
+When ordinary hosted or safe self-hosted Actions cannot run, retain all safe equivalent local
+results and the concrete blockage; the guard waits for ordinary CI. Qualifying a future waiver
 requires an exact merged-tree run, full job coverage, fresh review of that evidence, local receipt
 association, and a guarded integration route; none is inferred from this prose.
 
-## First: the answer is almost always to wait
+## Preserved source design: waiting instead of a degraded merge waiver
 
 An outage is measured in hours; a minutes quota resets on a known date. **Waiting keeps check 2 intact and costs a delay — the fallback costs a full local run, a published evidence block, a reviewer's audit, and a return sweep, and still ends with an unverified merge.** Almost no merge is worth that trade. Everything below applies only once you can say *why* waiting was ruled out.
 
@@ -69,7 +72,7 @@ Run every job CI would have run from that worktree, unfiltered and to completion
 
 **Evidence first, then check 1.** As with ordinary green-PR admission, evidence precedes review. Under the fallback, run the suite and post the evidence *before* check 1, and hand that comment to the reviewer with the diff — an impartial clean reader auditing the run is the closest available substitute for an impartial runner. If check 1 sends the diff back, or the rebase moves, redo the run: the last evidence on the PR must come from the tree that actually merged.
 
-**Post this with it.** The reviewer is a clean context and cannot open this file or follow a link, so the checklist travels with the evidence — in the same PR comment as the `CI-FALLBACK` block below. The design requires a fresh review packet to carry the whole comment into the CI-fallback placeholder of `reference/code-review-prompt.md`, which otherwise reads `NONE`. The shipped `start --ci-fallback` refuses; do not commission or merge through this route until its receipt and evidence path is qualified:
+**Post this with it.** The reviewer is a clean context; no automatic file or link loading is assumed, so the complete checklist travels with the evidence — in the same PR comment as the `CI-FALLBACK` block below. The design requires a fresh review packet to carry the whole comment into the CI-fallback placeholder of `reference/code-review-prompt.md`, which otherwise reads `NONE`. The shipped `start --ci-fallback` refuses; do not commission or merge through this route until its receipt and evidence path is qualified:
 
     Audit the CI-fallback evidence above against all four items:
     - Is the stated cause outside this repo (minutes exhausted, platform

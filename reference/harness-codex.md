@@ -2,7 +2,8 @@
 
 This page is the Codex mechanics delivered with `reference/worker.md` to a worker. The
 orchestrator reads it when installing, dispatching, continuing, or recovering native roles.
-The worker page owns the task contract; the filled review packet owns a reviewer's judgment.
+The shared agreements own general collaboration; the worker page owns its lane contract and
+the filled review packet owns formal PR judgment. Task-local helpers keep their caller's contract.
 
 ## Qualified host and role delivery
 
@@ -40,8 +41,14 @@ additionalContext header and page. Missing, empty, invalid UTF-8 or oversized pa
 `continue: false` without partial context. The budget belongs to the method, not Codex. Capture
 live context and actual stopping behavior for each claim rather than inferring them from JSON or matchers.
 
-The worker role's instructions carry this page and `reference/worker.md`; its spawn message
-carries the freshly assembled task packet. Helpers receive their narrower task and applicable
+The installer extracts the single marked Shared collaboration agreements section from
+`reference/orchestrator.md` and inlines it once into all four roles. Children receive that section,
+not the whole orchestrator, and do not reread its main-session duties. Helper roles prefix a
+narrow applicability contract: the caller retains lane ownership and publication, and ordinary
+non-PR work does not inherit Issue/lane/fence requirements. The worker role's instructions carry
+this page and `reference/worker.md`; its spawn message
+carries the freshly assembled task packet without a second static role copy. Installation drift
+and missing roles refuse before a lane is prepared. Helpers receive their narrower task and applicable
 role boundary. Reviewer roles automatically deliver the complete nonediting contract and native mechanics,
 with no implementation skills. Their short native message supplies the complete filled judging
 fence and binds the full retained evidence bundle by absolute path and SHA-256. The reviewer
@@ -82,8 +89,16 @@ carriers without changing historical inline attempts or suppressing publication 
 Gating review uses `method_reviewer`; a fresh design challenge or pre-PR arbitration uses
 `method_review_helper`. Ordinary task helpers use `method_helper`; a reviewer's helpers keep
 `method_review_helper` and the caller's nonediting restriction. Every helper uses explicit `gpt-6.1-sol` at `high`
-under the supplied `Helpers:` binding. Do not add `cwd`, `hook_settings`, `prompt`,
+under the delivered native `Helpers:` binding. Do not add `cwd`, `hook_settings`, `prompt`,
 `subagent_type`, or `run_in_background` to this V2 call.
+
+Inspect the actual native schema before invoking it. Where an admitted native interface lacks
+`agent_type`, an ordinary task-local helper's message must explicitly carry the exact shared
+section (the installer's `shared_agreements()` output) and a self-contained assigned role/task
+contract with applicable write or nonediting bounds. Use only supported fields. This carrier
+is not typed role discovery or proof of role-hook enforcement; formal gating review still needs
+its qualified typed route and identity. If the interface or hook refuses, return the limitation
+rather than bypassing it. Do not infer universal desktop compatibility from app-server probes.
 
 A prepared receipt is not a launched child. Record the actual returned native handle with its
 issue and lane; observe native completion before reuse or cleanup. Read the child's full
@@ -122,7 +137,9 @@ A retained stopped handle is preferred because it retains context. With no recov
 first establish that the old child cannot still write, then create a fresh child for the same
 lane with the full role and refreshed packet. An uncertain lifetime remains blocked.
 
-After compaction or loss of binding, stop task writes. Ask the orchestrator on the actual
+After compaction or loss of binding, stop dependent task writes. For an ordinary helper recover
+its exact role, goal, bounds, checks, working directory and observed task status from the caller;
+no lane fields are invented. For a repository lane follow the recovery below. Ask the orchestrator on the actual
 native channel to resend the exact original packet and current authorized continuation,
 including issue, branch, worktree, named base, Bounds, Done-check, and method root. Match all
 identities to the recorded lane and reread the role sources. A caller's cwd, a guessed issue,

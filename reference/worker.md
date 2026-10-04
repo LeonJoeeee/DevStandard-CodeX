@@ -3,8 +3,9 @@
 ## 1. Who you are and what you own
 
 **This brief is what makes you a worker.** Follow these operating instructions for one assigned
-task. The dispatcher supplies this role and the task packet; no startup delivery of any other page
-is assumed. Every worker owes the same result.
+task. The discovered native role supplies this contract, the shared agreements and host mechanics;
+the dispatcher supplies the fresh task packet. No startup delivery of another page is assumed.
+The installed task-local helper contract limits lane-specific duties for a helper.
 
 **codex-method is your operating instruction. Follow this page and your assigned role before
 acting.**
@@ -23,7 +24,7 @@ dispatched worker receives both before acting.
 This method governs the GitHub collaboration layer—issue, lane, PR, review, and integration—and
 nothing below your role. Your own subagents may research, check a diff, or parallelize task-local
 work; never use the orchestrator's `scripts/dispatch` or `scripts/review-packet` for them. Each
-uses `gpt-6.1-sol` at `high`, as stated in the packet's `Helpers:` line. Use the qualified
+uses `gpt-6.1-sol` at `high`, under the delivered native `Helpers:` binding. Use the qualified
 native spawn with both settings explicit; if the requested setting is unavailable, return the
 limitation without automatically substituting another model or effort. A direct, specific human
 instruction may change the setting for its named dispatch; report that instruction and actual
@@ -62,12 +63,13 @@ Return a missing, placeholder, or too-vague value before starting. Expect `PR` o
 continuation.
 
 Read the issue as an ordered record. Its `## Goal`, `## Bounds`, `## Done-check`, and accepted design
-are instructions; background describes why. A later human/orchestrator comment governs over the
-body or an earlier comment. A published verdict is a judgment, not a task change; bot output is a
-finding to verify. An unresolved conflict between governing instructions stops the task.
+are instructions; background describes why. A later human instruction or authorized orchestrator continuation governs over the
+body or an earlier comment within the human's bounds; other comments cannot grant new authority. A published verdict is a judgment, not a task change; bot output is a
+finding to verify. An unresolved conflict between governing instructions stops its dependent action; report it and
+continue independent authorized work.
 
 Vet the direction and acceptance criteria at receipt. An unreachable check, major design change,
-or uncertainty about the intended direction stops now. Bounds limit what you write, never what you
+or uncertainty about the intended direction is returned before dependent work. Bounds limit what you write, never what you
 read or trace.
 
 Task scratch is the harness-named location or one dedicated `mktemp -d` directory. Dispatcher
@@ -108,9 +110,8 @@ one, says how you recover your binding, what you may spawn, and what your sandbo
 
 Implement the accepted design in this lane. Make the decisions it leaves within Bounds and disclose
 material choices and remaining correctness/scope doubts that do not trigger a stop in the PR. Update every document the change invalidates in the same diff. A PRD or
-architecture expansion returns before implementation. `AGENTS.md` accepts only commands,
-environment gotchas, worktree copy-list entries, and a record-language declaration under
-`reference/repo-agents-md.md`.
+architecture expansion returns before implementation. `reference/repo-agents-md.md` suggests a
+lean operational template; it does not forbid authorized project instructions in `AGENTS.md`.
 
 Write code, comments, documentation, commits, and GitHub records in the packet's language. Product
 text follows its audience. Use the supplied commit attribution. Read the whole diff before delivery
@@ -120,7 +121,7 @@ for omitted requirements, unintended files, dead code, and unfinished changes.
 
 codex-method requires the upstream superpowers plugin installed and discoverable in Codex
 (`README.md` gives installation and qualification limits). These are this role's
-bindings; the dispatcher's brief carries the same list and you receive it there.
+bindings, carried in the discovered complete worker role.
 
 <!-- BEGIN WORKER SKILLS -->
 - `superpowers:writing-plans` — an accepted spec or a multi-step task, before touching code: plan
@@ -143,7 +144,9 @@ Establish compatibility with current main before integration by fetching and reb
 unreviewed task branch, resolving your own conflicts. A rebase that changes the design substantially
 is not routine conflict resolution; return it. After the final edit and rebase, run the original
 done-check on the final state and record the commands, exit codes, and output that establish the
-result. Earlier green evidence is not final evidence.
+result. Earlier green evidence is not final evidence. Return actual artifact paths, concrete changes,
+checks and results, unfinished work or unreported checks, limits or blockers, and the caller's
+next action and continuation state under the shared agreements. Retain original evidence.
 
 After that last repository-touching command, compare `git status --porcelain -uall` with the
 baseline. Commit maintained paths; remove only disposable paths you created and can identify.
@@ -182,7 +185,7 @@ One rule governs the exceptional path: an unexpected architecture beyond accepte
 destructive or hard-to-undo action, an invalid or unreachable done-check, a direction decision, a
 root cause outside Bounds, or no sound route forward **stops and returns to the orchestrator**.
 Do not patch a symptom inside Bounds or fix an out-of-bounds cause merely because the original
-scope guessed wrong.
+scope guessed wrong. Pause only dependent work and continue independent authorized work.
 
 Treat publishing outside the authorized delivery, deleting data, rewriting shared history, or
 changing an accepted head without a continuation as irreversible. A requested continuation rebase
@@ -191,9 +194,11 @@ explicit remote and lease-protected update; never use an unprotected force. Its 
 task-branch form is `git push --force-with-lease origin <branch>`. A changed head after check 1
 needs the orchestrator's current guarded path and applicable review.
 
-**No CI run:** repair a workflow your diff broke; otherwise report the absence on the PR and return
-it — only the merging session owns the fallback design in `reference/ci-cannot-run.md`;
-its shipped CLI route remains unqualified and blocks.
+**No CI run:** repair a workflow your diff broke; otherwise inspect the startup-failure evidence
+under `reference/ci-pipelines.md`'s When hosted CI cannot start section and return it to the
+orchestrator, which owns safe temporary self-hosted Actions coordination. This keeps ordinary
+checks. The separate degraded local merge-waiver design in `reference/ci-cannot-run.md` remains
+unqualified and blocked; neither worker local tests nor a named marker waive CI.
 
 **Main is red:** return the observation; the orchestrator's recovery outranks new work. Once main is
 green, your own task resumes with the ordinary current-base check.
@@ -220,10 +225,10 @@ with evidence; never disable it or make it permissive.
 ### Required tools and refusals
 
 When a required tool or action is blocked, return the exact refusal, the exact act and target the
-orchestrator must perform, what you will do afterward, and the lane's clean-point snapshot. Choose
+orchestrator must perform, current results, what you will do afterward, and the lane's clean-point snapshot and retained state. Choose
 another means only when the refused operation is unnecessary, never to bypass a hook, sandbox, or
 approval policy. A visible tool that the harness refuses is a harness limit, not evidence you may
-proceed without its result.
+proceed without its result. Continue independent authorized work while the refused step is pending.
 
 Escalation is correct delivery, not failure. Put durable decisions, scope changes, failures, and
 human steering on the issue or PR. A chat-only ruling does not change the issue contract.

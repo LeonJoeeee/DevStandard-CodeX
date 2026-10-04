@@ -3,7 +3,7 @@
 ## One sentence
 
 Enable a human to direct parallel development through one Codex main session and its native
-workers, reviewers, and helpers, using evidence-bearing GitHub collaboration.
+workers, reviewers, and helpers, using evidence-bearing GitHub collaboration where applicable and self-contained ordinary task contracts.
 
 ## Why build it
 
@@ -28,6 +28,9 @@ history; this repository's decision log starts at 0000.
   decision about the work rather than endless polishing.
 - Integrate only through an exact-head/base local acceptance receipt and green CI for the merge
   result, then clean up owned artifacts and perform a separately authorized release.
+- Keep general collaboration agreements in one method source, delivered whole to main and child
+  roles without role promotion or a permanent user-level AGENTS bootstrap. Ordinary research and
+  document tasks keep their caller's contract; they need no invented lane or PR.
 - Maintain product, architecture, ADR, and consequential design records at their own triggers;
   recover native bindings explicitly rather than inventing handoff documents or authority.
 

@@ -57,14 +57,50 @@ Third-party (non-`actions/*`) actions: pin to a full commit SHA, not a tag — a
 
 Artifacts: upload one only when a later step or a person actually consumes it, and always set `retention-days:` — the default keeps every copy for 90 days, and on a private repo the 500 MB storage quota fills in days of routine pushes, after which uploads start failing. CI output is not an archive: actual release deliverables ship through the release pipeline; a report worth retaining goes where `reference/where-it-goes.md` sends it rather than being published merely to keep it, and any build can be reproduced from its commit.
 
-Minutes are the other finite quota, and the one that stops everything: on a private repo an exhausted monthly balance runs *no* workflow at all — CI, release and Dependabot alike — so the merge gate goes absent rather than red (a public repo's standard runners are free, so this cannot happen there). Treat exhaustion as a pipeline-spend bug before an allowance problem; the usual causes are cheap to fix — a job triggering on every push to every branch when `pull_request` alone would do, a matrix kept wide out of habit, no dependency cache so every run re-downloads the world, no `paths:` filter so a docs typo rebuilds everything, no `concurrency:` group canceling superseded branch runs, and the default 6-hour `timeout-minutes` letting a hung job burn an afternoon. Fix the spend, and tell the human the balance is out — topping it up, or making the repo public, is theirs. `reference/ci-cannot-run.md` preserves the check-2 fallback design and its
-unqualified CLI boundary; the shipped route waits for ordinary CI.
+Minutes are the other finite quota, and the one that stops everything: on a private repo an exhausted monthly balance runs *no* workflow at all — CI, release and Dependabot alike — so the merge gate goes absent rather than red (a public repo's standard runners are free, so this cannot happen there). Treat exhaustion as a pipeline-spend bug before an allowance problem; the usual causes are cheap to fix — a job triggering on every push to every branch when `pull_request` alone would do, a matrix kept wide out of habit, no dependency cache so every run re-downloads the world, no `paths:` filter so a docs typo rebuilds everything, no `concurrency:` group canceling superseded branch runs, and the default 6-hour `timeout-minutes` letting a hung job burn an afternoon. Fix the spend, and tell the human the balance is out — topping it up, or making the repo public, is theirs. `reference/ci-cannot-run.md` preserves a separate degraded local merge-waiver design; its CLI
+route is unqualified. Use the safe self-hosted Actions route below before waiting when authorized.
 
 The minimal template above includes none of these controls; add the language setup action's `cache:` input, job-level `timeout-minutes:`, `on: pull_request: paths:`, `strategy: matrix:`, and a top-level `concurrency:` group.
 
-A self-hosted runner is the other way out, and it is not a degradation: the merge gates are unchanged and only the compute moves to a machine you own (a one-line `runs-on:` change), so no minutes are charged. Standing one up is the human's call, like topping up and going public. **Register it ephemeral — one job, then it deregisters and exits — never persistent.** A persistent runner hands every job the last one's workspace, and that was measured in this method's own repository: a marker file written by one job was still there in the next, and the probe that should have caught it reported success, because a `run:` block's exit status is its last command's. Green on a machine's accumulated state is a weaker claim than the one check 2 makes.
+## When hosted CI cannot start
 
-Three costs decide whether to reach for it at all. The machine has to be up when a PR lands — a run queued behind an offline one is not an outage and not a fallback trigger, and a job still `queued` past five minutes with no runner registering means the loop that starts them is down, which is the human's to restart. It must **never** be used on a public repo: a fork's pull request would run on your hardware, automatically for a repeat contributor and one approval click away for a first-timer. And the machine holds no secret it does not need — the image carries the toolchain, and whatever a job needs arrives through the workflow's own `secrets:` and lives only for that job, which ephemeral makes enforceable and persistent leaves a promise. When the constraint is minutes rather than a platform that is down, reach for this before the check-2 fallback (`reference/ci-cannot-run.md`).
+When hosted CI fails before workflow steps, first inspect the check annotations or provider
+status. Distinguish quota, billing, spending-limit and runner-capacity refusal from code or test
+failure. A workflow that began and failed, a queued run and a platform startup refusal need
+different remedies; never label infrastructure refusal a test failure.
+
+If GitHub Actions cannot run because hosted allowance or paid capacity is unavailable, and the
+already-authorized local machine can safely execute the workflow, run equivalent CI using
+temporary self-hosted runners rather than stopping at the hosted error. Existing authorization
+suffices within its bounds. Self-hosted Actions still produce ordinary Actions checks and keep
+review, protection and exact merged-result gates; this is not `guard --ci-fallback` or its
+unqualified degraded local merge waiver. Provisioning outside existing authorization returns
+the concrete action and impact to the human.
+
+Prefer registration only to the current repository and ephemeral runners, one job then exit,
+with isolated work directories, least permissions and only necessary credentials. Supply fresh
+runners for each required job or matrix member. Retain logs; afterward remove registrations,
+credentials and disposable work directories, preserving retained evidence first. Keep a
+persistent runner only when the human explicitly requests it, with its state risk disclosed.
+
+Never execute untrusted fork or PR code on a local runner that can reach personal files,
+LAN services, credentials or production systems. Use an isolated disposable environment for
+untrusted code; if one is unavailable, explain why self-hosting is unsafe. A different working
+directory is not OS or network isolation. Judge code trust and reachable resources for both
+public and private repositories; repository visibility alone does not establish safety.
+
+Match the original workflow's toolchain, dependencies, commands, environmental constraints and
+build/test matrix wherever possible, including the exact merge-result identity. Record
+unavoidable differences. Attach results and retained logs to the PR or established handoff
+record, preserve hosted infrastructure-failure records, and label this fallback validation.
+Do not relabel it as the degraded `CI-FALLBACK` merge waiver.
+
+If safe self-hosting is unavailable, complete every safe feasible equivalent local check and
+record the exact blocked jobs, environment and reason. Those results do not establish green CI.
+Do not weaken protection or merge without explicit human acceptance of remaining risk and an
+integration path that actually permits it; this shipped guard still refuses the unqualified
+waiver. A self-hosted job queued behind an offline runner is still a run, not a provider outage;
+inspect actual runner/job status and restore the authorized runner path or report the blockage.
 
 Branch protection is the LAST founding step: `guard protection --apply --check test` names the contexts on the command line, repeating `--check` once per name, and refuses with none rather than PUT an empty list. The role hook does not gate it (`reference/orchestrator.md`'s Guarded operations section); it is the human's or the main session's command by role instruction and by who holds admin credentials. `reference/prd.md`'s setup sequence has the order; `reference/orchestrator.md`'s Branch protection section has the payload. Enabling it turns the rule into a hard gate, and three settings make that gate real:
 

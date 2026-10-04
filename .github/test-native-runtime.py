@@ -30,6 +30,7 @@ import json
 import os
 from pathlib import Path
 import re
+import runpy
 import select
 import time
 import shlex
@@ -51,8 +52,10 @@ PRIVATE_WORKER = 'NATIVE_FIXTURE_WORKER_PRIVATE_1600'
 WORK_TASK = 'NATIVE_FIXTURE_WORK_TASK_1600'
 REVIEW_TASK = 'NATIVE_FIXTURE_REVIEW_TASK_1600'
 CONTROL_TASK = 'NATIVE_FIXTURE_CONTROL_TASK_1600'
+HELPER_TASK = 'NATIVE_FIXTURE_HELPER_TASK_1600'
+REVIEW_HELPER_TASK = 'NATIVE_FIXTURE_REVIEW_HELPER_TASK_1600'
 DONE = {role: 'NATIVE_FIXTURE_' + role.upper() + '_DONE_1600'
-        for role in ('root', 'worker', 'reviewer', 'control')}
+        for role in ('root', 'worker', 'reviewer', 'control', 'helper', 'review_helper')}
 PLUGIN_ID = 'codex-method@codex-method'
 
 
@@ -102,7 +105,8 @@ def request_role(request):
             tasks.extend(fragments(item.get('content', '')))
     selection = '\n'.join(tasks)
     matches = [role for role, marker in (('root', PRIVATE_PARENT), ('worker', WORK_TASK),
-               ('reviewer', REVIEW_TASK), ('control', CONTROL_TASK)) if marker in selection]
+               ('reviewer', REVIEW_TASK), ('control', CONTROL_TASK), ('helper', HELPER_TASK),
+               ('review_helper', REVIEW_HELPER_TASK)) if marker in selection]
     require(len(matches) == 1, 'cannot uniquely identify actual requesting thread: ' + repr(matches))
     for item in deliveries:
         require(matches[0] != 'root' and item.get('author') == '/root'
@@ -372,6 +376,7 @@ def prepare(binary, scratch, env, installer, evidence):
     project, package = scratch / 'project', scratch / 'marketplace'
     project.mkdir()
     (project / 'worker-lane').mkdir()
+    (project / 'helper-material.txt').write_text('Ordinary material; no repository lane or PR is assigned.\n')
     run_logged(['git', 'init', '--quiet', str(project)], env, scratch, scratch, 'git-init')
     evidence['isolation'] = inventory(project, Path(env['CODEX_HOME']))
     # Snapshot only shipped local assets; never copy .git, auth, or home state.
@@ -427,9 +432,10 @@ def prepare(binary, scratch, env, installer, evidence):
                 for key, value in {'name': name, 'description': 'Local qualification ' + name,
                                    'developer_instructions': instructions}.items()) + '\n')
         evidence['role_consumer'] = 'MISSING: instructions-only fixture roles; installer not selected'
-    for name in ('method_worker', 'method_reviewer'):
+    for name in (('method_worker', 'method_reviewer', 'method_helper', 'method_review_helper')
+                 if installer else ('method_worker', 'method_reviewer')):
         role = tomllib.loads((roles / (name + '.toml')).read_text())
-        source = 'worker.md' if name == 'method_worker' else 'code-review-prompt.md'
+        source = 'code-review-prompt.md' if 'review' in name else 'worker.md'
         require((package / 'reference' / source).read_text() in role.get('developer_instructions', ''),
                 name + ': installed role does not carry the full shipped role')
         for key in ('model', 'model_reasoning_effort'):
@@ -476,6 +482,17 @@ class ResponsesFixture:
         self.root_context_verified = False
         self.review_role = tomllib.loads((project / '.codex/agents/method_reviewer.toml').read_text())[
             'developer_instructions']
+        roles = project / '.codex/agents'
+        self.role_contracts = {name: tomllib.loads((roles / ('method_' + name + '.toml')).read_text())['developer_instructions']
+                               for name in ('worker', 'reviewer', 'helper', 'review_helper')
+                               if (roles / ('method_' + name + '.toml')).exists()}
+        self.shared = (runpy.run_path(str(ROOT / 'scripts/install'))['shared_agreements']()
+                       if 'worker' in self.role_contracts and
+                       '## Shared collaboration agreements' in self.role_contracts['worker'] else None)
+        self.sequence = ['worker', 'reviewer', 'control']
+        if all(name in self.role_contracts for name in ('helper', 'review_helper')):
+            self.sequence += ['helper', 'review_helper']
+        self.finished_stage = 5 + len(self.sequence)
         self.lock = threading.Lock()
         self.server = None
 
@@ -512,7 +529,7 @@ class ResponsesFixture:
                         # Archive before validation, including malformed/leaking requests.
                         with (scratch / 'requests.jsonl').open('a') as trace:
                             trace.write(json.dumps(request) + '\n')
-                        require(number <= 70, 'unexpected extra continuation / mailbox stall')
+                        require(number <= 100, 'unexpected extra continuation / mailbox stall')
                         item = outer.response_item(request)
                     response = {'id': 'resp_native_' + str(number), 'object': 'response',
                                 'status': 'completed', 'output': [item],
@@ -560,7 +577,9 @@ class ResponsesFixture:
         agent_type, message = {
             'worker': ('method_worker', WORK_TASK + '\n' + PRIVATE_WORKER),
             'reviewer': ('method_reviewer', REVIEW_TASK + '\nReturn a local fixture verdict.'),
-            'control': ('runtime_readonly_control', CONTROL_TASK)}[role]
+            'control': ('runtime_readonly_control', CONTROL_TASK),
+            'helper': ('method_helper', HELPER_TASK + '\nRead helper-material.txt in the supplied directory and return findings and limits to your caller.\nWorking directory: ' + str(self.project)),
+            'review_helper': ('method_review_helper', REVIEW_HELPER_TASK + '\nIndependently inspect helper-material.txt read-only in the supplied directory; return findings and limits to the caller.\nWorking directory: ' + str(self.project))}[role]
         args = dict(task_name=role, message=message, agent_type=agent_type,
                     fork_turns='none', model=MODEL, reasoning_effort=EFFORT)
         args.update(extra)
@@ -569,6 +588,14 @@ class ResponsesFixture:
     def response_item(self, request):
         role = request_role(request)
         validate_request(request, role, self.review_role)
+        if role in self.role_contracts and self.shared:
+            carried = '\n'.join(fragments([request.get('instructions', ''), request.get('input', [])]))
+            require(carried.count(self.role_contracts[role]) == 1,
+                    role + ': static role must occur once in actual provider input')
+            require(carried.count(self.shared) == 1,
+                    role + ': shared agreements must occur once in actual provider input')
+            require((ROOT / 'reference/orchestrator.md').read_text() not in carried,
+                    role + ': full orchestrator must not promote a child')
         for item in request.get('input', []):
             if item.get('type') in ('function_call_output', 'custom_tool_call_output'):
                 self.outputs[item['call_id']] = output_text(item.get('output', ''))
@@ -604,9 +631,11 @@ class ResponsesFixture:
                     message='Local refusal probe; this child must never start.',
                     agent_type='method_worker', fork_turns='none', model=MODEL,
                     reasoning_effort=EFFORT), 'reviewer_cross_role')
+        elif role in ('helper', 'review_helper') and index == 0:
+            return self.shell(request, 'cat helper-material.txt', role + '_material', self.project)
         elif role == 'control' and index == 0:
             return self.shell(request, self.control_command, 'control_write')
-        require(index == {'worker': 3, 'reviewer': 4, 'control': 1}[role],
+        require(index == {'worker': 3, 'reviewer': 4, 'control': 1, 'helper': 1, 'review_helper': 1}[role],
                 role + ': unexpected continuation after final')
         return self.final(role)
 
@@ -638,7 +667,7 @@ class ResponsesFixture:
                     'V2 fork_context did not produce a real handler error: ' + error)
             self.root_stage += 1
             return self.spawn(request, 'worker')
-        role = {5: 'worker', 6: 'reviewer', 7: 'control'}.get(stage)
+        role = self.sequence[stage - 5] if 5 <= stage < self.finished_stage else None
         if role:
             # A failed child cannot deliver DONE. Surface its actual final payload
             # before acknowledging or waiting; unrelated messages are not failures.
@@ -663,15 +692,15 @@ class ResponsesFixture:
                 return self.call(request, 'wait_agent', {'timeout_ms': 10000},
                                  f'wait_{role}_{self.waits[role]}')
             self.root_stage += 1
-            if stage < 7:
-                return self.spawn(request, 'reviewer' if stage == 5 else 'control')
-        require(self.root_stage == 8, 'unexpected root stage')
+            if self.root_stage < self.finished_stage:
+                return self.spawn(request, self.sequence[self.root_stage - 5])
+        require(self.root_stage == self.finished_stage, 'unexpected root stage')
         return self.final('root')
 
     def verify(self, events):
         require(not self.errors, 'provider errors: ' + repr(self.errors))
-        require(self.root_stage == 8 and DONE['root'] in events, 'root did not complete qualification')
-        require(set(self.handles) == {'worker', 'reviewer', 'control'}, 'missing native spawn handles')
+        require(self.root_stage == self.finished_stage and DONE['root'] in events, 'root did not complete qualification')
+        require(set(self.handles) == set(self.sequence), 'missing native spawn handles')
         for call in ('root_pwd', 'worker_lane_pwd', 'worker_session_pwd', 'control_write'):
             setup_errors = [line.strip() for line in self.outputs.get(call, '').splitlines()
                             if line.strip().startswith('bwrap:')]
@@ -751,7 +780,14 @@ class ResponsesFixture:
         require(len(worker_denied) == 1, 'did not observe the actual worker merge hook denial')
         require(sum(record['ungated_control'] for record in records) == 1,
                 'exact ungated per-role sandbox control was not observed')
+        helpers = [role for role in self.sequence if role.endswith('helper')]
+        for role in helpers:
+            require('Ordinary material; no repository lane or PR is assigned.' in
+                    self.outputs.get(role + '_material', ''), role + ': ordinary material was not read')
         return {'single_session_start_whole_inline': True, 'session_start_invocations': len(starts),
+                'shared_role_delivery': bool(self.shared),
+                'task_local_helpers_without_pr': helpers,
+
                 'native_handles': self.handles, 'provider_requests_by_role': dict(self.counts),
                 'actual_spawn_schema_fields': self.spawn_fields,
                 'canonical_targets': 'actual send_message accepted each returned task_name',
@@ -760,7 +796,7 @@ class ResponsesFixture:
                 'child_session_cwd': str(self.project), 'reviewer_denials': denied,
                 'worker_merge_denials': worker_denied,
                 'unknown_fields': 'actual V2 handler rejected cwd and fork_context',
-                'mailbox_completion': 'worker, reviewer, control completion delivered to root',
+                'mailbox_completion': ', '.join(self.sequence) + ' completion delivered to root',
                 'per_role_readonly': "UNSUPPORTED: declared read-only role's exact ungated child write "
                                      'succeeded with parent permissions'}
 

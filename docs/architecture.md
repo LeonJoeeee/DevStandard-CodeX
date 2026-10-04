@@ -1,7 +1,7 @@
 # codex-method — Architecture
 
 > Shared baseline for all parallel work. Read before any task.
-> Changing anything here = touching the core: public merge + human approval + an ADR.
+> Structural or costly-to-reverse decisions require human direction and an ADR; factual or wording corrections use ordinary authorized changes.
 
 ## Context and provenance
 
@@ -14,27 +14,30 @@ starts at 0000, with the original 0001 preserved and corrected by dated amendmen
 
 The host owns sessions, authentication, tools, model access, permissions, and native children.
 The method adds the protocol linking issue → lane → evidence-bearing PR → independent judgment
-→ exact-head integration → cleanup → authorized release. GitHub is the durable collaboration
-record. Native handles are session observations. A local shared-git review receipt verifies the
+→ exact-head integration → cleanup → authorized release. GitHub is the durable repository collaboration
+record; ordinary tasks use their existing conversation or project records. Native handles are session observations. A local shared-git review receipt verifies the
 shipped lifecycle's relationship to its public record; it is not another task tracker.
 
 ## Structure and ownership
 
 | Component | Ownership and interface |
 |---|---|
-| Orchestrator role | `reference/orchestrator.md` is the complete main-session contract: human handover, responsive event loop, dispatch, design challenge, acceptance, integration, recovery, cleanup, release, and requirements craft. |
+| Orchestrator role | `reference/orchestrator.md` is the complete main-session contract, including the single marked Shared collaboration agreements source: persistent human authorization, responsive event loop, dispatch, design challenge, acceptance, integration, recovery, cleanup, release, and requirements craft. |
 | Worker role | `reference/worker.md` plus `reference/harness-codex.md` supplies one lane's execution, evidence, escalation, and native recovery obligations. Its freshly fetched packet carries the whole ordered issue, named base, branch, worktree, inputs, output duty, language and attribution. |
 | Reviewer role | The discovered typed role automatically supplies the complete canonical judging contract and harness. The native message carries the complete filled fence, workdir and a retained complete packet path plus SHA-256. The child explicitly hashes before/after and reads all numbered chunks; missing, partial, changed or inconsistent evidence fails Floor 1. The packet retains exact pins, claims, authority, diff forms, status captures and gaps. No implementation craft or publication authority. |
-| Native delivery | Package hooks use `.codex-plugin/plugin.json` and the host-provided `PLUGIN_ROOT`. SessionStart covers startup/resume/clear/compact through one synchronous handler with `additionalContextLimit: 0`. Complete inline additionalContext (root/path header plus raw UTF-8 page) has a fixed 64,000-byte method budget; missing, empty, invalid UTF-8 or oversized pages return a stop response without partial rules. `scripts/install` separately generates project `.codex/agents/*.toml` roles: `method_worker`, `method_reviewer`, `method_helper`, `method_review_helper`. Roles carry developer instructions only; actual native calls supply model/effort so role config cannot silently override the invocation. Hook configuration belongs to the package. |
-| Dispatcher | `scripts/dispatch` creates or validates a lane and prepares native invocation data. Lane receipts, locks and retained briefs live in the Git common directory under `codex-method/lanes`; a repository-wide ownership lock prevents different checkouts from admitting overlapping writers. The caller launches, observes, records and continues the real child. A resolver remains an ordinary lane worker. |
+| Native delivery | Package hooks use `.codex-plugin/plugin.json` and the host-provided `PLUGIN_ROOT`. SessionStart covers startup/resume/clear/compact through one synchronous handler with `additionalContextLimit: 0`. Complete inline additionalContext (root/path header plus raw UTF-8 page) has a fixed 64,000-byte method budget; missing, empty, invalid UTF-8 or oversized pages return a stop response without partial rules. `scripts/install` separately generates project `.codex/agents/*.toml` roles: `method_worker`, `method_reviewer`, `method_helper`, `method_review_helper`. The installer inlines the shared section once into every complete role; helpers prefix task-local applicability so ordinary work does not acquire lane/PR duties. Roles carry developer instructions only; actual native calls supply model/effort so role config cannot silently override the invocation. Hook configuration belongs to the package. |
+| Dispatcher | `scripts/dispatch` creates or validates a lane and prepares native invocation data. Lane receipts, locks and retained briefs live in the Git common directory under `codex-method/lanes`; a repository-wide ownership lock prevents different checkouts from admitting overlapping writers. The installed typed role supplies static instructions once; the message carries only the dynamic task binding. Missing/stale roles refuse. The caller launches, observes, records and continues the real child. A resolver remains an ordinary lane worker. |
 | Review lifecycle | `scripts/review-packet`, packet assembly, and `scripts/review_state.py` use one shared parser and ledger in the common git directory: `codex-method/reviews/OWNER/REPO/PR.json`. Start qualifies installed roles and prepares the fresh six-field native instruction. Reservation id/token, issue/head/base, identity/author, packet SHA (also the retained UTF-8 bundle), instruction SHA, raw verdict SHA and exact comment SHA bind start, publish, status and guard. Short native transport avoids role duplication and large inline evidence without dropping bundle bytes. Pending intent is durable before remote mutation; status recovers only exact association, never retries an unknown outcome. |
 | Integration and protection | `scripts/guard` verifies the current default branch, current-base ancestry, exact accepted receipt/head/base, and green `merged-result / BASE_SHA / HEAD_SHA` from GitHub Actions app `15368`, with no failed head checks. It re-fetches before execute and merges with `--match-head-commit`. No automatic remote-branch deletion. Protection is provisioned deliberately with explicit required check names. |
-| On-demand guidance | Other `reference/` pages own document admission, placement, templates, CI upkeep, red/flaky checks and fallback design. `AGENTS.md` is commands/gotchas/copy-list/language only; `docs/maintenance.md` is this repository's maintenance authority. |
+| On-demand guidance | Other `reference/` pages own document admission, placement, templates, CI upkeep, red/flaky checks and fallback design. `reference/repo-agents-md.md` suggests a lean operational AGENTS template while preserving authorized project instructions; `docs/maintenance.md` is this repository's maintenance authority. |
 
 The orchestrator processes events briefly and observes outstanding lanes. Independent writable
 scopes permit parallel workers; shared writable paths have one accountable writer. Task-local
 helpers are below the GitHub coordination layer and return to their caller. They retain that
 caller's authority bounds and explicit model/effort. Reviewer helpers retain the nonediting role.
+An admitted generic native interface without `agent_type` needs an explicit shared section and
+self-contained task-local role contract in its message; it is not typed discovery or proof of hook
+enforcement. Formal gating review retains the qualified typed route. Verify the actual schema.
 
 ## Enforcement and qualification
 
@@ -110,7 +113,7 @@ No route imports another host, quotas as routing authority, or a weaker gate.
 |---|---|
 | `README.md` | Adapted README: honest source attribution, native-only roles, dependency/install path, command lifecycle, qualification limits. Source marketplace/badges/release claims are source-project history. |
 | `CLAUDE.md` (source) | Applicable repository operations moved to target `docs/maintenance.md`; the old target host entry was removed. The Codex operational entry and template are `AGENTS.md` and `reference/repo-agents-md.md`; method prose is not injected into root memory. |
-| `reference/orchestrator.md` | Same target: entire handover/event/task/merge/recovery flow retained. Native invocation/continuation replaces cross-host execution. Restored bounded goals, unsettled-design challenge, brainstorming binding, refusal escalation and property-preserving unavailable-capability route. |
+| `reference/orchestrator.md` | Same target: authorization/event/task/merge/recovery responsibilities retained; explicit human instructions settle handover within scope without a second confirmation. Native invocation/continuation replaces cross-host execution. Restored bounded goals, unsettled-design challenge, brainstorming binding, refusal escalation and property-preserving unavailable-capability route. |
 | `reference/worker.md` | Same target: receipt vetting, full task carrier, bounded writes/unbounded tracing, baseline/final evidence, own diff inspection, PR-green ownership, verify/refute, stop events and execution craft retained. Explicit actual status captures and native binding recovery. |
 | `reference/harness-codex.md`, `reference/harness-claude.md` | Replaced by native `reference/harness-codex.md`: role delivery, inherited cwd/permissions, native handle observation/continuation and exact binding recovery. Cross-host process supervision and host-specific persistence recipes are inapplicable history. |
 | `reference/code-review-prompt.md` | Same target judging fence and superpowers attribution. Native start/unedited publication and local receipts replace external execution. Goal/Floor/Notes, integrity, accepted-spec authority, bounded goals and nonconvergence retained. |
@@ -120,10 +123,10 @@ No route imports another host, quotas as routing authority, or a weaker gate.
 | `reference/in-repo-writes.md` | Same target predicate, including exact count delimiter: method trigger, established base convention, requested authority, edit exceptions, no competing authorities or invented handoffs. Root memory renamed to AGENTS. |
 | `reference/where-it-goes.md` | Same target: pre-existing project-specific authority, product-interface versus actual development write, project-local default, expensive kinds, secret containment and sole-copy durability. Source incident numbers are provenance, not target issue authority. |
 | `reference/out-of-repo-writes.md` | Same target: documented cache precedence, authorized cache-root relay, must-keep exception, declared runtime root and retention, task scratch and durable external-write disclosure. Native brief retention replaces process-specific scratch mechanics. No invented Floor rule added. |
-| `reference/repo-claude-md.md` | `reference/repo-agents-md.md`: commands/gotchas/copy-list/conditional language fence, authorized-root relay, meaningful creation, short-branch writeback and subtract-to-fit cap, established record language and canonical translation mirrors. Existing operational sources are respected. |
-| `reference/ci-pipelines.md` | Same target templates: exact merged-result binding, least privilege, action pins/Dependabot, retention, spend diagnosis, ephemeral runner constraints, maintenance, protection and release. Provider minutes diagnosis is retained; agent model quota balancing is absent. |
+| `reference/repo-claude-md.md` | `reference/repo-agents-md.md`: a suggested commands/gotchas/copy-list/language template, authorized-root relay, useful writeback and a brevity target that cannot delete effective project instructions, established record language and canonical translation mirrors. Existing operational sources are respected. |
+| `reference/ci-pipelines.md` | Same target templates: exact merged-result binding, least privilege, action pins/Dependabot, retention, spend diagnosis, ephemeral runner constraints, maintenance, protection and release. Startup refusal diagnosis and safe already-authorized temporary repo-only self-hosted Actions keep normal gates; the degraded local merge waiver remains distinct. Agent model quota balancing is absent. |
 | `reference/red-check.md` | Same target: own regression, deliberately staled assumption and unrelated failure routes; visible reviewed quarantine, no retry-to-green. Gate changes require independent scrutiny while both checks still run. |
-| `reference/ci-cannot-run.md` | Same target fallback design: proven external platform trigger, wait default, exact two-parent synthetic merge and fresh full-job evidence, review audit, protection/return sweep, no fallback release. CLI fallback is blocked as unqualified; no marker-based waiver or gate lowering. |
+| `reference/ci-cannot-run.md` | Preserved degraded local waiver design: proven external platform trigger, wait default after normal Actions routes, exact two-parent synthetic merge and fresh full-job evidence, review audit, protection/return sweep, no fallback release. CLI fallback is blocked as unqualified; no marker-based waiver or gate lowering. |
 | `agents/worker.md`, `agents/reviewer.md` | Generated project native TOML roles use canonical worker/harness/reviewer instructions. Claude frontmatter, tool-denial and hooks fields are not transplanted as effective Codex role fields. |
 | `scripts/dispatch`, `scripts/review-packet`, `scripts/review_packet.py`, `scripts/guard`, `scripts/hard_edges.py` | Corresponding target command responsibilities; native receipt/lane observation and common local review ledger replace external lifecycle. Exact receipt/head/base and Actions-app CI producer checks strengthen the ordinary shipped route. |
 | `hooks/session-start`, `hooks/hooks.json`, `hooks/pre-tool-use` | Corresponding target hooks: whole-role delivery, actual native role identity, structured denial and ordinary-path enforcement. Source host matcher/cap/runtime claims require new qualification. |
@@ -156,14 +159,14 @@ are not copied as target claims.
 | `docs/specs/2026-08-26-codex-gets-the-full-method.md` | Static/dynamic role separation, complete context, method source path and worker authority binding → native worker/harness. Old cross-host identity and branching startup implementation remain history. |
 | `docs/specs/2026-08-26-when-a-subagent-when-codex.md` | Explicit role model/effort and same-harness helpers → orchestrator/native spawn. External-executor selection and earlier model defaults are replaced by `gpt-6.1-sol`/`high` anchors and explicit escalation. |
 | `docs/specs/2026-08-27-in-repo-writes.md` | Final rule/default, expensive kinds, authority relay, document predicate and clean-tree accounting → where-it-goes/out-of-repo/in-repo/repo-agents/roles. Failed taxonomies and rejected alternatives remain history; no invented classification gate. |
-| `docs/specs/2026-09-06-core-md-rule-ledger.md` | Final clauses route to complete role pages and triggered references above: per-issue weight, dispatch-first, one writer, green-before-review, evidence/scope Floors, no invented state docs, operational-memory fence, search-twice reconciliation. Earlier intermediate page names/drop proposals do not resurrect removed method hierarchies. Hook-cap/carrier observations are source evidence, not Codex qualification. |
+| `docs/specs/2026-09-06-core-md-rule-ledger.md` | Final clauses route to complete role pages and triggered references above: per-issue weight, dispatch-first, one writer, green-before-review, evidence/scope Floors, no invented state docs, lean operational-memory default, search-twice reconciliation. The inherited universal AGENTS fence is replaced by a suggestion that respects project authority. Earlier intermediate page names/drop proposals do not resurrect removed method hierarchies. Hook-cap/carrier observations are source evidence, not Codex qualification. |
 
 ### Source ADR routing (history is intentionally not copied)
 
 | Source ADRs | Operative target or intentional departure |
 |---|---|
 | 0000 | Target 0000 and `reference/adr.md`: decision-log discipline. |
-| 0001, 0007, 0019, 0031, 0049, 0059, 0060, 0061 | Role-specific whole-context delivery and one source per artifact → native harness/hooks/installer; retired skill-only/shared-core/Claude-body carriers remain history. |
+| 0001, 0007, 0019, 0031, 0049, 0059, 0060, 0061 | Role-specific whole-context delivery and contract/mechanics separation → native harness/hooks/installer. A single neutral shared section is inlined into each complete generated role; children do not read main-session operations or a second shared core. Retired carriers remain history. |
 | 0002, 0016, 0028 | Upstream superpowers dependency, central role craft bindings and original attribution retained; source translations retired rather than duplicated. |
 | 0003, 0008, 0014, 0048 | Task-scoped document/weight triggers and dispatch boundaries retained; setup tiers, execution ladders, workflow rationing and quota balancing replaced by bounded issues/native roles. |
 | 0004 | Founding sequence → PRD/CI/orchestrator templates; no automatic full ceremony for each new task. |
@@ -200,7 +203,9 @@ The fallback design requires proven provider-wide inability to run, why waiting 
 an exact synthetic two-parent merge, all CI jobs on that tree, fresh before/after accounting,
 independent audit, exact receipt association, a protected integration route and prompt return sweep.
 The shipped fallback refuses; a comment substring is not a waiver. No release uses that route.
-These are code/qualification follow-ups, not deleted source requirements.
+These are code/qualification follow-ups, not deleted source requirements. Safe temporary
+self-hosted GitHub Actions in `reference/ci-pipelines.md` produce ordinary checks with full
+workflow/merge identity and preserve the normal guard; they are separate from that waiver.
 
 The dispatcher records actual supplied native spawn/status observations but cannot authenticate
 them or stop children. One shared Git lane ledger covers all checkouts. Legacy checkout-local

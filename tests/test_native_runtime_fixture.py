@@ -86,6 +86,21 @@ class NativeRuntimeFixtureTest(unittest.TestCase):
         self.assertIsNotNone(match, 'custom exec must receive raw JavaScript and surface the result')
         return json.loads(match[1])
 
+    def test_duplicate_static_worker_role_in_actual_request_refuses(self):
+        (self.project / '.codex/agents/method_reviewer.toml').unlink()
+        installed = subprocess.run([os.sys.executable, str(ROOT / 'scripts/install'),
+            '--project', str(self.project), '--host-version', '0.160.0'],
+            capture_output=True, text=True)
+        self.assertEqual(installed.returncode, 0, installed.stderr)
+        runtime = self.fixture.ResponsesFixture(self.project, self.scratch,
+            'touch ' + str(self.project / 'inherited-permissions.txt'), self.project / 'gh')
+        contract = tomllib.loads((self.project / '.codex/agents/method_worker.toml').read_text())['developer_instructions']
+        request = self.request(self.fixture.WORK_TASK)
+        request['input'].extend([{'role': 'developer', 'content': contract},
+                                 {'role': 'user', 'content': contract}])
+        with self.assertRaisesRegex(AssertionError, 'static role must occur once'):
+            runtime.response_item(request)
+
     def test_root_provider_requires_one_complete_inline_orchestrator(self):
         page = (ROOT / 'reference/orchestrator.md').read_bytes().decode('utf-8')
         marker = '--- codex-method whole context ---\n'
