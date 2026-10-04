@@ -1,82 +1,45 @@
 #!/usr/bin/env bash
-# SessionStart delivery for a Codex main session.
-#
-# One page per role. Each artifact has its own hook output; a page the host cannot carry in one
-# output is emitted across ordered handler calls whose parts concatenate, in part order, to the
-# file's exact bytes. CAP_BYTES bounds ONE part, never the page.
-# hooks.json sets additionalContextLimit=0, the supported setting that disables token-based context
-# spilling. These complete parts stay inline rather than becoming spill-file recovery notices.
+# Deliver one complete role page inline. The fixed budget includes the header.
+# additionalContextLimit=0 disables Codex spilling; it does not relax this safety cap.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-ROLE="${1:-orchestrator}"
-PART="${2:-1}"
-PARTS="${3:-1}"
-CAP_BYTES="${CODEX_METHOD_CAP_BYTES:-8000}"
 
-case "$ROLE" in
-  orchestrator) PAGE="$ROOT/reference/orchestrator.md" ;;
-  worker) PAGE="$ROOT/reference/worker.md" ;;
-  *) PAGE="$ROOT/reference/${ROLE}.md" ;;
-esac
-
-if [ ! -f "$PAGE" ]; then
-  python3 - "$PAGE" <<'PY'
+python3 - "$ROOT" "$@" <<'PYTHON'
 import json, sys
-print(json.dumps({'continue': False, 'stopReason': 'codex-method: required role page is missing at ' + sys.argv[1]}))
-PY
-  exit 0
-fi
-
-python3 - "$PAGE" "$PART" "$PARTS" "$CAP_BYTES" "$ROLE" <<'PY'
-import json, re, sys
 from pathlib import Path
 
-page = Path(sys.argv[1])
-part, parts_declared, cap = int(sys.argv[2]), int(sys.argv[3]), int(sys.argv[4])
-role = sys.argv[5]
-data = page.read_bytes()
-if part < 1 or parts_declared < 1 or cap < 4:
-    print(json.dumps({'continue': False, 'stopReason': 'codex-method: invalid page-part delivery configuration'}))
-    raise SystemExit(0)
-def split_points(data, cap):
-    """Every part boundary, snapped back to a character start so parts concatenate exactly."""
-    points, pos = [0], cap
-    while pos < len(data):
-        while pos > 0 and (data[pos] & 0xC0) == 0x80:
-            pos -= 1
-        if pos <= points[-1]:
-            pos = points[-1] + 1
-        points.append(pos)
-        pos += cap
-    points.append(len(data))
-    return points
+CAP_BYTES = 64000
+MARKER = '--- codex-method whole context ---\n'
+root = Path(sys.argv[1])
 
+def stop(reason):
+    print(json.dumps({'continue': False, 'stopReason': 'codex-method: ' + reason}))
+    raise SystemExit(0)
 
-points = split_points(data, cap)
-total = max(1, len(points) - 1)
-if total > parts_declared:
-    print(json.dumps({'continue': False, 'stopReason':
-                      f'codex-method: role page needs {total} parts but only '
-                      f'{parts_declared} hook handlers are configured; refusing partial context'}))
-    raise SystemExit(0)
-if part > total:
-    raise SystemExit(0)
-chunk = data[points[part - 1]:points[part]]
-marker = f'--- codex-method part {part} of {total} ---'
-if part == 1 and total > 1:
-    preamble = (f'codex-method operating context: reference/{role}.md (part 1 of {total})\n'
-                f'This artifact is delivered in {total} numbered parts, one per hook output, in '
-                f'part order.\nConcatenate the parts below the marker with nothing between them to '
-                f'reconstruct the page exactly,\nand follow the whole page before acting or '
-                f'replying. Resolve references from this root; load them only at their triggers.\n'
-                f'{marker}\n')
-elif total > 1:
-    preamble = f'reference/{role}.md (part {part} of {total})\n{marker}\n'
-else:
-    preamble = f'codex-method operating context: reference/{role}.md\n{marker}\n'
-payload = preamble.encode() + chunk
-print(json.dumps({"hookSpecificOutput": {
-    "hookEventName": "SessionStart", "additionalContext": payload.decode("utf-8")}}))
-PY
+if len(sys.argv) > 3:
+    stop('one role argument is supported; numbered part delivery was removed')
+role = sys.argv[2] if len(sys.argv) == 3 else 'orchestrator'
+page = root / 'reference' / (role + '.md')
+header = (f'codex-method operating context: reference/{role}.md\n'
+          f'Resolve references from: {root}\n'
+          'Follow this whole page before acting or replying; load referenced pages only at their triggers.\n'
+          + MARKER)
+try:
+    data = page.read_bytes()
+except FileNotFoundError:
+    stop('required role page is missing at ' + str(page))
+except OSError as error:
+    stop('required role page cannot be read: ' + str(error))
+if len(header.encode('utf-8')) + len(data) > CAP_BYTES:
+    stop('complete additionalContext exceeds the fixed 64000 UTF-8 byte budget; refusing partial context')
+try:
+    text = data.decode('utf-8')
+except UnicodeDecodeError:
+    stop('required role page is not valid UTF-8: ' + str(page))
+if not text.strip():
+    stop('required role page is empty at ' + str(page))
+print(json.dumps({'hookSpecificOutput': {
+    'hookEventName': 'SessionStart', 'additionalContext': header + text}}, ensure_ascii=False))
+PYTHON

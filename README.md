@@ -57,7 +57,11 @@ Codex skill. Missing required skills stop the dependent task with an explicit ga
 ## Install and verify
 
 The `.codex-plugin/plugin.json` package carries method hooks. Load that package through the
-qualified host's plugin facility and establish host trust. Native role definitions are a separate discovery path. Install into the explicitly selected
+qualified host's plugin facility and establish host trust. SessionStart uses one synchronous handler to deliver the whole orchestrator inline;
+`additionalContextLimit: 0` disables host spilling. A fixed 64,000 UTF-8 byte safety budget
+covers the entire additionalContext, including its root/path header. Missing, empty, invalid
+UTF-8 or oversized pages return a stop response without partial rules. This is the method's
+budget, not a Codex limit. Native role definitions are a separate discovery path. Install into the explicitly selected
 project by default, or explicitly install user-level roles:
 
 ```sh

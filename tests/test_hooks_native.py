@@ -152,7 +152,7 @@ class NativeHookTest(unittest.TestCase):
                     self.assertEqual(result.returncode, 0, result.stderr)
                     if result.stdout.strip():
                         context = json.loads(result.stdout)['hookSpecificOutput']['additionalContext']
-                        contexts.append(context.split('---\n', 1)[-1])
+                        contexts.append(context.partition('--- codex-method whole context ---\n')[2])
         self.assertEqual(''.join(contexts), (ROOT / 'reference/orchestrator.md').read_text())
 
     def test_unknown_native_child_role_refuses(self):
@@ -168,10 +168,10 @@ class NativeHookTest(unittest.TestCase):
                                                   'tool_input': {'command': 'git merge x'}}))
         self.assertDenied(result)
 
-    def test_session_start_commands_reconstruct_whole_page_with_spilling_disabled(self):
+    def test_session_start_delivers_one_whole_inline_page_in_native_protocol(self):
         config = json.loads((ROOT / 'hooks/hooks.json').read_text())
         env = {**os.environ, 'PLUGIN_ROOT':str(ROOT)}
-        reconstructed = []
+        delivered = []
         for entry in config['hooks']['SessionStart']:
             for handler in entry['hooks']:
                 result = subprocess.run(handler['command'], shell=True, env=env,
@@ -181,19 +181,18 @@ class NativeHookTest(unittest.TestCase):
                 if not result.stdout.strip():
                     continue
                 context = json.loads(result.stdout)['hookSpecificOutput']['additionalContext']
-                # The pinned config consumer treats 0 as disabling context spilling. Deliver
-                # these complete parts inline, independent of host token estimates or spill files.
+                # 0 disables host spilling; the complete page must remain inline.
                 self.assertEqual(handler.get('additionalContextLimit'),0,
                                  'whole inline delivery must disable Codex context spilling')
-                reconstructed.append(context.split('---\n',1)[-1])
-        self.assertEqual(''.join(reconstructed), (ROOT / 'reference/orchestrator.md').read_text())
+                delivered.append(context.partition('--- codex-method whole context ---\n')[2])
+        self.assertEqual(delivered, [(ROOT / 'reference/orchestrator.md').read_bytes().decode('utf-8')])
 
     def test_session_start_refuses_missing_role_page_in_real_protocol(self):
         with tempfile.TemporaryDirectory() as name:
             root = Path(name)
             (root / 'hooks').mkdir()
             shutil.copy2(ROOT / 'hooks/session-start', root / 'hooks/session-start')
-            result = subprocess.run([str(root / 'hooks/session-start'),'orchestrator','1','8'],
+            result = subprocess.run([str(root / 'hooks/session-start'),'orchestrator'],
                                     text=True,capture_output=True,input='{}')
             self.assertEqual(result.returncode, 0, result.stderr)
             output = json.loads(result.stdout)

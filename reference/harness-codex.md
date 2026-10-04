@@ -34,8 +34,11 @@ instruction overrides its named dispatch. Role files do not supply effective per
 or hook settings. Child permissions and cwd are inherited from the
 parent. The package hook resolves from the host-provided `PLUGIN_ROOT` and uses actual `agent_type`
 with a structured deny. Native role files cannot install hooks. SessionStart matches startup,
-resume, clear and compact; too few configured handlers stop before delivering a partial page.
-Capture live context for each lifecycle claim rather than inferring it from those matchers.
+resume, clear and compact. One synchronous handler uses `additionalContextLimit: 0` to carry
+the whole orchestrator inline. Its fixed 64,000 UTF-8 byte budget includes the complete
+additionalContext header and page. Missing, empty, invalid UTF-8 or oversized pages return
+`continue: false` without partial context. The budget belongs to the method, not Codex. Capture
+live context and actual stopping behavior for each claim rather than inferring them from JSON or matchers.
 
 The worker role's instructions carry this page and `reference/worker.md`; its spawn message
 carries the freshly assembled task packet. Helpers receive their narrower task and applicable

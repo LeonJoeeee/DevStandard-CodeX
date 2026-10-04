@@ -25,7 +25,7 @@ shipped lifecycle's relationship to its public record; it is not another task tr
 | Orchestrator role | `reference/orchestrator.md` is the complete main-session contract: human handover, responsive event loop, dispatch, design challenge, acceptance, integration, recovery, cleanup, release, and requirements craft. |
 | Worker role | `reference/worker.md` plus `reference/harness-codex.md` supplies one lane's execution, evidence, escalation, and native recovery obligations. Its freshly fetched packet carries the whole ordered issue, named base, branch, worktree, inputs, output duty, language and attribution. |
 | Reviewer role | The discovered typed role automatically supplies the complete canonical judging contract and harness. The native message carries the complete filled fence, workdir and a retained complete packet path plus SHA-256. The child explicitly hashes before/after and reads all numbered chunks; missing, partial, changed or inconsistent evidence fails Floor 1. The packet retains exact pins, claims, authority, diff forms, status captures and gaps. No implementation craft or publication authority. |
-| Native delivery | Package hooks use `.codex-plugin/plugin.json` and the host-provided `PLUGIN_ROOT`. SessionStart covers startup/resume/clear/compact; insufficient configured parts stop rather than deliver partial context. `scripts/install` separately generates project `.codex/agents/*.toml` roles: `method_worker`, `method_reviewer`, `method_helper`, `method_review_helper`. Roles carry developer instructions only; actual native calls supply model/effort so role config cannot silently override the invocation. Hook configuration belongs to the package. |
+| Native delivery | Package hooks use `.codex-plugin/plugin.json` and the host-provided `PLUGIN_ROOT`. SessionStart covers startup/resume/clear/compact through one synchronous handler with `additionalContextLimit: 0`. Complete inline additionalContext (root/path header plus raw UTF-8 page) has a fixed 64,000-byte method budget; missing, empty, invalid UTF-8 or oversized pages return a stop response without partial rules. `scripts/install` separately generates project `.codex/agents/*.toml` roles: `method_worker`, `method_reviewer`, `method_helper`, `method_review_helper`. Roles carry developer instructions only; actual native calls supply model/effort so role config cannot silently override the invocation. Hook configuration belongs to the package. |
 | Dispatcher | `scripts/dispatch` creates or validates a lane and prepares native invocation data. Lane receipts, locks and retained briefs live in the Git common directory under `codex-method/lanes`; a repository-wide ownership lock prevents different checkouts from admitting overlapping writers. The caller launches, observes, records and continues the real child. A resolver remains an ordinary lane worker. |
 | Review lifecycle | `scripts/review-packet`, packet assembly, and `scripts/review_state.py` use one shared parser and ledger in the common git directory: `codex-method/reviews/OWNER/REPO/PR.json`. Start qualifies installed roles and prepares the fresh six-field native instruction. Reservation id/token, issue/head/base, identity/author, packet SHA (also the retained UTF-8 bundle), instruction SHA, raw verdict SHA and exact comment SHA bind start, publish, status and guard. Short native transport avoids role duplication and large inline evidence without dropping bundle bytes. Pending intent is durable before remote mutation; status recovers only exact association, never retries an unknown outcome. |
 | Integration and protection | `scripts/guard` verifies the current default branch, current-base ancestry, exact accepted receipt/head/base, and green `merged-result / BASE_SHA / HEAD_SHA` from GitHub Actions app `15368`, with no failed head checks. It re-fetches before execute and merges with `--match-head-commit`. No automatic remote-branch deletion. Protection is provisioned deliberately with explicit required check names. |
@@ -80,6 +80,23 @@ its exact comment receipt precede action. Remote `codex-method-attempt-v2` metad
 authentication; missing local receipts block. A Notes-only accepted head does not get another
 review round. Actual PREWRITE/DELIVERY captures travel as supplied; a missing historical baseline
 remains disclosed even when a prospective repair baseline is captured.
+
+## Whole inline startup carrier
+
+Codex 0.160.0's `additionalContextLimit: 0` returns the complete handler context inline rather
+than the default token-threshold spill-file preview. The supported API therefore needs one
+SessionStart invocation, not eight 8,000-byte parts or a reconstruction protocol. The ordinary
+PreToolUse contract is unchanged. The method's fixed 64,000 UTF-8 byte output budget includes
+the complete additionalContext header and source page; it is neither the host threshold nor
+`project_doc_max_bytes`. Old per-part parameters and `CODEX_METHOD_CAP_BYTES` are removed,
+with no unbounded setting or segmented fallback.
+
+Unit consumers exercise whole raw bytes, UTF-8 boundaries, exact complete-output budget and
+missing/empty/invalid/oversize stop responses. The native qualification consumer requires one
+actual startup invocation and one complete inline orchestrator in provider input, alongside the
+existing worker/reviewer denial checks. JSON `continue: false` alone does not prove that the host
+stopped a turn; missing/oversize runtime refusal and each lifecycle event need actual captured
+evidence. Source support and the fixed budget are recorded in ADR 0001's current amendment.
 
 ## Source-to-target reconciliation
 

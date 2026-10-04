@@ -137,3 +137,24 @@ partial reads. Original bundle bytes are retained for acceptance and recovery. T
 carrier, not the judging contract, role schema or host API: no automatic file loading, special
 code-mode-only prerequisite or new dispatcher is introduced. Fresh qualification must use the
 updated role bytes and normal caller route; no old green result is claimed as that evidence.
+
+
+**Amendment (2026-10-04, one whole inline SessionStart output):** The earlier ordered-part
+carrier and insufficient-handler rules above remain historical facts and are superseded. Codex
+0.160.0 supports `additionalContextLimit: 0`, which forwards the complete additionalContext
+inline without a spill-file preview. The handler now runs once synchronously for startup,
+resume, clear or compact and emits the entire original UTF-8 page, preceded by a stable whole
+context marker and actual plugin-root/path header. It has no numbered-part reconstruction,
+per-part arguments or configurable `CODEX_METHOD_CAP_BYTES`.
+
+A fixed 64,000 UTF-8 byte budget applies to the **complete additionalContext**, including the
+header. This conservatively reuses the former eight-times-8,000 aggregate budget; it is a
+method safety limit, not a Codex cap. Missing, empty, invalid UTF-8 or oversized pages return
+`continue: false` with a stop reason and no partial context. No body trimming or spill retrieval
+replaces delivery. Ordinary PreToolUse checks, role contracts and integration policy stand.
+
+The official [large hook output guide](https://learn.chatgpt.com/docs/hooks#large-hook-output)
+and pinned [0.160.0 spiller](https://github.com/openai/codex/blob/a956835d020762cb2b570053af06f643a11c0ecc/codex-rs/hooks/src/output_spill.rs)
+provide the host-setting basis. Actual provider captures must prove full inline bytes and one
+invocation; a script stop response alone is not evidence that the host stopped a turn. Native
+qualification and lifecycle captures remain distinct from unit/configuration checks.

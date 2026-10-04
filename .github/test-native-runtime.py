@@ -123,6 +123,16 @@ def validate_request(request, role, full_role):
         require(full_role and full_role in carried, 'reviewer did not receive the full review role')
 
 
+def validate_root_context(request, page):
+    """Require one complete inline carrier in actual provider input, never recovered spill text."""
+    marker = '--- codex-method whole context ---\n'
+    supplied = list(fragments([request.get('instructions', ''), request.get('input', [])]))
+    contexts = [text for text in supplied if marker in text]
+    require(page and len(contexts) == 1 and contexts[0].count(marker) == 1
+            and marker + page in contexts[0],
+            'root: one whole inline orchestrator page is required in provider input')
+
+
 def advertised_tools(request):
     """Retain the actual wire catalog, including the code-mode input item."""
     supplied = list(request.get('tools', []))
@@ -341,6 +351,23 @@ sys.exit(code)
 '''
 
 
+SESSION_OBSERVER = '''#!/usr/bin/env python3
+import json, os, subprocess, sys
+from pathlib import Path
+payload_text = sys.stdin.read()
+settings = json.loads((Path(__file__).parent / 'fixture-observer.json').read_text())
+result = subprocess.run([str(Path(__file__).with_name('session-start.shipped')), *sys.argv[1:]],
+                        input=payload_text, capture_output=True, text=True)
+record = {'payload': json.loads(payload_text), 'exit_code': result.returncode,
+          'stdout': result.stdout, 'stderr': result.stderr, 'plugin_root': os.environ.get('PLUGIN_ROOT')}
+with open(settings['session_log'], 'a') as stream:
+    stream.write(json.dumps(record) + '\\n')
+sys.stdout.write(result.stdout)
+sys.stderr.write(result.stderr)
+sys.exit(result.returncode)
+'''
+
+
 def prepare(binary, scratch, env, installer, evidence):
     project, package = scratch / 'project', scratch / 'marketplace'
     project.mkdir()
@@ -368,7 +395,13 @@ def prepare(binary, scratch, env, installer, evidence):
     observer.write_text(HOOK_OBSERVER)
     observer.chmod(0o755)
     (observer.parent / 'fixture-observer.json').write_text(json.dumps({
-        'log': str(project / 'hook-payloads.jsonl'), 'control_command': control_command}))
+        'log': str(project / 'hook-payloads.jsonl'), 'control_command': control_command,
+        'session_log': str(project / 'session-start-payloads.jsonl')}))
+    session = package / 'hooks/session-start'
+    evidence['shipped_session_start_sha256'] = hashlib.sha256(session.read_bytes()).hexdigest()
+    session.rename(session.with_name('session-start.shipped'))
+    session.write_text(SESSION_OBSERVER)
+    session.chmod(0o755)
     evidence['instrumentation'] = 'payload observer; exact control bypass only; shipped policy delegated'
 
     home_config = Path(env['CODEX_HOME']) / 'config.toml'
@@ -440,6 +473,7 @@ class ResponsesFixture:
         self.counts, self.waits = Counter(), Counter()
         self.spawn_fields = None
         self.root_stage = 0
+        self.root_context_verified = False
         self.review_role = tomllib.loads((project / '.codex/agents/method_reviewer.toml').read_text())[
             'developer_instructions']
         self.lock = threading.Lock()
@@ -539,11 +573,13 @@ class ResponsesFixture:
             if item.get('type') in ('function_call_output', 'custom_tool_call_output'):
                 self.outputs[item['call_id']] = output_text(item.get('output', ''))
         index = self.counts[role]
-        self.counts[role] += 1
         if index == 0:
             (self.scratch / (role + '.tools.json')).write_text(json.dumps(advertised_tools(request), indent=2))
             if role == 'root':
+                validate_root_context(request, (ROOT / 'reference/orchestrator.md').read_bytes().decode('utf-8'))
+                self.root_context_verified = True
                 self.spawn_fields = validate_spawn_schema(request)
+        self.counts[role] += 1
         if role == 'root':
             return self.root_response(request)
         if role == 'worker':
@@ -649,6 +685,21 @@ class ResponsesFixture:
             require(not (self.project / name).exists(), 'reviewer sentinel was written: ' + name)
         fake_calls = [json.loads(line) for line in (self.project / 'fake-gh-calls.jsonl').read_text().splitlines()]
         require(fake_calls == [['--version']], 'reviewer remote probe reached the fake gh executable')
+        require(self.root_context_verified, 'whole inline orchestrator was not observed at the provider')
+        session_log = self.project / 'session-start-payloads.jsonl'
+        require(session_log.exists(), 'actual SessionStart invocation was not observed')
+        starts = [json.loads(line) for line in session_log.read_text().splitlines()]
+        require(len(starts) == 1 and starts[0]['payload'].get('source') == 'startup',
+                'expected one SessionStart invocation for root startup, without extra part calls')
+        start = starts[0]
+        require(start['exit_code'] == 0 and not start['stderr'], 'SessionStart command failed')
+        output = json.loads(start['stdout'])
+        context = output.get('hookSpecificOutput', {}).get('additionalContext', '')
+        marker = '--- codex-method whole context ---\n'
+        require(context.partition(marker)[2].encode('utf-8') == (ROOT / 'reference/orchestrator.md').read_bytes()
+                and context.count(marker) == 1 and len(context.encode('utf-8')) <= 64000
+                and start['plugin_root'] in context.partition(marker)[0],
+                'SessionStart did not deliver one complete budgeted page from its actual plugin root')
         hook_log = self.project / 'hook-payloads.jsonl'
         require(hook_log.exists(), 'installed plugin hook did not run')
         records = [json.loads(line) for line in hook_log.read_text().splitlines()]
@@ -700,7 +751,8 @@ class ResponsesFixture:
         require(len(worker_denied) == 1, 'did not observe the actual worker merge hook denial')
         require(sum(record['ungated_control'] for record in records) == 1,
                 'exact ungated per-role sandbox control was not observed')
-        return {'native_handles': self.handles, 'provider_requests_by_role': dict(self.counts),
+        return {'single_session_start_whole_inline': True, 'session_start_invocations': len(starts),
+                'native_handles': self.handles, 'provider_requests_by_role': dict(self.counts),
                 'actual_spawn_schema_fields': self.spawn_fields,
                 'canonical_targets': 'actual send_message accepted each returned task_name',
                 'fresh_reviewer_full_role': True, 'reviewer_cross_role_spawn_denied': True,

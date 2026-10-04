@@ -3,7 +3,6 @@
 Each test here asserts behaviour the code actually performs, not that a file exists.
 """
 import json
-import math
 import os
 import shutil
 import subprocess
@@ -77,38 +76,6 @@ class HooksJsonTest(unittest.TestCase):
         command = config['hooks']['PreToolUse'][0]['hooks'][0]['command']
         self.assertNotIn('--role', command)
         self.assertIn('PLUGIN_ROOT', command)
-
-    def test_the_declared_parts_cover_the_page(self):
-        config = json.loads((ROOT / 'hooks/hooks.json').read_text())
-        parts = [h['command'] for h in config['hooks']['SessionStart'][0]['hooks']]
-        indexes = [int(cmd.split()[-2]) for cmd in parts if 'orchestrator' in cmd]
-        cap = int(os.environ.get('CODEX_METHOD_CAP_BYTES', 8000))
-        need = math.ceil(len((ROOT / 'reference/orchestrator.md').read_bytes()) / cap)
-        self.assertGreaterEqual(max(indexes), need,
-                                'the page needs more parts than hooks.json declares')
-        self.assertEqual(sorted(indexes), list(range(1, max(indexes) + 1)))
-
-
-class MultiByteBoundaryTest(unittest.TestCase):
-    def test_a_character_cut_by_the_part_boundary_still_delivers_whole(self):
-        scratch = Path(tempfile.mkdtemp())
-        (scratch / 'hooks').mkdir()
-        (scratch / 'reference').mkdir()
-        shutil.copy(SESSION, scratch / 'hooks/session-start')
-        os.chmod(scratch / 'hooks/session-start', 0o755)
-        # The em dash straddles byte 8000 exactly.
-        payload = b'# P\n' + b'x' * 7995 + '—'.encode() + b'y' * 30
-        (scratch / 'reference/orchestrator.md').write_bytes(payload)
-        env = {**os.environ, 'CODEX_METHOD_CAP_BYTES': '8000'}
-        chunks = []
-        for index in (1, 2):
-            proc = subprocess.run([str(scratch / 'hooks/session-start'), 'orchestrator', str(index), '2'],
-                                  capture_output=True, text=True, env=env)
-            self.assertEqual(proc.returncode, 0, proc.stderr)
-            chunks.append(json.loads(proc.stdout)['hookSpecificOutput']['additionalContext'])
-        rebuilt = ''.join(c.split('---\n', 1)[-1] for c in chunks)
-        self.assertEqual(rebuilt, payload.decode())
-
 
 class TableContractTest(unittest.TestCase):
     def test_a_missing_helper_header_refuses_instead_of_leaking_anchored_rows(self):

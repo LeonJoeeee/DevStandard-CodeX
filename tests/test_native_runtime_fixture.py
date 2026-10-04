@@ -58,6 +58,12 @@ class NativeRuntimeFixtureTest(unittest.TestCase):
         roles = self.project / '.codex/agents'
         roles.mkdir(parents=True)
         (roles / 'method_reviewer.toml').write_text('developer_instructions="full review role"\n')
+        delivered = subprocess.run([str(ROOT / 'hooks/session-start'), 'orchestrator'],
+            capture_output=True, text=True, check=True)
+        self.whole_context = json.loads(delivered.stdout)['hookSpecificOutput']['additionalContext']
+        self.session_record = {'payload': {'source': 'startup', 'hook_event_name': 'SessionStart'},
+            'exit_code': delivered.returncode, 'stdout': delivered.stdout, 'stderr': delivered.stderr,
+            'plugin_root': str(ROOT)}
         self.runtime = self.fixture.ResponsesFixture(self.project, self.scratch,
             'touch ' + str(self.project / 'inherited-permissions.txt'), self.project / 'gh')
 
@@ -67,6 +73,8 @@ class NativeRuntimeFixtureTest(unittest.TestCase):
         request.update(model=f.MODEL, reasoning={'effort': f.EFFORT})
         if marker == f.REVIEW_TASK:
             request['input'].append({'role': 'developer', 'content': 'full review role'})
+        elif marker == f.PRIVATE_PARENT:
+            request['input'].append({'role': 'developer', 'content': self.whole_context})
         return request
 
     def nested_arguments(self, item, tool):
@@ -77,6 +85,29 @@ class NativeRuntimeFixtureTest(unittest.TestCase):
                              item['input'])
         self.assertIsNotNone(match, 'custom exec must receive raw JavaScript and surface the result')
         return json.loads(match[1])
+
+    def test_root_provider_requires_one_complete_inline_orchestrator(self):
+        page = (ROOT / 'reference/orchestrator.md').read_bytes().decode('utf-8')
+        marker = '--- codex-method whole context ---\n'
+        for content in (marker + page[:8000],
+                        marker + page[:8000] + '\nSaved full output to file /scratch/spill.txt',
+                        marker + page + marker + page):
+            with self.subTest(content=content[:50]):
+                request = self.request(self.fixture.PRIVATE_PARENT)
+                request['input'] = [item for item in request['input'] if item.get('role') != 'developer']
+                request['input'].append({'role': 'developer', 'content': content})
+                with self.assertRaisesRegex(AssertionError, 'whole inline orchestrator'):
+                    self.runtime.response_item(request)
+
+    def test_root_provider_rejects_context_reassembled_across_fragments(self):
+        page = (ROOT / 'reference/orchestrator.md').read_bytes().decode('utf-8')
+        request = self.request(self.fixture.PRIVATE_PARENT)
+        request['input'] = [item for item in request['input'] if item.get('role') != 'developer']
+        request['input'].extend([{'role': 'developer', 'content':
+            '--- codex-method whole context ---\n' + page[:8000]},
+            {'role': 'developer', 'content': page[8000:]}])
+        with self.assertRaisesRegex(AssertionError, 'whole inline orchestrator'):
+            self.runtime.response_item(request)
 
     def test_actual_hook_inventory_uses_resolved_hashes_and_rejects_other_sources(self):
         f = self.fixture
@@ -271,6 +302,8 @@ class NativeRuntimeFixtureTest(unittest.TestCase):
     def verification_records(self, tool='Bash', key='command'):
         f, runtime = self.fixture, self.runtime
         runtime.root_stage = 8
+        runtime.response_item(self.request(f.PRIVATE_PARENT))
+        (self.project / 'session-start-payloads.jsonl').write_text(json.dumps(self.session_record) + '\n')
         runtime.handles = {role: '/root/' + role for role in ('worker', 'reviewer', 'control')}
         runtime.outputs.update(root_pwd=str(self.project), worker_lane_pwd=str(self.project / 'worker-lane'),
                                worker_session_pwd=str(self.project))
@@ -295,6 +328,17 @@ class NativeRuntimeFixtureTest(unittest.TestCase):
         (self.project / 'hook-payloads.jsonl').write_text(
             ''.join(json.dumps(record) + '\n' for record in records))
         return self.runtime.verify(self.fixture.DONE['root'])
+
+    def test_extra_session_start_invocations_fail_runtime_verification(self):
+        records = self.verification_records()
+        path = self.project / 'session-start-payloads.jsonl'
+        path.write_text(path.read_text() * 8)
+        with self.assertRaisesRegex(AssertionError, 'one SessionStart invocation'):
+            self.verify_records(records)
+
+    def test_root_provider_accepts_whole_inline_page(self):
+        self.runtime.response_item(self.request(self.fixture.PRIVATE_PARENT))
+        self.assertTrue(self.runtime.root_context_verified)
 
     def test_bwrap_setup_failure_is_diagnosed_and_never_passes_probe_assertions(self):
         error = 'bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted\n'

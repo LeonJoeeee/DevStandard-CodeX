@@ -11,10 +11,12 @@ acting.**
 
 If this page was not delivered to the orchestrator, read it in full before acting.
 
-The package SessionStart matcher covers startup, resume, clear and compact. Its numbered parts
-reconstruct this page exactly. A page needing more parts than configured handlers stops delivery
-with `continue: false` rather than injecting a partial contract. A matcher or constructed hook
-output is not proof of live lifecycle delivery; capture each claimed target transition separately.
+The package SessionStart matcher covers startup, resume, clear and compact. One synchronous
+handler delivers this complete page inline with `additionalContextLimit: 0`. The method limits
+the complete additionalContext, including its root/path header, to 64,000 UTF-8 bytes; this is
+a project safety budget, not a Codex limit. Missing, empty, invalid UTF-8 or oversized pages stop
+with `continue: false` and a reason, without injecting partial rules. A matcher or constructed
+hook output is not proof of live lifecycle delivery; capture each claimed target transition separately.
 
 The collaboration chain is: **human speaks → you restate → discuss → they confirm → you work
 unattended → you return the PR → they decide the merge.** A `delegated` label on the issue extends
