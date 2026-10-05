@@ -6,162 +6,171 @@ Status: draft
 
 [Issue 18](https://github.com/LeonJoeeee/codex-method/issues/18) requires actual lifecycle
 qualification on installed 0.2.6 (`1a9e1d386313cf784559ee0dda54723e4b88f129`) and Codex
-0.160.0. Current production startup/helper evidence qualifies those transitions only. Historical
-0.2.4 compact/new-process resume and failed 0.2.3 TUI-clear attempts remain evidence for their
-own bytes, including failures. A matcher, hook acknowledgement, cached thread lookup, or
-controlled provider cannot establish production post-transition behavior.
-
-`scripts/dispatch` currently requires a fresh `list_agents` entry for the original handle before
-`--continue`. A genuinely terminated spawning runtime may make that handle unavailable in a
-new process. Absence alone proves no stopped lifetime. We need a conservative continuation
-route that proves runtime termination independently, retains the old native observations, and
-prepares a fresh child on the same issue/branch/worktree without asserting task success.
+0.160.0, followed by separate qualification of candidate bytes. Current production evidence
+covers startup/helper only; 0.2.4 resume/compact and failed 0.2.3 TUI-clear attempts remain
+historical. Current dispatch cannot replace a session-local handle after its spawning runtime
+ends, because it requires a fresh old-handle entry. Absence alone proves no stopped lifetime.
 
 ## Options considered
 
-1. Keep only fresh completed-handle evidence: simplest, but cannot recover a lane whose
-   session-local handle disappeared after proven old-process termination.
-2. Admit absent/not-found handles or a caller's stopped flag: available, but permits concurrent
-   writers when the old process or its command descendants remain alive; rejected.
-3. Add separately validated runtime-origin/closure evidence: selected. More evidence is needed,
-   but uncertainty still refuses and existing retained-handle continuation remains preferred.
+1. Keep completed-handle evidence only: simple, but a genuinely ended session can strand a lane.
+2. Accept absent handles/stopped flags: rejected because old processes or commands can survive.
+3. Add bounded, independently checked runtime evidence: selected. Preserve native observations,
+   prove termination separately, and block unaccounted work. Unrestricted desktop/crash recovery
+   would need another process-accounting mechanism; neither PID guesses nor snapshot claims suffice.
 
 ## Decision
 
-### One recovery contract, two kinds of observation
+### Initially admitted runtime and command surface
 
-Add optional `--record-runtime-origin FILE` and `--record-runtime-closure FILE` actions to
-`scripts/dispatch`. Neither launches/stops a child. The existing shared ownership lock covers
-validation and receipt mutation. Original spawn/status observations remain unchanged. An
-origin is immutable once bound; a matching replay is idempotent and conflicting data refuses.
-Closure appends a separate `runtime_closure` observation and records `status=runtime-ended`;
-it never sets native `finished=true`, invents `completed`, or grants review/cleanup acceptance.
+Support **macOS only**, initially through a caller-owned Python observer launching actual Codex
+0.160.0 `app-server --strict-config` with `subprocess.Popen(start_new_session=True)`. The observer
+owns the returned `Popen`/wait handle and remains alive across the planned server restart. This
+is not a desktop PID-discovery route. Legacy/desktop runs without contemporaneous origin refuse.
 
-The versioned `codex-runtime-origin-v1` carrier binds repository, issue, purpose, original run
-`lane_id`, branch, resolved worktree, base, requested/canonical native handles, parent/child
-thread IDs, and the spawning runtime. Runtime identity contains host/boot identity, PID, precise
-OS birth identity, executable path/hash, process group, launch cwd/argv, host version, and
-launch/observation times. It includes absolute retained capture paths and SHA-256 digests for
-the raw launch, spawn, thread binding, native status and OS observations. Origin collection
-starts when the owned runtime launches; handle binding follows the actual spawn, before that
-runtime ends. A retrospective PID guess cannot qualify an old unbound run.
+The unprivileged collector uses `libproc` `proc_pidinfo(PROC_PIDTBSDINFO)` for PID, PPID, PGID
+and `pbi_start_tvsec/pbi_start_tvusec`; `proc_pidpath` for executable identity; `proc_listallpids`
+for a full census; and `sysctlbyname("kern.bootsessionuuid")` for boot identity. Bind executable
+bytes by SHA-256. `ps lstart`, native command `processId` and process-group numbers are not
+process birth identities. Before admitting any closure, qualify these exact APIs/structure sizes
+on this host with an owned live child, repeated stable reads, and exited-child observations.
+Unavailable, short, inconsistent or permission-denied reads refuse; no privileged install or
+Linux/cgroup claim is introduced. Qualification captures and collector source hashes travel with evidence.
 
-The `codex-runtime-closure-v1` carrier references that exact origin digest/run and retains raw
-pre-stop native/thread/command accounting, complete observed process ancestry and birth
-identities, the exact stop method/result, wait/reap evidence, and post-stop OS observations.
-Before stopping, require no unresolved turn, command execution, or unaccounted background
-work and identify every owned descendant, including detached/reparented processes already
-observed. Bound process identities must still match immediately before any signal. Only the
-task-owned runtime and proved descendants may be stopped. Missing accounting, unknown
-ownership, reused PIDs, incomplete observation, or a surviving descendant refuses closure.
-EOF, a deadline, failed RPC, interrupted native status, empty new-session agent list, and
-`kill(pid, 0)` failure alone are insufficient. Abrupt termination is recorded as such; it cannot
-be relabeled graceful shutdown. Unobserved/crashed runtimes without this proof remain blocked.
+Useful synchronous commands are admitted through the harness's **owned-command launcher**.
+Every command invocation carries a unique ticket in its actual native `exec_command` arguments.
+The launcher records its own kernel PID/birth, ancestry to the recorded server, actual PGID,
+exact argv/cwd and direct `Popen` child identity before execution, then waits synchronously.
+Correlate ticket to native function call/output, `commandExecution` item/thread/turn and logical
+PTY/session ID. A PTY `processId` is never converted to an OS PID. Missing/ambiguous correlation
+refuses. If the host cannot expose this mapping, this supported route is unavailable.
 
-Both carrier validators check every referenced original and hash, chronology and identity,
-plus fresh direct OS observations. Use platform-qualified precise process birth identity;
-unsupported platforms/collectors refuse rather than approximate it with PID alone. Captures
-are caller-supplied evidence, not cryptographic runtime attestation; the method retains its
-ordinary cooperative host boundary and does not defend against fabricated same-credential
-evidence or hostile process hiding. A summary's booleans do not replace source observations.
+The command catalog binds exact argv templates, executables, program/dependency source hashes
+and the reviewed source locations establishing **no daemonization, setsid/setpgid, detached or
+untracked background children**. Initially qualify local Git operations with hooks/helpers
+accounted for, and an inspected synchronous unittest program; arbitrary shell/interpreter bodies,
+unknown Git hooks/credential helpers, code-mode/MCP execution and unreviewed dependencies refuse.
+Changed tested source requires re-audit, not a stale catalog entry. This is a bounded cooperative
+command contract, not enforcement against hostile code. Each command's actual group may differ
+from the server's PTY group; register it and every observed descendant's birth identity. Known
+source behavior preserves those groups through completion, so a full final census finds surviving
+or reparented nondetaching children even after their direct parent exits. Synchronous wait alone
+is insufficient. An unaudited detachment capability invalidates coverage even if later snapshots
+are empty. Snapshots do not prove that no process escaped between them.
 
-### Preparing the next writer
+An isolated target disables unaccounted external servers/background features and permits only
+hashed synchronous method hooks, whose source/launch chain is audited for the same no-detach
+property. Hook start/completion IDs and idle group censuses must reconcile. All native actors,
+command tickets/groups and hook invocations enter the observer's append-only registry from
+launch. Gaps, unregistered actors/processes or unknown item/tool kinds invalidate coverage.
+No normal-worker positive is claimed from a zero-command-only child. If this host cannot supply
+useful audited command accounting, report the precise capability limit and retain this proposal;
+do not manufacture a positive by weakening coverage or building a general supervisor.
 
-Retained-handle recovery stays native `followup_task` after actual stopped status and a fresh
-self-contained binding. If the original handle remains usable, prefer it. Fresh replacement
-requires either the existing fresh finished-native route or `runtime-ended` with its original
-closure carrier freshly revalidated by the dispatcher at `--continue`. For the closure route,
-also capture the new runtime's actual native lookup result showing the old handle unavailable;
-an ambiguous lookup or contradictory live status refuses. No fake old-handle entry is supplied.
+### Strict evidence carriers and phase rules
 
-The closure route uses the existing `--continue --brief FILE` preparation path, with a new
-`--runtime-closure FILE` argument mutually exclusive with `--native-status`. It verifies the
-same repository/issue/branch/worktree/base/purpose and no pending cleanup, refreshes the whole
-ordered issue record and authorized continuation, requalifies current typed-role bytes, and
-appends one fresh run identity. The original runtime version/evidence stays historical; current
-qualification is required separately. The new child receives exact role, goal, Bounds,
-Done-check, working location and unfinished state. Preparing is not spawning or accepting work.
-Rejection changes neither ownership nor run history. Closure does not broaden `--cleanup`.
+Add `--record-runtime-origin FILE` and `--record-runtime-closure FILE` to `scripts/dispatch`.
+Neither stops/launches children. Validate and mutate under the shared ownership lock. The new
+versioned JSON objects reject absent, mistyped or unknown fields; source records remain immutable.
+Each phase seals byte-for-byte cuts of actual raw streams before hashing; later append activity
+cannot change an origin's source file. Retain the complete final streams as well as every sealed cut.
 
-### Lifecycle qualification harness
-
-Maintain `.github/test-native-lifecycle.py`, with deterministic parser/negative tests in
-`tests/test_native_lifecycle_fixture.py` and dispatch regressions in
-`tests/test_dispatch_native.py`. Use actual production Sol/high for behavioral claims and a
-separate controlled-provider mode for host mechanics/request-input capture. Retain the exact
-schema, command/settings, provider class, hook/role/package hashes, trust/config baseline,
-thread/turn/item/native identities and all original streams. Completion waits correlate exact
-returned thread and turn IDs: another child/compaction completion cannot finish the awaited turn.
-
-Execute these separately on frozen installed bytes, then repeat affected checks on candidate
-bytes in an isolated explicitly configured target:
-
-| Transition | Required actual sequence and evidence |
+| Carrier/group | Required fields and types |
 |---|---|
-| Startup | Fresh runtime, ordinary turn, one complete actual method block and final behavior. |
-| Genuine resume | Record old origins; finish actors; stop/reap the actual old server/descendants; launch a distinct runtime; minimal same-ID `thread/resume`; ordinary turn, fresh whole delivery, and exact authorized task-state recovery. Cached same-process resume is a separate negative. |
-| Compact | Actual `thread/compact/start`; correlate real compaction completion; next ordinary turn without resume; fresh complete method and explicit recovered task binding before work. Acknowledgement alone fails. |
-| API clear | Actual `thread/start` with `sessionStartSource=clear`, then ordinary turn. Label as API-route evidence; Codex 0.160.0 has no `thread/clear` RPC. |
-| TUI clear | Actual owned PTY session and `/clear` input; retain terminal bytes, changed session identity, actual clear hook and subsequent production model turn. API-source-clear is insufficient. |
-| Retained child | Actual typed Sol/high child returns/stops; observe original handle; `followup_task` carries refreshed binding; observe the same handle's subsequent work/return. |
-| Same-lane replacement | Record actual origin and lane; prove old-runtime closure; show absent old handle in new runtime; run real dispatcher closure/continue; launch one freshly rebound typed child in the identical lane and verify its bounded outcome. |
+| Both | `schema` string; `lane` object: repo/branch/resolved worktree/base/purpose/run lane_id strings and positive issue integer; `runtime_id` string; `sources` array. |
+| Each source | Absolute `path` string, 64-hex `sha256`, selector object: positive JSONL `line` plus JSON Pointer string (or whole-JSON pointer). Hash complete original file bytes; selector must resolve uniquely to the asserted actual record. |
+| Origin | `runtime` object: host string, boot UUID string, PID/PPID/PGID positive integers, birth seconds/microseconds integers, executable path/hash and cwd strings, argv string array, host version string; supervisor identity with identical process fields; collector/catalog/config/hook hashes; `actors` array of requested/canonical handle and parent/child thread ID strings plus spawn call/item IDs. |
+| Closure | `origin_sha256` string; `mode="planned-quiescent"`; pre-stop registry/census/native/command/hook source selectors; exact stop argv/action and wait exit result; final census selectors; process identities/command tickets/groups retained from origin onward. |
+| Each observation | Supervisor sequence positive integer, monotonic nanoseconds integer, UTC timestamp string; native thread/turn/item/call IDs where applicable. No caller boolean replaces raw observations. |
 
-For each claimed delivery, compare the entire UTF-8 method/header bytes and ending, not marker
-presence. Establish exactly one fresh method delivery in the bounded transition/first subsequent
-turn; do not count all earlier history as duplicate delivery. Retain production host model-input
-records correlated to that exact turn plus observed response/tool behavior. A hook output or a
-persisted developer message without evidence that it reached the model is not enough. If
-production input visibility is unavailable, report that dimension unverified; controlled input
-captures prove mechanics only. Typed child captures compare the complete generated role/shared
-section once, inspect actual role/schema and rollout model/effort, and disclose unavailable live
-metadata. No independent child-speed claim is made.
+Launch captures `Popen` return and kernel identity before first thread/turn. After actual spawn,
+join canonical handle from the original function output to the same call ID; join parent/child
+IDs from that call's `collabAgentToolCall.senderThreadId/receiverThreadIds` and child rollout
+metadata. Require exactly one child mapping. `--record-runtime-origin` binds this upfront
+history while the original runtime is still live; matching replay is idempotent, conflict refuses.
+No later origin reconstruction qualifies an already-ended run.
 
-The caller assigns one authorized disposable probe lane and its exact write surface before
-production worker recovery tests; never reuse this live implementation lane or another writer.
-Main model/effort/tier and package stability stay unchanged. Use only task-owned isolated runtime
-config/trust, preserving exact before/after bytes/modes; do not broaden global trust or add a
-global AGENTS file. Every launched process gets an origin and final OS accounting. Existing
-uncertain experiments are untouched. Durable private originals live at the caller-authorized
-`outputs/migration-completion/recovery` workspace path (0700/0600); disposable adapters/state
-live at `work/migration-completion/recovery`. Publish only secret-free indexes on issue 18.
+The same observer's sequence/monotonic values must increase across launch, spawn, registration,
+last activity, quiescence, stop, wait and final census; boot and supervisor birth must stay equal.
+Before stop, close observer admission of new turns/followups, reconcile every actor's actual idle/
+returned state and every hook/command completion, then census all registered groups/identities.
+Quiescence and identity checks must be at most five seconds old when stopping. Identity-check
+only owned processes; close server stdin, wait up to five seconds, then record failure if alive.
+A separately recorded identity-checked SIGTERM is permissible owned teardown, labeled SIGTERM,
+never graceful-exit evidence. No SIGKILL fallback qualifies planned closure.
 
-### Documentation and ownership
+Closure requires actual wait/reap plus absence of every recorded process birth and no remaining
+member of any registered group in a complete census. PID reuse, unresolved sessions, live or
+unaccounted descendants refuse. Before each closure record and `--continue`, the dispatcher
+rechecks immutable originals, identities, coverage and a direct census taken within five seconds
+of receipt mutation. Unreadable census/stale evidence refuses. Caller captures are not authenticated
+runtime attestations; original bytes and correlations remain inspectable under the ordinary boundary.
 
-Update owned `reference/harness-codex.md` and `reference/worker.md` recovery wording with the
-new evidence route and its limits. Root coordinates synchronized changes to the parallel-owned
-orchestrator/architecture/README and a dated ADR 0001 amendment; do not edit historical bodies.
-The added interface suggests a minor version bump, assigned by root alongside other lanes.
-This draft authorizes no implementation before its independent challenge and accepted blob.
+**Unexpected exit is a separate blocked case**, including a crash during an active turn or
+command. Preserve unfinished/interrupted native state and any surviving identities. Even a
+known root death is insufficient without admitted descendant coverage; this first route never
+reconstructs pre-stop quiescence or stop/wait success. Missing origin/coverage/lifetime is safely
+blocked. Supporting crash recovery later requires independent design/qualification.
+
+### One next writer; unchanged acceptance and cleanup
+
+Closure appends `runtime_closure`, sets `status=runtime-ended`, and does not change old native
+spawn/status observations or native `finished`, invent completion, or accept work. Prefer usable
+retained handles with refreshed binding and native `followup_task` after actual stopped status.
+Otherwise `--continue --brief FILE --runtime-closure FILE` (exclusive with `--native-status`)
+revalidates the latest run's closure plus the new runtime's actual absent/not-found lookup;
+ambiguous or live old-handle results refuse. Under the same lock, require unchanged lane identities,
+no pending cleanup, current typed-role qualification and freshly fetched whole ordered issue/
+authorized continuation. Append one prepared identity in the same lane; rejection leaves it unchanged.
+The existing fresh-finished-native route remains. **Cleanup remains unchanged**: unavailable
+historical handles can still block automatic teardown after replacement. Retain that lane/receipt;
+recovery is not fully cleaned delivery, integration authority or an acceptance/CI exemption.
+
+### Maintained harness, qualification and ownership
+
+Maintain `.github/test-native-lifecycle.py` including collector/launcher subcommands and focused
+`tests/test_native_lifecycle_fixture.py` / `tests/test_dispatch_native.py` coverage. Ordinary
+turn waits require exact thread and returned turn ID. `thread/compact/start` returns no turn ID:
+serialize it while the target is idle, retain request/ack cursor, correlate the unique subsequent
+`contextCompaction` item ID on that thread and its notification turn ID through completion,
+then start the ordinary follow-up; missing/ambiguous events refuse without consuming other turns.
+
+| Probe row | Required observation |
+|---|---|
+| Frozen 0.2.6 | Fresh startup; genuine resume after actual old-server reap; compact without resume; API `sessionStartSource=clear`; separate actual PTY `/clear` and subsequent model turn; retained typed-child continuation. |
+| Candidate only | Upfront origin, useful audited synchronous command, planned closure, unavailable old handle, actual dispatcher same-lane replacement and bounded outcome. Frozen 0.2.6 lacks new actions; record this limitation. |
+| Negatives | Cached resume; real surviving command descendant; deliberate detachment/accounting gap; active-turn/active-command crash; missing origin, stale/hash/identity/actor mismatch, unqualified collector and pending cleanup. |
+
+Use production Sol/high for behavioral claims; controlled provider input captures prove mechanics
+only. Compare complete method/header/ending bytes once in the bounded first post-transition turn;
+compare complete typed role/shared section and actual model/effort metadata. Production wire-input
+visibility stays a separate unverified dimension if unsupported, even with matching rollout context
+and correct behavior. Each matrix row retains actual executed/supported/safely blocked/unverified
+status, failures/no-ops, settings/trust/config before/after and complete original streams.
+
+Root assigns a separate authorized probe lane. Preserve main settings, installed 0.2.6, absent global
+AGENTS and prior experiments. Durable private captures use caller-authorized workspace
+`outputs/migration-completion/recovery` (0700/0600); disposable adapters use
+`work/migration-completion/recovery`. Reap only owned processes with final OS proof; publish only
+secret-free indexes. This lane owns dispatcher/tests and worker/harness recovery guidance. Root
+coordinates shared O/architecture/README/ADR amendment/version fields with Issue 16. A minor
+bump is suggested only. Independent accepted reachable spec precedes implementation/probes.
 
 ## Out of scope
 
-Persistent native handles across process restart, force cleanup, retrospective origin creation,
-acceptance or CI exemptions, hostile-peer isolation, another host/executor, main settings
-changes, and product integration/release/production upgrade are excluded.
+General desktop/crash supervision, Linux privileged environment setup, persistent handles,
+retrospective origins, force cleanup, merge/release/production upgrade and main setting changes.
 
-## Verification
+## Verification and failure detection
 
-Run the existing full suite and routing/release/ADR checks on the final combined bytes. Real-Git
-dispatch regressions must prove matching closure permits one same-lane preparation and that
-live/uncertain/missing-origin/hash-drift/identity-mismatch/stale/reused-PID/active-command and
-surviving-descendant inputs refuse without receipt or ownership mutation. Preserve ordinary
-finished-handle continuation, historical-version bounds, legacy receipt handling, lock refusal,
-pending-cleanup blocking and no closure-as-cleanup behavior. Fixtures are labeled fixtures.
+Regression checks bind actual Git lane mutation and prove valid continuation prepares once;
+all refused carriers preserve original ownership/run history. Preserve retained/native-finished
+paths, legacy receipt/version behavior and locks. Real native negatives include surviving and
+detached children with exact owned cleanup evidence, not fabricated census JSON. Run final full
+suite plus routing/ADR/release checks after implementation; draft revisions need static checks only.
+Independent Goal/Floor review examines candidate bytes and original captures before human merge.
 
-The native harness emits a machine-checked matrix per source hash: executed/supported,
-safely blocked, or unverified, with original evidence references, all failed/no-op attempts and
-actual final process/config accounting. No pending/timed-out check is passing. Independent
-Goal/Floor review inspects candidate changes and original captures before any human merge
-decision. Evidence-only conclusions remain issue comments; product changes become a PR.
-
-## Failure detection & rollback
-
-Capture identity/hash/active-work failures before mutating the lane. Durable origin/closure
-records append without erasing prior observations; interrupted receipt writes use the existing
-atomic durable writer and ownership lock. An ambiguous partial record blocks replacement and
-retains all evidence for caller inspection. Do not reset a receipt, kill uncertain processes,
-restore stale global config, or retry a failed transition into an unqualified passing claim.
-Stop only proved owned probe processes; remove only task-owned temporary trust/config changes
-after comparing current bytes and preserving unrelated concurrent edits. Failure to prove final
-teardown/config restoration is an unfinished result. Revert candidate code through ordinary
-review if needed; installed 0.2.6 stays the stable subject throughout this lane.
+Use existing atomic durable receipt writes; ambiguous partial records block and retain evidence.
+Never reset history or retry failures into an unqualified pass. Remove only proved owned temporary
+settings against current bytes, preserving concurrent changes. Teardown/restoration failure remains
+unfinished. Stable installed 0.2.6 is the rollback subject; candidate reversion uses ordinary review.
