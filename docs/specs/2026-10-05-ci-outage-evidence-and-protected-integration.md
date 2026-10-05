@@ -1,6 +1,6 @@
 # CI-outage evidence and the protected integration boundary
 
-Status: draft
+Status: accepted
 
 ## Problem & context
 
