@@ -538,9 +538,14 @@ settings bind ordinary `branch -d` to that archive, preserving Git's occupied-wo
 The owned branch config/reflog is removed normally; unrelated config and remote branches remain.
 Effective inherited merge ambiguity or logical-remote collisions refuse without guessing.
 
-On interruption, rerun the same cleanup with new native evidence. Only the bound receipt and
-verified archive admit recovery after worktree or branch removal, including before progress
-writes. Missing ownership, reappeared files, moved heads/archives or occupied branches refuse;
+Immediately before worktree removal, a durable `worktree-removing` marker means removal may
+have begun, not that it executed or completed; a failed marker write prevents removal. On
+interruption, fresh native evidence and the bound receipt/archive admit absent-path recovery,
+including before progress writes. Any present path at that marker refuses automatic retry—even
+the original after a pre-command crash or ordinary removal failure. Report actual phase and
+archive/branch/path observations; the caller inspects/disposes of ambiguous state without
+resetting intent or forcing another deletion. Missing ownership, reappeared files, moved
+heads/archives or occupied branches refuse;
 `cleaned` is published only after both removals and final checks. Output names the archive and
 `git show <archive-ref>` recovery command. PR state discovers lanes; it alone never proves safe
 removal. The lock/rechecks coordinate method actors, not hostile same-credential isolation.

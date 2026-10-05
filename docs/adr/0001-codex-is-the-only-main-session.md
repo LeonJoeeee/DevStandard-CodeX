@@ -227,7 +227,13 @@ non-ancestry; changing guard merge policy or raw branch-ref deletion was rejecte
 
 Durable intent and archive verification precede removals. The same receipt plus actual state
 recovers interruption after either removal, including before progress writes; fresh native and
-integration evidence still gate retry. Unexplained missing worktrees, reappeared files, moved
+integration evidence still gate retry. A durable pre-command `worktree-removing` marker denotes
+may-have-begun, not execution/completion. Absence permits verified continuation; any present
+path refuses automatic retry, even an original after a pre-command crash/removal failure. This
+conservative availability cost preserves ambiguous files for caller-led inspection/disposition,
+without resetting intent or forcing deletion; failure to save the marker prevents removal.
+Actual phase/archive/branch/path observations remain distinct from completion claims.
+Unexplained missing worktrees, reappeared files, moved
 identities and occupied branches remain preserved. This adds no second tracker, general recovery
 engine, forced cleanup or hostile-peer isolation. The design was independently challenged and
 root accepted the reachable spec blob before implementation; its canonical detail lives in

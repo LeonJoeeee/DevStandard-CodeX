@@ -226,8 +226,13 @@ The original branch reflog and deliberately orphaned/reflog-only drafts are outs
 
 The existing durable lane receipt stores fixed intent, original proof, verified archive and
 bounded removal progress before teardown. Observed state plus fresh proof/native evidence
-recovers interruption after either removal, even before its progress/final receipt write;
-unexplained absence, changed identities or reappeared files refuse. Effective inherited tracking
+recovers interruption after either removal, even before its progress/final receipt write. A
+durable `worktree-removing` marker immediately before the command means removal may have
+begun, not completed; failure to save it prevents removal. At that marker, absent-path retry
+continues verified remaining steps, but every present path refuses—even an original left by
+a pre-command crash or ordinary removal failure. Actual phase/archive/branch/path reporting
+requires caller-led inspection/disposition, with no implicit reset or force bypass. Unexplained
+absence, changed identities or reappeared files refuse. Effective inherited tracking
 configuration is qualified through identical command-local logical-remote/upstream flags
 for verification and builtin nonforced branch deletion. Ambiguity/collision refuses; persistent
 unrelated settings remain untouched. Git owns occupied-worktree and branch config/reflog removal.

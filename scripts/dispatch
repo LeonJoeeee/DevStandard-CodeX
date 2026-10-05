@@ -334,11 +334,17 @@ def cleanup_proof(project, record, number):
 def cleanup_inventory(project, record, intent=None):
     recorded_worktree = Path(record['worktree'])
     worktree = resolved(record['worktree'], 'worktree')
-    require(worktree == recorded_worktree and not recorded_worktree.is_symlink(),
-            'recorded worktree path identity changed; preserve its files')
     branch_ref = 'refs/heads/' + record['branch']
     head = direct_ref(project, branch_ref)
-    present = worktree.exists() or worktree.is_symlink()
+    present = recorded_worktree.exists() or recorded_worktree.is_symlink()
+    if intent and intent['phase'] == 'worktree-removing' and present:
+        archive_head = direct_ref(project, intent['archive_ref'])
+        raise Refusal(f"cleanup phase worktree-removing (removal may have begun); "
+                      f"archive {intent['archive_ref']} at {archive_head}; branch {branch_ref} at {head}; "
+                      f"path present {recorded_worktree}; preserve files and pending intent; "
+                      'caller inspection/disposition is required before another deletion attempt')
+    require(worktree == recorded_worktree and not recorded_worktree.is_symlink(),
+            'recorded worktree path identity changed; preserve its files')
     if present:
         require(not intent or intent['phase'] in ('intent', 'archived'),
                 'worktree path reappeared after removal; preserve its files')
@@ -420,7 +426,7 @@ def cleanup(project, record, args, path):
     archive = f"refs/codex-method/archive/{record['issue']}/{record['lane_id']}"
     run('git', 'check-ref-format', archive, cwd=project)
     if intent:
-        require(isinstance(intent, dict) and intent.get('phase') in ('intent', 'archived', 'worktree-removed', 'branch-removed'),
+        require(isinstance(intent, dict) and intent.get('phase') in ('intent', 'archived', 'worktree-removing', 'worktree-removed', 'branch-removed'),
                 'cleanup intent is unqualified; preserve all retained state')
         fixed = ('repo', 'pr', 'lane_id', 'branch', 'worktree', 'head', 'integration_sha', 'base_ref', 'head_tree', 'integration_tree')
         require(all(intent.get(key) == proof[key] for key in fixed) and intent.get('archive_ref') == archive,
@@ -458,6 +464,9 @@ def cleanup(project, record, args, path):
         write_json(path, record)
         if present:
             require(cleanup_upstream(project, record, intent) == flags, 'effective upstream settings moved before removal')
+            # On restart a present path is ambiguous, even if this command never started.
+            intent['phase'] = 'worktree-removing'
+            write_json(path, record)
             run('git', 'worktree', 'remove', str(worktree), cwd=project)
             require(not worktree.exists(), 'worktree removal is incomplete; preserve remaining state')
             intent['phase'] = 'worktree-removed'

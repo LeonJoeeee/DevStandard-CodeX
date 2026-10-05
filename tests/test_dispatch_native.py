@@ -50,7 +50,9 @@ if matched:
     s.pop('git_fault')
 p.write_text(json.dumps(s))
 def act():
-    if fault['action']=='crash': os.kill(os.getppid(), signal.SIGKILL)
+    if fault['action']=='crash':
+        os.kill(os.getppid(), signal.SIGKILL)
+        sys.exit(97)  # A pre-command crash must not let this wrapper execute Git afterward.
     elif fault['action']=='symbolic':
         subprocess.check_call([os.environ['REAL_GIT'], 'symbolic-ref', fault['archive'], fault['target']])
     elif fault['action']=='conflict':
@@ -743,7 +745,7 @@ class DispatchNativeTest(unittest.TestCase):
                 self.assertNotEqual(record['status'], 'cleaned')
                 self.assertTrue(record['cleanup_intent']['archive_verified'])
                 self.assertEqual(record['cleanup_intent']['phase'],
-                                 'archived' if boundary=='worktree' else 'worktree-removed')
+                                 'worktree-removing' if boundary=='worktree' else 'worktree-removed')
                 retained = self.f.git('branch','--list',self.branch).strip()
                 self.assertEqual(bool(retained), boundary=='worktree')
                 self.assertEqual(self.f.git('rev-parse', self.archive_ref()).strip(), self.f.head)
@@ -824,6 +826,41 @@ class DispatchNativeTest(unittest.TestCase):
         self.assertNotEqual(result.returncode,0)
         self.assertFalse(self.worktree.exists())
         return handle, evidence
+
+    def test_cleanup_marker_refuses_recreated_clean_linked_worktree(self):
+        handle, _ = self.interrupted_worktree()
+        self.f.git('worktree','add',str(self.worktree),self.branch)
+        before = self.record.read_bytes()
+        result = self.cleanup_call(handle)
+        self.assertNotEqual(result.returncode,0)
+        self.assert_lane_preserved()
+        self.assertEqual((self.worktree/'code.txt').read_text(),'base\nhead\n')
+        self.assertEqual(self.f.git('rev-parse',self.archive_ref()).strip(),self.f.head)
+        self.assertEqual(self.record.read_bytes(),before)
+        self.assertIn('worktree-removing',result.stderr)
+        self.assertIn('path present',result.stderr)
+        self.assertIn(self.archive_ref(),result.stderr)
+        self.assertIn(self.f.head,result.stderr)
+        self.assertIn('caller inspection/disposition',result.stderr)
+
+    def test_cleanup_marker_refuses_original_after_precommand_crash(self):
+        handle, _ = self.finish()
+        self.squash_merged()
+        self.inject_git_fault(contains=['worktree','remove'],when='before',action='crash')
+        result = self.cleanup_call(handle)
+        self.assertNotEqual(result.returncode,0)
+        self.assert_lane_preserved()
+        self.assertEqual(self.f.git('rev-parse',self.archive_ref()).strip(),self.f.head)
+        before = self.record.read_bytes()
+        result = self.cleanup_call(handle)
+        self.assertNotEqual(result.returncode,0)
+        self.assert_lane_preserved()
+        self.assertEqual((self.worktree/'code.txt').read_text(),'base\nhead\n')
+        self.assertEqual(self.record.read_bytes(),before)
+        self.assertEqual(json.loads(before)['cleanup_intent']['phase'],'worktree-removing')
+        self.assertIn('may have begun',result.stderr)
+        self.assertIn('path present',result.stderr)
+        self.assertIn('caller inspection/disposition',result.stderr)
 
     def test_cleanup_retry_requires_new_native_observation_and_blocks_redispatch(self):
         handle, old = self.interrupted_worktree()
