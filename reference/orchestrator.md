@@ -525,10 +525,30 @@ sole-copy leftovers. Sweep by PR state, never ancestry: squash/rebase integratio
 Before teardown, inspect `git status --porcelain -uall` and base-relative commits. Preserve
 unintegrated work and sole durable copies; discarding either requires the human's explicit words.
 Remove the worktree before its branch, then prune. The agent that integrates the PR owns cleanup;
-workers leave lanes in place. Automated cleanup also requires local ancestor integration before
-nonforced branch deletion; a squash/rebase merged lane that cannot meet that predicate stays
-preserved for explicit ownership and disposition. PR state remains the discovery authority;
-this conservative cleanup refusal is not a reason to invent another lane or delete its commits.
+workers leave lanes in place. Automated cleanup verifies the actual repository/PR/head and
+integration commit on a freshly fetched API-bound current PR base, independently of stale local
+main. Ancestor admission requires head reachability; nonancestor squash admission additionally
+requires exact integration/head tree equality. Edited or partial integration remains preserved.
+
+Before either removal, cleanup durably records bound intent and a verified direct archival ref
+in the existing shared Git lane receipt. Create-only `update-ref --no-deref` preserves conflicting
+or symbolic refs. One ref per cleaned lane retains the exact head and reachable ancestry
+indefinitely; it does not retain rewritten/reflog-only drafts. Qualified command-local upstream
+settings bind ordinary `branch -d` to that archive, preserving Git's occupied-worktree checks.
+The owned branch config/reflog is removed normally; unrelated config and remote branches remain.
+Effective inherited merge ambiguity or logical-remote collisions refuse without guessing.
+
+Immediately before worktree removal, a durable `worktree-removing` marker means removal may
+have begun, not that it executed or completed; a failed marker write prevents removal. On
+interruption, fresh native evidence and the bound receipt/archive admit absent-path recovery,
+including before progress writes. Any present path at that marker refuses automatic retry—even
+the original after a pre-command crash or ordinary removal failure. Report actual phase and
+archive/branch/path observations; the caller inspects/disposes of ambiguous state without
+resetting intent or forcing another deletion. Missing ownership, reappeared files, moved
+heads/archives or occupied branches refuse;
+`cleaned` is published only after both removals and final checks. Output names the archive and
+`git show <archive-ref>` recovery command. PR state discovers lanes; it alone never proves safe
+removal. The lock/rechecks coordinate method actors, not hostile same-credential isolation.
 
 The version bump rides the change PR, with the semver call in its description; disagreement is a
 Note. An unavoidable bare bump confined to all synchronized declared fields needs no issue or check

@@ -216,9 +216,29 @@ native `followup_task`, refreshed issue context and status observations on the o
 An old-version run keeps its original host identity. Preparing a current-version child requires
 current qualification and fresh actual completion evidence for the old handle; no force option
 disposes of an uncertain child.
-Automated cleanup conservatively requires local ancestor integration and nonforced deletion;
-squash/rebase merged lanes remain preserved pending explicit disposition. Extending that route
-must preserve unintegrated commits and sole copies, not bypass its refusal.
+Automated cleanup binds the actual merged PR/repository/head and fetched current-base API
+identity, requiring integration reachability. Head ancestry admits ordinary integration; otherwise
+immutable integration/head tree equality admits the guarded squash result. Stale local main is
+diagnostic, never integration authority. Both routes retain the exact head and reachable ancestry
+in one deterministic direct `refs/codex-method/archive/<issue>/<lane-id>` ref, created with
+non-dereferencing create-only/CAS semantics. No archive pruning or remote deletion is provided.
+The original branch reflog and deliberately orphaned/reflog-only drafts are outside that promise.
+
+The existing durable lane receipt stores fixed intent, original proof, verified archive and
+bounded removal progress before teardown. Observed state plus fresh proof/native evidence
+recovers interruption after either removal, even before its progress/final receipt write. A
+durable `worktree-removing` marker immediately before the command means removal may have
+begun, not completed; failure to save it prevents removal. At that marker, absent-path retry
+continues verified remaining steps, but every present path refuses—even an original left by
+a pre-command crash or ordinary removal failure. Actual phase/archive/branch/path reporting
+requires caller-led inspection/disposition, with no implicit reset or force bypass. Unexplained
+absence, changed identities or reappeared files refuse. Effective inherited tracking
+configuration is qualified through identical command-local logical-remote/upstream flags
+for verification and builtin nonforced branch deletion. Ambiguity/collision refuses; persistent
+unrelated settings remain untouched. Git owns occupied-worktree and branch config/reflog removal.
+Only completed removals/final checks publish cleaned. The shared lock and rechecks do not create
+OS isolation or an atomic hostile-peer guarantee. The accepted design and verification boundary
+are recorded in `docs/specs/2026-10-05-squash-lane-cleanup.md`.
 
 The dispatcher reads the root `AGENTS.md` record-language declaration into the fresh packet;
 absence means English. An explicit declaration must be singular and readable, otherwise dispatch

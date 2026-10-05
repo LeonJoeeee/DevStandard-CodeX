@@ -1,6 +1,6 @@
 # 0001 — Codex is the only main session, and every worker is its own built-in subagent
 
-Status: Accepted (2026-09-29); Amended (2026-10-03); Amended (2026-10-04).
+Status: Accepted (2026-09-29); Amended (2026-10-03); Amended (2026-10-04); Amended (2026-10-05).
 
 *This ADR decides what this method ships. A reader in any seeded project should take it as method.*
 
@@ -207,3 +207,35 @@ The human explicitly excluded short-core orchestrator loading and lifecycle inje
 Whole startup/resume/clear/compact injection and necessary diff/failure evidence remain. This
 refinement grants no merge or release permission; optimization integration still awaits the
 human's explicit approval of the resulting PR.
+
+
+**Amendment (2026-10-05, Issue 14 guarded squash lane cleanup):** The shared Git lane
+receipt now owns bounded post-integration cleanup intent and observed removal progress. The
+existing guarded squash policy remains; safe cleanup no longer depends on stale local main or
+original commit ancestry alone. Actual repository/API/fetched-object bindings and integration
+reachability on current base precede removal. Ancestor admission requires head reachability;
+nonancestor admission additionally requires immutable integration/head tree equality.
+
+Both routes create one deterministic direct Git archive with non-dereferencing create-only/CAS
+ownership, retaining the exact head and reachable ancestry indefinitely. This small ref cost
+permits one teardown/recovery path and preserves original history independently of later base
+movement. Builtin nonforced branch deletion uses the exact archive as a command-local qualified
+upstream; inherited ambiguity and logical-remote collisions refuse. Normal owned branch
+configuration/reflog deletion remains, with no historical rewritten/reflog-only draft retention
+promise, pruning policy or remote deletion. Refreshing local main alone cannot solve squash
+non-ancestry; changing guard merge policy or raw branch-ref deletion was rejected.
+
+Durable intent and archive verification precede removals. The same receipt plus actual state
+recovers interruption after either removal, including before progress writes; fresh native and
+integration evidence still gate retry. A durable pre-command `worktree-removing` marker denotes
+may-have-begun, not execution/completion. Absence permits verified continuation; any present
+path refuses automatic retry, even an original after a pre-command crash/removal failure. This
+conservative availability cost preserves ambiguous files for caller-led inspection/disposition,
+without resetting intent or forcing deletion; failure to save the marker prevents removal.
+Actual phase/archive/branch/path observations remain distinct from completion claims.
+Unexplained missing worktrees, reappeared files, moved
+identities and occupied branches remain preserved. This adds no second tracker, general recovery
+engine, forced cleanup or hostile-peer isolation. The design was independently challenged and
+root accepted the reachable spec blob before implementation; its canonical detail lives in
+`docs/specs/2026-10-05-squash-lane-cleanup.md`. Implementation, native qualification, hosted CI,
+formal judging, product merge approval and live rehearsal remain distinct evidence obligations.
