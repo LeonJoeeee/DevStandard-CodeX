@@ -43,11 +43,30 @@ Correlate ticket to native function call/output, `commandExecution` item/thread/
 PTY/session ID. A PTY `processId` is never converted to an OS PID. Missing/ambiguous correlation
 refuses. If the host cannot expose this mapping, this supported route is unavailable.
 
+The actual advertised transport may expose `exec_command` only inside `functions.exec`.
+Admit this exact frozen JavaScript template, with one literal canonical JSON argument object:
+
+```javascript
+const r = await tools.exec_command(<literal JSON arguments>); text(r);
+```
+
+The harness generates `cmd` as the exact shell-quoted catalog argv invoking the owned launcher
+and ticket, with assigned `workdir`, `login:false`, fixed shell and bounded yield/output options.
+Reject extra argument keys. Reconstruct and byte-compare the actual wrapper from the frozen
+template and validated literal arguments; retain template/source hashes, structured arguments,
+outer call ID/output and nested actual result, including exit/session fields. Join outer call,
+native command item/session and launcher ticket without treating a PTY ID as PID. Additional
+JavaScript/comments, other tools, dynamic arguments, changed wrappers or extra asynchronous/unawaited
+work invalidate coverage. Account for the admitted host executor's process identities/groups;
+unknown executor backgrounds refuse. Qualify this wrapper with useful nonzero commands on
+the actual target; never assume standalone command exposure or alter main settings to obtain it.
+
 The command catalog binds exact argv templates, executables, program/dependency source hashes
 and the reviewed source locations establishing **no daemonization, setsid/setpgid, detached or
 untracked background children**. Initially qualify local Git operations with hooks/helpers
 accounted for, and an inspected synchronous unittest program; arbitrary shell/interpreter bodies,
-unknown Git hooks/credential helpers, code-mode/MCP execution and unreviewed dependencies refuse.
+unknown Git hooks/credential helpers, code-mode beyond this inspected wrapper, MCP execution
+and unreviewed dependencies refuse.
 Changed tested source requires re-audit, not a stale catalog entry. This is a bounded cooperative
 command contract, not enforcement against hostile code. Each command's actual group may differ
 from the server's PTY group; register it and every observed descendant's birth identity. Known
@@ -185,7 +204,8 @@ Regression checks bind actual Git lane mutation and prove valid continuation pre
 all refused carriers preserve original ownership/run history. Prove recovered-lane cleanup retains
 the exact archive/head/ancestry and observes both removals while old native `finished` stays false.
 Negatives cover missing/current-worker completion, changed/extra/unused closure, late live actor/
-descendant, unavailable reviewer, expired census and every existing removal gate. Preserve all
+descendant, unavailable reviewer, expired census, changed wrappers/extra JS/tool calls/unawaited
+work and every existing removal gate. Preserve all
 cleanup interruption/ambiguous-present-path regressions; closure does not clear them.
 Preserve retained/native-finished paths, legacy receipt/version behavior and locks. Real native negatives include surviving and
 detached children with exact owned cleanup evidence, not fabricated census JSON. Run final full
