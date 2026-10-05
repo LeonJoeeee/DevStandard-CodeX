@@ -68,11 +68,15 @@ sole-copy inspection and explicit disposition of other work remain prerequisites
    in the common Git repository. Durably save bound cleanup intent in the
    existing lane receipt before mutations: repository/PR, branch/worktree/lane,
    `H`, `I`, base ref/`B`, proof route/tree identities and archive ref/head.
-   Create the direct archive ref with `git update-ref <ref> H <zero-oid>`
-   create-only/CAS semantics. An existing direct ref is reusable only with the
-   same owning intent/lane identity and exact `H`; symbolic, conflicting or
-   moved refs refuse without overwrite. Verify it, then durably save the archive
-   confirmation before worktree removal. No pending cleanup can be redispatched
+   Create the direct archive ref with
+   `git update-ref --no-deref <ref> H <zero-oid>`: enforce non-dereferencing,
+   create-only/CAS semantics at the transaction itself, not merely by precheck.
+   An existing direct ref is reusable only with the same owning intent/lane
+   identity and exact `H`; symbolic refs, including dangling ones, conflicting
+   refs and moved refs refuse without following, redirecting or overwriting them
+   or their targets. Verify that the archive itself is a direct ref at exact `H`,
+   then durably save the archive confirmation before worktree removal.
+   No pending cleanup can be redispatched
    as a fresh lane or have its bound intent silently replaced.
 4. Inspect effective Git configuration, including inherited settings. Require
    zero or one branch merge source; multiple values are ambiguous and refuse.
@@ -150,7 +154,11 @@ unequal trees, unavailable/unreachable/moved integration proof, archive ownershi
 conflict/CAS race, inherited config ambiguity/collision, moved branch/archive and
 another occupied worktree. Inject interruption after each removal and before its
 progress/final receipt write; test absent worktree without intent and reappeared
-files. The mechanical probes do not replace these product regressions.
+files. Real Git must qualify non-dereferencing create-only/CAS at the actual
+archive transaction boundary, asserting refusal and unchanged symbolic archive
+refs and targets, including dangling targets, as well as ordinary conflicting
+refs. A symbolic precheck alone does not establish that boundary. The mechanical
+probes do not replace these product regressions.
 
 Final source suite, routing, release lockstep, ADR and diff checks must pass on
 final bytes; exact-head merged-result hosted CI and whole independent Goal/Floor
