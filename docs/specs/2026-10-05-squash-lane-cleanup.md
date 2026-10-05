@@ -1,6 +1,6 @@
 # Preserve original history during squash-merged lane cleanup
 
-Status: committed
+Status: accepted
 
 ## Problem & context
 
@@ -91,8 +91,11 @@ sole-copy inspection and explicit disposition of other work remain prerequisites
    through that logical remote.
 5. Immediately before removal, recheck relevant receipt/PR/object, worktree,
    cleanliness, branch-head, archive and occupancy identities. Refuse detected
-   changes. Remove only the exact owned worktree with ordinary `git worktree
-   remove`; durably record observed removal. Before branch deletion, verify the
+   changes. Immediately before ordinary `git worktree remove`, durably save
+   `worktree-removing` in the same intent. This marker means removal may have
+   begun; it proves neither command execution nor completion. A marker-write
+   failure prevents removal. Remove only the exact owned worktree; durably
+   record observed removal. Before branch deletion, verify the
    remaining branch still equals `H`, no worktree occupies it, the archive still
    equals `H`, and the identical effective upstream configuration still resolves
    correctly. Delete only that local branch with qualified ordinary `branch -d`.
@@ -114,8 +117,16 @@ proof, fresh native lifetimes, archive and worktree/branch inventory. A newly
 verified current base may advance while the bound repository/base ref, `H`, `I`
 and archive identity remain fixed; rerun reachability against that current base
 and retain the new proof observation without replacing the original intent.
-Before any removal, use the normal linked-worktree and cleanliness checks. A missing worktree
-without bound prior intent and verified archive refuses. With that evidence,
+Before any removal, use the normal linked-worktree and cleanliness checks. Once
+`worktree-removing` is durable, an absent recorded path permits the remaining
+verified steps, but any present path refuses automatic retry. This includes an
+unchanged original worktree left by a crash or ordinary removal failure before
+actual removal. Report the actual phase and observed archive/branch/path state,
+without claiming removal or suggesting fresh evidence alone clears the refusal.
+Caller-led inspection/disposition is required for that ambiguous present state;
+never reset or overwrite pending intent to obtain another deletion attempt or
+introduce a force bypass. A missing worktree without bound prior intent and
+verified archive refuses. With that evidence,
 inspect actual state: an absent worktree with branch still at `H` permits only
 the remaining verified branch deletion; absent worktree and branch after a crash
 before final receipt publication permits finalization after the final checks.
