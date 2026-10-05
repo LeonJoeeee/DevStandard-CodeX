@@ -1,6 +1,6 @@
 # Actual Codex lifecycle and safe same-lane recovery
 
-Status: accepted
+Status: draft
 
 ## Problem & context
 
@@ -27,13 +27,35 @@ owns the returned `Popen`/wait handle and remains alive across the planned serve
 is not a desktop PID-discovery route. Legacy/desktop runs without contemporaneous origin refuse.
 
 The unprivileged collector uses `libproc` `proc_pidinfo(PROC_PIDTBSDINFO)` for PID, PPID, PGID
-and `pbi_start_tvsec/pbi_start_tvusec`; `proc_pidpath` for executable identity; `proc_listallpids`
-for a full census; and `sysctlbyname("kern.bootsessionuuid")` for boot identity. Bind executable
-bytes by SHA-256. `ps lstart`, native command `processId` and process-group numbers are not
-process birth identities. Before admitting any closure, qualify these exact APIs/structure sizes
-on this host with an owned live child, repeated stable reads, and exited-child observations.
-Unavailable, short, inconsistent or permission-denied reads refuse; no privileged install or
-Linux/cgroup claim is introduced. Qualification captures and collector source hashes travel with evidence.
+and `pbi_start_tvsec/pbi_start_tvusec`; `proc_pidpath` for executable identity; and
+`sysctlbyname("kern.bootsessionuuid")` for boot identity. Bind executable bytes by SHA-256.
+The initially accepted whole-system `proc_listallpids` plus birth-read census is **blocked on
+this host**: actual PID 1 birth reads return 0/EPERM. Retain that failure; never silently skip
+an inaccessible process or describe a partial system census as complete.
+
+Proposed amendment: obtain complete membership of **every registered owned process group**
+directly from `proc_listpids(PROC_PGRP_ONLY=2, pgid, ...)`, then birth-read every returned member.
+This is an alternative coverage predicate, not a successful whole-system census. The upfront
+registry and audited no-detach execution surface below must establish that every owned actor,
+hook, launcher, command and host executor belongs to a registered group throughout its lifetime.
+An unknown/detaching execution surface or missing registration still refuses, even if every
+queried group is empty. A group's number never identifies a process birth or authorizes a signal.
+
+Qualify the exact APIs/136-byte `proc_bsdinfo` structure on this host, retaining repeated stable
+owned-child identities, repeated live membership, empty exited-group reads, a reparented surviving
+member and a detached-live-child negative. `proc_listpids` returns **bytes**; its null-buffer sizing
+may estimate systemwide capacity rather than group membership. Allocate spare capacity, reject
+negative/nonmultiple/at-capacity results and nonzero errno; retain exact size/return/errno values.
+Read membership, every member's birth identity and membership again. A changed set, missing,
+short, inconsistent or permission-denied member read refuses that observation. Preserve each
+failed/racing observation; a later newly captured stable observation is distinct evidence.
+Unknown members and group reuse block closure; never signal them. Before final admission every
+registered group must return no members, and every recorded birth must be absent. A temporary
+exited member still enumerated blocks until a separately retained fresh empty observation.
+
+`ps lstart` and native command `processId` remain insufficient identities. No privileged install
+or Linux/cgroup claim is introduced. Qualification captures and collector source hashes travel
+with evidence. This draft amendment requires independent acceptance before product consumption.
 
 Useful synchronous commands are admitted through the harness's **owned-command launcher**.
 Every command invocation carries a unique ticket in its actual native `exec_command` arguments.
@@ -70,7 +92,7 @@ and unreviewed dependencies refuse.
 Changed tested source requires re-audit, not a stale catalog entry. This is a bounded cooperative
 command contract, not enforcement against hostile code. Each command's actual group may differ
 from the server's PTY group; register it and every observed descendant's birth identity. Known
-source behavior preserves those groups through completion, so a full final census finds surviving
+source behavior preserves those groups through completion, so a complete registered-group census finds surviving
 or reparented nondetaching children even after their direct parent exits. Synchronous wait alone
 is insufficient. An unaudited detachment capability invalidates coverage even if later snapshots
 are empty. Snapshots do not prove that no process escaped between them.
@@ -116,7 +138,7 @@ A separately recorded identity-checked SIGTERM is permissible owned teardown, la
 never graceful-exit evidence. No SIGKILL fallback qualifies planned closure.
 
 Closure requires actual wait/reap plus absence of every recorded process birth and no remaining
-member of any registered group in a complete census. PID reuse, unresolved sessions, live or
+member of any registered group in a complete kernel group census. PID reuse, unresolved sessions, live or
 unaccounted descendants refuse. Before each closure record and `--continue`, the dispatcher
 rechecks immutable originals, identities, coverage and a direct census taken within five seconds
 of receipt mutation. Unreadable census/stale evidence refuses. Caller captures are not authenticated
