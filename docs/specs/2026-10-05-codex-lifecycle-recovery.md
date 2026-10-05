@@ -420,6 +420,20 @@ executor, command descendants and actual waits form one registry; empty sampled 
 not establish its completeness. Native actors remain discovered typed roles with actual Sol/high
 settings and ordinary whole shared-role delivery, not invented executor-role handles.
 
+### Exact permission-profile qualification
+
+One distinct controlled-provider B attempt may request the parent's already granted
+`danger-full-access` / `never` profile, following Issue 18 comments `5994020442` and
+`5994032409`. Retain the actual parent permission source and distinct request, and require
+matching API-returned target policy before useful activity. This profile permits unrestricted
+filesystem access and networking; it does not enforce workspace-only access or disabled networking.
+The credential-free allowlisted loopback provider, audited owned local command catalog, unchanged
+original hooks, frozen wrapper, observer gate and complete accounting remain operational bounds.
+Any positive qualifies only the exact configured target, permission profile, binary/configuration/
+source bytes and observed lifetime. Preserve the original `workspaceWrite` / `networkAccess=false`
+socket EPERM attempt as failed and useful-command compatibility under that profile as unsupported.
+EPERM supplies no authority to override a denied profile, change transport or weaken evidence.
+
 ### Actual local-host stop and closure evidence
 
 The observer owns the app-server Popen; the lazy host Child handle belongs to the SDK. In
