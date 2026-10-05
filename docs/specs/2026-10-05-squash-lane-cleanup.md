@@ -1,6 +1,6 @@
 # Preserve original history during squash-merged lane cleanup
 
-Status: accepted
+Status: committed
 
 ## Problem & context
 

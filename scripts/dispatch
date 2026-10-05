@@ -18,6 +18,7 @@ import sys
 import tomllib
 import uuid
 from pathlib import Path
+from urllib.parse import quote
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'scripts'))
@@ -260,7 +261,142 @@ def observe(record, path, spawn=False):
     return record
 
 
-def cleanup(project, record, args):
+def direct_ref(project, ref):
+    symbolic = subprocess.run(['git', 'symbolic-ref', '-q', ref], cwd=project,
+                              capture_output=True, text=True)
+    require(symbolic.returncode == 1, f'{ref} is symbolic or unreadable; preserve its target')
+    lines = run('git', 'for-each-ref', '--format=%(refname) %(objectname)', ref, cwd=project).splitlines()
+    matches = [line.split(' ', 1)[1] for line in lines if line.startswith(ref + ' ')]
+    require(len(matches) <= 1, f'ambiguous ref identity: {ref}')
+    return matches[0] if matches else None
+
+
+def ancestor(project, head, base):
+    result = subprocess.run(['git', 'merge-base', '--is-ancestor', head, base], cwd=project,
+                            capture_output=True, text=True)
+    require(result.returncode in (0, 1), f'integration ancestry unavailable: {result.stderr}')
+    return result.returncode == 0
+
+
+def cleanup_proof(project, record, number):
+    repo = record['repo']
+    require(re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+', repo), 'invalid cleanup repository')
+    actual = json.loads(run('gh', 'repo', 'view', '--json', 'nameWithOwner', cwd=project))
+    require(actual.get('nameWithOwner') == repo, 'caller repository differs from the lane')
+    repository = json.loads(run('gh', 'api', f'repos/{repo}', cwd=project))
+    url = f'https://github.com/{repo}.git'
+    require(repository.get('full_name') == repo and repository.get('clone_url') == url,
+            'verified repository fetch identity differs')
+    pr = json.loads(run('gh', 'api', f'repos/{repo}/pulls/{number}', cwd=project))
+    require(pr.get('number') == number and pr.get('html_url') == record['pr']
+            and pr.get('merged') is True and pr.get('state', '').lower() == 'closed',
+            'cleanup requires this exact merged PR identity and integration evidence')
+    require(pr.get('head', {}).get('repo', {}).get('full_name') == repo
+            and pr.get('base', {}).get('repo', {}).get('full_name') == repo
+            and pr['head'].get('ref') == record['branch'], 'PR repository/branch differs from the lane')
+    head, integration, base = pr['head'].get('sha'), pr.get('merge_commit_sha'), pr['base'].get('ref')
+    require(all(isinstance(sha, str) and re.fullmatch(r'[0-9a-f]{40}|[0-9a-f]{64}', sha)
+                for sha in (head, integration)), 'merged PR head/integration commit is missing or invalid')
+    require(isinstance(base, str) and base, 'merged PR base branch is missing')
+    base_ref = 'refs/heads/' + base
+    run('git', 'check-ref-format', base_ref, cwd=project)
+    endpoint = f'repos/{repo}/git/ref/heads/{quote(base, safe="")}'
+    def current_base():
+        observed = json.loads(run('gh', 'api', endpoint, cwd=project))
+        require(observed.get('ref') == base_ref and observed.get('object', {}).get('type') == 'commit',
+                'current PR base API identity differs')
+        sha = observed['object'].get('sha')
+        require(isinstance(sha, str) and re.fullmatch(r'[0-9a-f]{40}|[0-9a-f]{64}', sha),
+                'current PR base commit is unavailable')
+        return sha
+    base_sha = current_base()
+    run('git', 'fetch', '--no-tags', '--no-recurse-submodules', url, base_ref, cwd=project)
+    fetched = run('git', 'rev-parse', '--verify', 'FETCH_HEAD^{commit}', cwd=project).strip()
+    require(fetched == base_sha == current_base(), 'current PR base moved or fetched identity differs; retry fresh proof')
+    for sha in (head, integration, base_sha):
+        require(run('git', 'rev-parse', '--verify', sha + '^{commit}', cwd=project).strip() == sha,
+                'cleanup object identity differs')
+    require(ancestor(project, integration, base_sha), 'integration commit is not reachable on current PR base; preserve work')
+    trees = {key: run('git', 'rev-parse', sha + '^{tree}', cwd=project).strip()
+             for key, sha in (('head_tree', head), ('integration_tree', integration))}
+    route = 'ancestor' if ancestor(project, head, base_sha) else 'squash'
+    require(route == 'ancestor' or trees['head_tree'] == trees['integration_tree'],
+            'integration content differs from exact lane head; preserve original commits')
+    local = subprocess.run(['git', 'rev-parse', '--verify', base_ref + '^{commit}'], cwd=project,
+                           capture_output=True, text=True)
+    local_base = local.stdout.strip() if local.returncode == 0 else None
+    return pr, dict(local_base_sha=local_base, local_base_stale=local_base != base_sha,
+                    repo=repo, pr=record['pr'], lane_id=record['lane_id'], branch=record['branch'],
+                    worktree=record['worktree'], head=head, integration_sha=integration,
+                    base_ref=base_ref, base_sha=base_sha, route=route, **trees)
+
+
+def cleanup_inventory(project, record, intent=None):
+    recorded_worktree = Path(record['worktree'])
+    worktree = resolved(record['worktree'], 'worktree')
+    require(worktree == recorded_worktree and not recorded_worktree.is_symlink(),
+            'recorded worktree path identity changed; preserve its files')
+    branch_ref = 'refs/heads/' + record['branch']
+    head = direct_ref(project, branch_ref)
+    present = worktree.exists() or worktree.is_symlink()
+    if present:
+        require(not intent or intent['phase'] in ('intent', 'archived'),
+                'worktree path reappeared after removal; preserve its files')
+        lane_head = lane_check(project, record['branch'], worktree, record['base'])
+        require(head == lane_head, 'branch and linked-worktree head differ')
+        require(not run('git', 'status', '--porcelain', '--untracked-files=all', '--ignored',
+                        cwd=worktree).strip(), 'tracked, untracked, ignored or sole-copy leftovers must be preserved before cleanup')
+    else:
+        require(intent and intent.get('archive_verified'),
+                'recorded worktree is missing without bound cleanup intent/archive; preserve branch')
+    owner = None
+    for field in run('git', 'worktree', 'list', '--porcelain', '-z', cwd=project).split('\0'):
+        if field.startswith('worktree '):
+            owner = resolved(field[9:], 'occupied worktree')
+        elif field == 'branch ' + branch_ref:
+            require(present and owner == worktree, 'another worktree uses the cleanup branch; preserve it')
+    if intent:
+        require(head == intent['head'] or (not present and head is None),
+                'branch moved beyond the bound cleanup head; preserve committed work')
+    return worktree, head, present
+
+
+def preserve_archive(project, intent):
+    ref, head = intent['archive_ref'], intent['head']
+    current = direct_ref(project, ref)
+    if current is None:
+        require(not intent.get('archive_verified'), 'confirmed archive is missing; preserve remaining lane')
+        # --no-deref is part of the transaction: even a dangling symbolic CAS winner refuses.
+        run('git', 'update-ref', '--no-deref', ref, head, '0' * len(head), cwd=project)
+    else:
+        require(current == head, 'archive ownership/head conflicts; preserve it without overwrite')
+    require(direct_ref(project, ref) == head, 'direct archive identity moved; preserve remaining lane')
+
+
+def cleanup_upstream(project, record, intent):
+    branch, ref, head = record['branch'], intent['archive_ref'], intent['head']
+    remote = 'codex-method-cleanup-' + record['lane_id']
+    values = subprocess.run(['git', 'config', '--get-all', f'branch.{branch}.merge'], cwd=project,
+                            capture_output=True, text=True)
+    require(values.returncode in (0, 1), 'effective branch merge configuration is unreadable')
+    sources = values.stdout.splitlines()
+    require(len(sources) <= 1, 'multiple effective branch merge sources; preserve lane')
+    collision = subprocess.run(['git', 'config', '--get-regexp', '^remote\\.' + re.escape(remote) + r'\.' ],
+                               cwd=project, capture_output=True, text=True)
+    require(collision.returncode == 1, 'cleanup logical remote conflicts with effective configuration')
+    source = sources[0] if sources else intent['base_ref']
+    run('git', 'check-ref-format', source, cwd=project)
+    flags = ['-c', f'branch.{branch}.remote={remote}', '-c', f'remote.{remote}.url=.',
+             '-c', f'remote.{remote}.fetch={source}:{ref}']
+    if not sources:
+        flags += ['-c', f'branch.{branch}.merge={source}']
+    require(run('git', *flags, 'rev-parse', '--symbolic-full-name', branch + '@{upstream}', cwd=project).strip() == ref
+            and run('git', *flags, 'rev-parse', branch + '@{upstream}', cwd=project).strip() == head,
+            'effective deletion upstream differs from exact archive/head')
+    return flags
+
+
+def cleanup(project, record, args, path):
     require(record['purpose'] == 'worker', 'review receipts do not own worktree teardown')
     require(args.pr and args.native_status, 'cleanup requires --pr and fresh --native-status list_agents evidence')
     recorded = record.get('pr') or ''
@@ -279,38 +415,75 @@ def cleanup(project, record, args):
             for review_run in review['runs']:
                 _, _, review_finished = captured_status({'runs':[review_run]}, args.native_status, fresh=True)
                 require(review_finished, 'borrowing native reviewer has no finished evidence')
-    pr = json.loads(run('gh', 'api', f"repos/{record['repo']}/pulls/{args.pr}", cwd=project))
-    require(pr.get('number') == args.pr and pr.get('html_url') == recorded and pr.get('merged') is True
-            and pr.get('state', '').lower() == 'closed' and pr.get('merge_commit_sha'),
-            'cleanup requires this exact merged PR identity and integration evidence')
-    require(pr.get('head', {}).get('repo', {}).get('full_name') == record['repo']
-            and pr.get('base', {}).get('repo', {}).get('full_name') == record['repo']
-            and pr['head'].get('ref') == record['branch'], 'PR repository/branch differs from the lane')
-    worktree = resolved(record['worktree'], 'worktree')
-    head = lane_check(project, record['branch'], worktree, record['base'])
-    require(head == pr['head'].get('sha'), 'lane contains unintegrated commits beyond the merged PR head')
-    require(not run('git', 'status', '--porcelain', '--untracked-files=all', '--ignored', cwd=worktree).strip(),
-            'tracked, untracked, ignored or sole-copy leftovers must be preserved before cleanup')
-    base = pr['base'].get('ref')
-    require(base, 'merged PR base branch is missing')
-    base_ref = 'refs/heads/' + base
-    # No force-delete: admit only local integration evidence. Squash/rebase integrations are refused
-    # until the non-ancestor commits' ownership and disposition are established.
-    integrated = subprocess.run(['git', 'merge-base', '--is-ancestor', head, base_ref], cwd=project,
-                                capture_output=True, text=True)
-    require(integrated.returncode == 0, 'lane commits are not integrated in the local PR base; preserve them')
-    run('git', 'worktree', 'remove', str(worktree), cwd=project)
-    # Bind Git's own nonforced deletion check to the verified PR base, not this caller's HEAD.
-    # Command-local upstream settings leave the project's persistent branch config untouched.
-    run('git', '-c', f'branch.{record["branch"]}.remote=.',
-        '-c', f'branch.{record["branch"]}.merge={base_ref}',
-        'branch', '-d', record['branch'], cwd=project)
-    run('git', 'worktree', 'prune', cwd=project)
+    intent = record.get('cleanup_intent')
+    pr, proof = cleanup_proof(project, record, args.pr)
+    archive = f"refs/codex-method/archive/{record['issue']}/{record['lane_id']}"
+    run('git', 'check-ref-format', archive, cwd=project)
+    if intent:
+        require(isinstance(intent, dict) and intent.get('phase') in ('intent', 'archived', 'worktree-removed', 'branch-removed'),
+                'cleanup intent is unqualified; preserve all retained state')
+        fixed = ('repo', 'pr', 'lane_id', 'branch', 'worktree', 'head', 'integration_sha', 'base_ref', 'head_tree', 'integration_tree')
+        require(all(intent.get(key) == proof[key] for key in fixed) and intent.get('archive_ref') == archive,
+                'cleanup intent identity changed; preserve retained state')
+        require(direct_ref(project, archive) == intent['head'] or not intent.get('archive_verified'),
+                'confirmed archive changed; preserve retained state')
+    worktree, head, present = cleanup_inventory(project, record, intent)
+    require(head == proof['head'] or (intent and not present and head is None),
+            'lane contains unintegrated commits beyond the merged PR head')
+    # Reject an unowned preexisting archive, even one coincidentally pointing to this head.
+    if not intent:
+        require(direct_ref(project, archive) is None, 'archive exists without owning cleanup intent; preserve it')
+        intent = dict(proof, archive_ref=archive, phase='intent', archive_verified=False)
+        record['cleanup_intent'] = intent
+        record['runs'][-1]['status_observation'] = {'observed_at': now(), 'result': data}
+        record['runs'][-1]['finished'] = True
+        write_json(path, record)
+    preserve_archive(project, intent)
+    intent['archive_verified'] = True
+    if intent['phase'] == 'intent':
+        intent['phase'] = 'archived'
+    intent['latest_proof'] = proof
     record['runs'][-1]['status_observation'] = {'observed_at': now(), 'result': data}
     record['runs'][-1]['finished'] = True
-    record['status'] = 'cleaned'
-    record['cleanup'] = {'at': now(), 'pr': pr}
-    return record
+    write_json(path, record)
+    try:
+        flags = cleanup_upstream(project, record, intent) if head is not None else None
+        # Re-fetch and recheck before the first destructive operation; later base advancement is fine.
+        _, latest = cleanup_proof(project, record, args.pr)
+        require(all(latest[key] == proof[key] for key in ('repo', 'pr', 'head', 'integration_sha', 'base_ref', 'head_tree', 'integration_tree')),
+                'PR integration identity changed before removal')
+        intent['latest_proof'] = latest
+        worktree, head, present = cleanup_inventory(project, record, intent)
+        require(direct_ref(project, archive) == intent['head'], 'archive moved before removal')
+        write_json(path, record)
+        if present:
+            require(cleanup_upstream(project, record, intent) == flags, 'effective upstream settings moved before removal')
+            run('git', 'worktree', 'remove', str(worktree), cwd=project)
+            require(not worktree.exists(), 'worktree removal is incomplete; preserve remaining state')
+            intent['phase'] = 'worktree-removed'
+            write_json(path, record)
+        _, head, present = cleanup_inventory(project, record, intent)
+        require(not present and direct_ref(project, archive) == intent['head'], 'archive/worktree changed before branch deletion')
+        if head is not None:
+            require(cleanup_upstream(project, record, intent) == flags, 'effective upstream settings moved before deletion')
+            run('git', *flags, 'branch', '-d', record['branch'], cwd=project)
+        intent['phase'] = 'branch-removed'
+        write_json(path, record)
+        cleanup_inventory(project, record, intent)
+        require(direct_ref(project, 'refs/heads/' + record['branch']) is None
+                and direct_ref(project, archive) == intent['head'], 'final branch/archive identity differs')
+        run('git', 'worktree', 'prune', cwd=project)
+        record['runs'][-1]['status_observation'] = {'observed_at': now(), 'result': data}
+        record['runs'][-1]['finished'] = True
+        record['status'] = 'cleaned'
+        record['cleanup'] = dict(at=now(), pr=pr, archive_ref=archive, original_head=intent['head'],
+                                 proof=latest, recovery=f'git show {archive}',
+                                 notice='Original head and reachable ancestry retained; branch config/reflog removed. '
+                                        'Git may warn that the branch was merged to the archive rather than caller HEAD.')
+        return record
+    except (Refusal, OSError, ValueError, KeyError) as error:
+        raise Refusal(f"cleanup stopped at {intent['phase']}; archive {archive}; "
+                      f"preserve remaining branch/files and rerun cleanup with fresh evidence: {error}") from error
 
 
 def issue_record(project, repo, issue):
@@ -334,6 +507,7 @@ def issue_record(project, repo, issue):
 
 def prepare(project, record, args, installer):
     extra, language = args.input_text, args.record_language
+    require(not record or not record.get('cleanup_intent'), 'cleanup is pending; finish its bound teardown before redispatch')
     if args.cont:
         require(record and record['status'] == 'finished' and record['runs'][-1].get('finished'),
                 'continuation requires recorded finished native evidence')
@@ -494,7 +668,7 @@ def main():
                     'no active qualified native lane record')
             if not args.cleanup:
                 bind_pr(project, record, args.pr)
-            record = (cleanup(project, record, args) if args.cleanup else
+            record = (cleanup(project, record, args, path) if args.cleanup else
                       observe(record, args.record_spawn or args.record_status, bool(args.record_spawn)))
         else:
             record = prepare(project, record, args, installer)

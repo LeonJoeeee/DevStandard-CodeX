@@ -1,6 +1,7 @@
-"""Real dispatch consumers and git worktrees; only GitHub is a stateful boundary double."""
+"""Real dispatch/Git worktrees; GitHub double and delegating Git fault injection."""
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tomllib
@@ -20,11 +21,49 @@ elif a[:2] == ['issue','view']:
     value={'number':2,'title':'Fix acceptance','body':s['issue'],'state':s.get('issue_state','OPEN')}
 elif a == ['api','repos/owner/project/issues/2/comments','--paginate','--slurp']:
     value=[s.get('issue_comments', [])[:1],s.get('issue_comments', [])[1:]]
-elif a == ['api','repos/owner/project/pulls/1']: value=s['pr']
+elif a == ['api','repos/owner/project/pulls/1']:
+    s['pr_reads']=s.get('pr_reads',0)+1
+    if s.get('pr_race') and s['pr_reads']>=s['pr_race']:
+        s['pr']['head']['sha']='c'*40
+    p.write_text(json.dumps(s)); value=s['pr']
+elif a == ['api','repos/owner/project']:
+    value=s.get('repository', {'full_name':'owner/project', 'clone_url':'https://github.com/owner/project.git'})
+elif a == ['api','repos/owner/project/git/ref/heads/main']:
+    s['base_reads']=s.get('base_reads',0)+1
+    sha=s['current_base'] if not s.get('base_race') or s['base_reads']<s['base_race'] else 'd'*40
+    p.write_text(json.dumps(s))
+    value={'ref':'refs/heads/main','object':{'type':'commit','sha':sha}}
 else:
     print('Unexpected request: '+repr(a),file=sys.stderr);sys.exit(2)
 print(json.dumps(value))
 '''
+
+
+GIT_FAULT = r"""#!/usr/bin/env python3
+import json, os, signal, subprocess, sys
+from pathlib import Path
+p=Path(os.environ['GH_FIXTURE']); s=json.loads(p.read_text()); a=sys.argv[1:]
+s.setdefault('git_calls', []).append(a)
+fault=s.get('git_fault')
+matched=fault and all(word in a for word in fault['contains'])
+if matched:
+    s.pop('git_fault')
+p.write_text(json.dumps(s))
+def act():
+    if fault['action']=='crash': os.kill(os.getppid(), signal.SIGKILL)
+    elif fault['action']=='symbolic':
+        subprocess.check_call([os.environ['REAL_GIT'], 'symbolic-ref', fault['archive'], fault['target']])
+    elif fault['action']=='conflict':
+        subprocess.check_call([os.environ['REAL_GIT'], 'update-ref', fault['archive'], fault['head']])
+    elif fault['action']=='branch-move':
+        head=subprocess.check_output([os.environ['REAL_GIT'], 'commit-tree', fault['tree'], '-p', fault['head']],
+                                     input='extra committed work\n', text=True).strip()
+        subprocess.check_call([os.environ['REAL_GIT'], 'update-ref', fault['branch_ref'], head])
+if matched and fault['when']=='before': act()
+result=subprocess.run([os.environ['REAL_GIT'], *a])
+if matched and fault['when']=='after' and result.returncode==0: act()
+sys.exit(result.returncode)
+"""
 
 
 class DispatchNativeTest(unittest.TestCase):
@@ -512,6 +551,386 @@ class DispatchNativeTest(unittest.TestCase):
         state['pr'].update(merged=True, state='closed', merge_commit_sha=self.f.head)
         self.f.save(state)
         self.f.git('merge','--ff-only',self.branch)
+        self.publish_remote()
+
+    def publish_remote(self):
+        remote = self.f.root / 'remote.git'
+        if not remote.exists():
+            self.f.git('clone', '--bare', str(self.f.project), str(remote))
+            self.f.git('config', 'url.' + remote.as_uri() + '.insteadOf',
+                       'https://github.com/owner/project.git')
+        else:
+            self.f.git('push', str(remote), 'main:main')
+        state = self.f.state()
+        state['current_base'] = self.f.git('rev-parse', 'main').strip()
+        self.f.save(state)
+        return remote
+
+    def squash_merged(self, advance=False, stale=False):
+        self.f.git('merge', '--squash', self.branch)
+        self.f.git('commit', '-m', 'squash integration')
+        integration = self.f.git('rev-parse', 'HEAD').strip()
+        self.assertNotEqual(integration, self.f.head)
+        state = self.f.state()
+        state['pr'].update(merged=True, state='closed', merge_commit_sha=integration)
+        self.f.save(state)
+        if advance:
+            (self.f.project / 'later.txt').write_text('later base change\n')
+            self.f.git('add', 'later.txt')
+            self.f.git('commit', '-m', 'later base advancement')
+        remote = self.publish_remote()
+        if stale:
+            self.f.git('reset', '--hard', self.f.base)
+        return integration, remote
+
+    def test_cleanup_squash_preserves_original_head_with_advanced_remote_and_stale_local_main(self):
+        handle, _ = self.finish()
+        integration, remote = self.squash_merged(advance=True, stale=True)
+        self.assertEqual(self.f.git('rev-parse', 'main').strip(), self.f.base)
+        self.assertEqual(self.f.git('rev-parse', integration + '^{tree}'),
+                         self.f.git('rev-parse', self.f.head + '^{tree}'))
+        result = self.call('--cleanup', '--pr', 1,
+                           '--native-status', self.status(handle, {'completed':'done'}))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        record = json.loads(self.record.read_text())
+        archive = record['cleanup']['archive_ref']
+        self.assertEqual(self.f.git('rev-parse', archive).strip(), self.f.head)
+        self.assertEqual(self.f.git('show', archive + ':code.txt'), 'base\nhead\n')
+        self.assertFalse(self.worktree.exists())
+        self.assertFalse(self.f.git('branch', '--list', self.branch).strip())
+        self.assertEqual(record['status'], 'cleaned')
+        self.assertTrue(record['cleanup']['proof']['local_base_stale'])
+        self.assertEqual(record['cleanup']['proof']['local_base_sha'], self.f.base)
+        self.assertEqual(record['cleanup']['proof']['base_sha'], self.f.state()['current_base'])
+        remote_head = subprocess.check_output(['git', '--git-dir', str(remote),
+                                               'rev-parse', 'refs/heads/' + self.branch], text=True).strip()
+        self.assertEqual(remote_head, self.f.head)
+
+    def archive_ref(self):
+        return 'refs/codex-method/archive/2/' + json.loads(self.record.read_text())['lane_id']
+
+    def inject_git_fault(self, **fault):
+        self.f.env['REAL_GIT'] = shutil.which('git')
+        path = self.f.root / 'bin/git'
+        path.write_text(GIT_FAULT)
+        path.chmod(0o755)
+        state = self.f.state()
+        state['git_fault'] = fault
+        self.f.save(state)
+
+    def cleanup_call(self, handle):
+        return self.call('--cleanup', '--pr', 1,
+                         '--native-status', self.status(handle, {'completed':'done'}))
+
+    def assert_lane_preserved(self, head=None):
+        self.assertTrue(self.worktree.exists())
+        self.assertEqual(self.f.git('rev-parse', 'refs/heads/' + self.branch).strip(), head or self.f.head)
+        self.assertNotEqual(json.loads(self.record.read_text())['status'], 'cleaned')
+
+    def test_cleanup_ancestor_allows_different_integration_tree(self):
+        handle, _ = self.finish()
+        self.merged()
+        (self.f.project / 'extra.txt').write_text('base addition')
+        self.f.git('add', 'extra.txt')
+        self.f.git('commit', '-m', 'merge integration with extra base content')
+        state = self.f.state()
+        state['pr']['merge_commit_sha'] = self.f.git('rev-parse', 'HEAD').strip()
+        self.f.save(state)
+        self.publish_remote()
+        self.assertNotEqual(self.f.git('rev-parse', 'HEAD^{tree}'),
+                            self.f.git('rev-parse', self.f.head + '^{tree}'))
+        result = self.cleanup_call(handle)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.f.git('rev-parse', self.archive_ref()).strip(), self.f.head)
+
+    def test_cleanup_tracked_squash_preserves_unrelated_effective_config(self):
+        handle, _ = self.finish()
+        self.squash_merged()
+        self.f.git('branch', '--set-upstream-to=main', self.branch)
+        self.f.git('config', 'example.unrelated', 'keep-me')
+        before = self.f.git('config', '--local', '--list').splitlines()
+        result = self.cleanup_call(handle)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        after = self.f.git('config', '--local', '--list').splitlines()
+        self.assertEqual(after, [line for line in before if not line.startswith('branch.' + self.branch + '.')])
+        self.assertEqual(self.f.git('rev-parse', self.archive_ref()).strip(), self.f.head)
+
+    def test_cleanup_refuses_inherited_multimerge_and_logical_remote_collision(self):
+        handle, _ = self.finish()
+        self.squash_merged()
+        inherited = self.f.root / 'inherited.config'
+        self.f.git('config', 'include.path', str(inherited))
+        before = self.f.git('config', '--local', '--list')
+        lane = json.loads(self.record.read_text())['lane_id']
+        for config in ('[branch "' + self.branch + '"]\nmerge = refs/heads/main\nmerge = refs/heads/other\n',
+                       '[remote "codex-method-cleanup-' + lane + '"]\nurl = somewhere\n'):
+            inherited.write_text(config)
+            result = self.cleanup_call(handle)
+            self.assertNotEqual(result.returncode, 0)
+            self.assert_lane_preserved()
+            self.assertEqual(inherited.read_text(), config)
+            self.assertEqual(self.f.git('config', '--local', '--list'), before)
+
+    def test_cleanup_refuses_integration_proof_mismatch_without_removing_lane(self):
+        handle, _ = self.finish()
+        integration, _ = self.squash_merged()
+        original = self.f.state()
+        cases = [('integration', self.f.base), ('unreachable', self.f.head), ('base', self.f.head), ('repository', 'other/repo'),
+                 ('missing', 'f' * 40), ('base-ref', 'unknown')]
+        for kind, value in cases:
+            state = json.loads(json.dumps(original))
+            if kind in ('integration', 'unreachable', 'missing'): state['pr']['merge_commit_sha'] = value
+            elif kind=='base': state['current_base'] = value
+            elif kind=='base-ref': state['pr']['base']['ref'] = value
+            else: state['repository'] = {'full_name':value, 'clone_url':'https://github.com/owner/project.git'}
+            self.f.save(state)
+            result = self.cleanup_call(handle)
+            self.assertNotEqual(result.returncode, 0, kind)
+            self.assert_lane_preserved()
+
+    def test_cleanup_refuses_direct_archive_conflict_and_symbolic_archives(self):
+        handle, _ = self.finish()
+        self.squash_merged()
+        archive = self.archive_ref()
+        target = 'refs/heads/archive-target'
+        for kind in ('direct', 'symbolic', 'dangling'):
+            if kind=='direct': self.f.git('update-ref', archive, self.f.base)
+            else:
+                if kind=='symbolic': self.f.git('update-ref', target, self.f.base)
+                self.f.git('symbolic-ref', archive, target)
+            result = self.cleanup_call(handle)
+            self.assertNotEqual(result.returncode, 0, kind)
+            self.assert_lane_preserved()
+            if kind=='direct':
+                self.assertEqual(self.f.git('rev-parse', archive).strip(), self.f.base)
+            else:
+                self.assertEqual(self.f.git('symbolic-ref', archive).strip(), target)
+                found = subprocess.run(['git','show-ref','--verify',target], cwd=self.f.project,
+                                       capture_output=True, text=True)
+                self.assertEqual(found.returncode, 0 if kind=='symbolic' else 128)
+            self.f.git('update-ref', '--no-deref', '-d', archive)
+            if kind=='symbolic': self.f.git('update-ref', '-d', target)
+
+    def test_cleanup_cas_refuses_dangling_symbolic_winner_at_transaction(self):
+        handle, _ = self.finish()
+        self.squash_merged()
+        archive = self.archive_ref()
+        target = 'refs/heads/untouched-dangling-target'
+        self.inject_git_fault(contains=['update-ref','--no-deref',archive], when='before',
+                              action='symbolic', archive=archive, target=target)
+        result = self.cleanup_call(handle)
+        self.assertNotEqual(result.returncode, 0)
+        self.assert_lane_preserved()
+        self.assertEqual(self.f.git('symbolic-ref', archive).strip(), target)
+        found = subprocess.run(['git','show-ref','--verify',target], cwd=self.f.project,
+                               capture_output=True, text=True)
+        self.assertNotEqual(found.returncode, 0)
+
+    def test_cleanup_recovers_after_each_removal_before_progress_write(self):
+        for boundary in ('worktree', 'branch'):
+            with self.subTest(boundary=boundary):
+                if boundary=='branch':
+                    self.f.close()
+                    self.setUp()
+                handle, _ = self.finish()
+                self.squash_merged()
+                contains = ['worktree','remove'] if boundary=='worktree' else ['branch','-d']
+                self.inject_git_fault(contains=contains, when='after', action='crash')
+                result = self.cleanup_call(handle)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertFalse(self.worktree.exists())
+                record = json.loads(self.record.read_text())
+                self.assertNotEqual(record['status'], 'cleaned')
+                self.assertTrue(record['cleanup_intent']['archive_verified'])
+                self.assertEqual(record['cleanup_intent']['phase'],
+                                 'archived' if boundary=='worktree' else 'worktree-removed')
+                retained = self.f.git('branch','--list',self.branch).strip()
+                self.assertEqual(bool(retained), boundary=='worktree')
+                self.assertEqual(self.f.git('rev-parse', self.archive_ref()).strip(), self.f.head)
+                result = self.cleanup_call(handle)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(json.loads(self.record.read_text())['status'], 'cleaned')
+                self.assertFalse(self.f.git('branch','--list',self.branch).strip())
+
+    def test_cleanup_refuses_missing_worktree_without_intent(self):
+        handle, _ = self.finish()
+        self.squash_merged()
+        self.f.git('worktree','remove',str(self.worktree))
+        result = self.cleanup_call(handle)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(self.f.git('rev-parse',self.branch).strip(), self.f.head)
+        self.assertNotEqual(json.loads(self.record.read_text())['status'], 'cleaned')
+
+    def test_cleanup_refuses_committed_head_move_after_worktree_removal(self):
+        handle, _ = self.finish()
+        self.squash_merged()
+        self.inject_git_fault(contains=['worktree','remove'], when='after', action='branch-move',
+                              tree=self.f.git('rev-parse',self.f.head+'^{tree}').strip(),
+                              head=self.f.head, branch_ref='refs/heads/'+self.branch)
+        result = self.cleanup_call(handle)
+        self.assertNotEqual(result.returncode, 0)
+        extra = self.f.git('rev-parse',self.branch).strip()
+        self.assertNotEqual(extra, self.f.head)
+        self.assertEqual(self.f.git('rev-parse',self.archive_ref()).strip(),self.f.head)
+        self.assertNotEqual(json.loads(self.record.read_text())['status'],'cleaned')
+        self.assertNotEqual(self.cleanup_call(handle).returncode,0)
+        self.assertEqual(self.f.git('rev-parse',self.branch).strip(),extra)
+
+    def test_cleanup_refuses_api_base_and_pr_races_preserving_lane(self):
+        handle, _ = self.finish()
+        self.squash_merged()
+        state = self.f.state()
+        state['base_race'] = state.get('base_reads',0) + 2
+        self.f.save(state)
+        result = self.cleanup_call(handle)
+        self.assertNotEqual(result.returncode,0)
+        self.assert_lane_preserved()
+        state = self.f.state()
+        state.pop('base_race')
+        state['pr_race'] = state['pr_reads'] + 2
+        self.f.save(state)
+        result = self.cleanup_call(handle)
+        self.assertNotEqual(result.returncode,0)
+        self.assert_lane_preserved()
+
+    def test_cleanup_refuses_other_worktree_occupying_branch(self):
+        handle, _ = self.finish()
+        self.squash_merged()
+        occupied = self.f.root / 'occupied'
+        self.f.git('worktree','add','--force',str(occupied),self.branch)
+        result = self.cleanup_call(handle)
+        self.assertNotEqual(result.returncode,0)
+        self.assert_lane_preserved()
+        self.assertTrue(occupied.exists())
+        self.assertEqual((occupied/'code.txt').read_text(),'base\nhead\n')
+
+    def test_cleanup_cas_refuses_direct_winner_without_overwrite(self):
+        handle, _ = self.finish()
+        self.squash_merged()
+        archive = self.archive_ref()
+        self.inject_git_fault(contains=['update-ref','--no-deref',archive],when='before',
+                              action='conflict',archive=archive,head=self.f.base)
+        result = self.cleanup_call(handle)
+        self.assertNotEqual(result.returncode,0)
+        self.assert_lane_preserved()
+        self.assertEqual(self.f.git('rev-parse',archive).strip(),self.f.base)
+
+    def interrupted_worktree(self):
+        handle, _ = self.finish()
+        self.squash_merged()
+        self.inject_git_fault(contains=['worktree','remove'],when='after',action='crash')
+        evidence = self.status(handle, {'completed':'done'})
+        result = self.call('--cleanup','--pr',1,'--native-status',evidence)
+        self.assertNotEqual(result.returncode,0)
+        self.assertFalse(self.worktree.exists())
+        return handle, evidence
+
+    def test_cleanup_retry_requires_new_native_observation_and_blocks_redispatch(self):
+        handle, old = self.interrupted_worktree()
+        before = self.record.read_bytes()
+        result = self.call('--cleanup','--pr',1,'--native-status',old)
+        self.assertNotEqual(result.returncode,0)
+        self.assertEqual(self.record.read_bytes(),before)
+        brief = self.f.root/'resume.txt'
+        brief.write_text('Do not redispatch pending teardown.')
+        result = self.call('--continue','--brief',brief,'--native-status',self.status(handle,{'completed':'done'}))
+        self.assertNotEqual(result.returncode,0)
+        self.assertEqual(self.f.git('rev-parse',self.branch).strip(),self.f.head)
+        self.assertEqual(self.f.git('rev-parse',self.archive_ref()).strip(),self.f.head)
+
+    def test_cleanup_recovery_refuses_reappeared_files_and_changed_archive(self):
+        handle, _ = self.interrupted_worktree()
+        self.worktree.mkdir()
+        leftover = self.worktree/'new-sole-copy'
+        leftover.write_text('preserve reappeared file')
+        result = self.cleanup_call(handle)
+        self.assertNotEqual(result.returncode,0)
+        self.assertEqual(leftover.read_text(),'preserve reappeared file')
+        self.assertEqual(self.f.git('rev-parse',self.branch).strip(),self.f.head)
+        leftover.unlink()
+        self.worktree.rmdir()
+        self.f.git('update-ref',self.archive_ref(),self.f.base)
+        result = self.cleanup_call(handle)
+        self.assertNotEqual(result.returncode,0)
+        self.assertEqual(self.f.git('rev-parse',self.archive_ref()).strip(),self.f.base)
+        self.assertEqual(self.f.git('rev-parse',self.branch).strip(),self.f.head)
+        self.assertNotEqual(json.loads(self.record.read_text())['status'],'cleaned')
+
+    def test_cleanup_tracked_files_and_unknown_native_handles_preserve_exact_state(self):
+        handle, _ = self.finish()
+        self.squash_merged()
+        original = (self.worktree/'code.txt').read_text()
+        (self.worktree/'code.txt').write_text('dirty tracked file')
+        result = self.cleanup_call(handle)
+        self.assertNotEqual(result.returncode,0)
+        self.assert_lane_preserved()
+        self.assertEqual((self.worktree/'code.txt').read_text(),'dirty tracked file')
+        (self.worktree/'code.txt').write_text(original)
+        for status in ('not_found','interrupted','running','pending_init','unqualified'):
+            before = self.record.read_bytes()
+            result = self.call('--cleanup','--pr',1,'--native-status',self.status(handle,status))
+            self.assertNotEqual(result.returncode,0)
+            self.assert_lane_preserved()
+            self.assertEqual(self.record.read_bytes(),before)
+
+    def test_cleanup_archive_retains_development_ancestry_after_gc(self):
+        original = self.f.head
+        subprocess.check_call(['git','-C',str(self.worktree),'commit','--allow-empty','-m','second original commit'],
+                              stdout=subprocess.DEVNULL)
+        self.f.head = subprocess.check_output(['git','-C',str(self.worktree),'rev-parse','HEAD'],text=True).strip()
+        state = self.f.state()
+        state['pr']['head']['sha'] = self.f.head
+        self.f.save(state)
+        handle, _ = self.finish()
+        self.squash_merged()
+        result = self.cleanup_call(handle)
+        self.assertEqual(result.returncode,0,result.stderr)
+        self.f.git('reflog','expire','--expire=now','--all')
+        self.f.git('gc','--prune=now')
+        self.assertEqual(self.f.git('rev-parse',self.archive_ref()).strip(),self.f.head)
+        self.assertEqual(self.f.git('rev-parse',self.archive_ref()+'^').strip(),original)
+        self.assertEqual(self.f.git('show',original+':code.txt'),'base\nhead\n')
+
+    def test_cleanup_accepts_single_inherited_tracking_source_without_config_write(self):
+        handle, _ = self.finish()
+        self.squash_merged()
+        inherited = self.f.root/'tracking.config'
+        config = '[branch "'+self.branch+'"]\nremote = origin\nmerge = refs/heads/main\n'
+        inherited.write_text(config)
+        self.f.git('config','include.path',str(inherited))
+        before = self.f.git('config','--local','--list')
+        result = self.cleanup_call(handle)
+        self.assertEqual(result.returncode,0,result.stderr)
+        self.assertEqual(inherited.read_text(),config)
+        self.assertEqual(self.f.git('config','--local','--list'),before)
+        self.assertEqual(self.f.git('rev-parse',self.archive_ref()).strip(),self.f.head)
+
+    def test_cleanup_refuses_changed_pr_repository_and_branch_identity(self):
+        handle, _ = self.finish()
+        self.squash_merged()
+        original = self.f.state()
+        for part, field, value in [('head','ref','task/foreign'),('head','repo',{'full_name':'other/repo'}),
+                                   ('base','repo',{'full_name':'other/repo'}),('head','sha','a'*40)]:
+            state = json.loads(json.dumps(original))
+            state['pr'][part][field] = value
+            self.f.save(state)
+            result = self.cleanup_call(handle)
+            self.assertNotEqual(result.returncode,0)
+            self.assert_lane_preserved()
+
+    def test_cleanup_refuses_symlink_redirect_of_recorded_worktree(self):
+        handle, _ = self.finish()
+        self.squash_merged()
+        moved = self.f.root/'moved-lane'
+        self.f.git('worktree','move',str(self.worktree),str(moved))
+        self.worktree.symlink_to(moved,target_is_directory=True)
+        result = self.cleanup_call(handle)
+        self.assertNotEqual(result.returncode,0)
+        self.assertTrue(self.worktree.is_symlink())
+        self.assertTrue(moved.exists())
+        self.assertEqual((moved/'code.txt').read_text(),'base\nhead\n')
+        self.assertEqual(self.f.git('rev-parse',self.branch).strip(),self.f.head)
+        self.assertNotEqual(json.loads(self.record.read_text())['status'],'cleaned')
 
     def test_cleanup_removes_clean_integrated_worktree_then_branch_only_with_native_evidence(self):
         handle, evidence = self.finish()
@@ -538,11 +957,14 @@ class DispatchNativeTest(unittest.TestCase):
             result = self.call('--cleanup','--pr',1,'--native-status',evidence)
             self.assertNotEqual(result.returncode, 0)
             self.assertEqual(path.read_text(), 'must survive')
+            self.assert_lane_preserved()
             path.unlink()
         subprocess.check_call(['git','-C',str(self.worktree),'commit','--allow-empty','-m','unintegrated'],
                               stdout=subprocess.DEVNULL)
         self.assertNotEqual(self.call('--cleanup','--pr',1,'--native-status',evidence).returncode, 0)
-        self.assertTrue(self.worktree.exists())
+        extra = subprocess.check_output(['git','-C',str(self.worktree),'rev-parse','HEAD'],text=True).strip()
+        self.assertNotEqual(extra,self.f.head)
+        self.assert_lane_preserved(head=extra)
 
     def test_new_worker_lane_creates_real_worktree_and_can_bind_returned_pr(self):
         ignore = self.f.project / '.gitignore'
