@@ -109,6 +109,7 @@ Existing projects adopt documents when their triggers fire; a small task does no
 ```sh
 scripts/dispatch 123 --purpose worker --base origin/main --host-version 0.160.0 --project /path/to/project
 scripts/review-packet start 124 --issue 123 --architecture-level no --output /path/to/scratch --host-version 0.160.0 --project /path/to/project
+scripts/review-packet record-native 124 --issue 123 --attempt COMMENT_ID --native-handle ACTUAL_HANDLE --observation /path/to/durable/native-return.json --project /path/to/project
 scripts/review-packet publish 124 --issue 123 --attempt COMMENT_ID --verdict /path/to/scratch/verdict.md --project /path/to/project
 scripts/review-packet status 124 --issue 123 --project /path/to/project
 scripts/guard merge --repo OWNER/REPO --pr 124 --project /path/to/project
@@ -116,7 +117,8 @@ scripts/guard merge --repo OWNER/REPO --pr 124 --project /path/to/project
 
 Dispatch carries the dynamic task binding; the discovered role supplies its static contract once.
 Dispatch and review start prepare native invocation data; the main session must call the real
-native tool with `fork_turns="none"`, record the returned handle, and publish the reviewer's
+native tool with `fork_turns="none"`, retain its observed return, record the reviewer's returned
+handle through `record-native`, and publish the reviewer's
 unedited whole return. For review, the discovered typed role automatically supplies the complete
 static contract and harness. For ordinary `review-packet start`, the short native message binds
 issue, head, base, reviewer identity and workdir to one absolute retained bundle path and SHA-256.
@@ -127,7 +129,9 @@ file references or read the bundle automatically. Its UTF-8 digest is the existi
 `status` validates new file carriers while retaining historical inline recovery. Publish a returned
 Floor-failing verdict whole even when its bundle is missing. The shared-git local review receipt
 binds exact head, base, packet, verdict,
-and published comment. Remote metadata alone never authorizes acceptance. Add `--execute` to the
+and published comment. New context-bound packets also preserve substantive issue/PR context,
+including ordered historical comments; ordinary guard compares it with the accepted snapshot.
+Remote metadata alone never authorizes acceptance. Add `--execute` to the
 guard only within existing merge authorization. Review start requires current installed roles
 and returns the exact native JSON at its `instruction` path; recovery follows the orchestrator's
 **Review packets** section. Use each command's `--help` for its full contract.
@@ -135,10 +139,14 @@ and returns the exact native JSON at its `instruction` path; recovery follows th
 Safe already-authorized temporary self-hosted Actions for hosted allowance/capacity refusal
 keep ordinary review and CI gates; [the CI guidance](reference/ci-pipelines.md) owns diagnosis,
 trust/isolation, equivalence, retained logs and cleanup. The separate degraded local merge-waiver
-design remains documented, but its CLI route refuses as unqualified. Rebase
-comparison is diagnostic patch/tree equality and does not authorize acceptance reuse; changed
-heads need fresh check 1. Version-only review waivers are source principles, not implemented guard
-exemptions. See [the architecture](docs/architecture.md) for these dispositions.
+design remains documented, but its CLI route refuses as unqualified. Changed heads need fresh
+check 1 by default. [Accepted-review reuse](reference/acceptance-reuse.md) supports exact actual
+replay, a prescribed raw Note substitution, and an exact same-head PR-description correction.
+`review-packet reuse` publishes a proof anchored to the latest accepted original; `guard merge
+--reuse ID` recomputes it and retains ordinary exact merged-result CI. Diagnostic `compare`
+grants no acceptance. Legacy receipts cannot reuse acceptance; bare-version no-review waivers
+remain unapproved and unimplemented. Native and protected live qualification remain separate
+evidence obligations. See [the architecture](docs/architecture.md) for these dispositions.
 
 ## Evidence and layout
 

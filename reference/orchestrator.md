@@ -350,7 +350,10 @@ or changed bytes, while historical inline attempts keep their original recovery 
 Keep the retained bundle intact through acceptance and publication recovery. A returned Floor 1
 failure is still published whole even if its bundle is missing; publication never hides the
 failure. Record the actual
-returned handle on the issue, observe completion, capture its unedited whole verdict, then
+returned handle with `review-packet record-native` and the complete observed return; its exact
+associated issue comment is the sole post-start lifecycle allowance in the new accepted context.
+This records caller observation, not native authentication or authority for another spawn.
+Observe completion, capture its unedited whole verdict, then
 publish with `review-packet publish`. `status` verifies the retained instruction
 bytes before returning that path; it does not attest a stopped child or authorize a second spawn.
 Use `--help` for the exact receipt and attempt flags.
@@ -369,6 +372,11 @@ status and guard use the same parser and receipt. The remote `codex-method-attem
 is metadata, not authorization. A missing local receipt blocks acceptance; it is not regenerated
 from a remote marker. The envelope's token is a correlation identifier, not a secret or
 proof of authorization; the local receipt and exact publication establish association.
+New `context-v1` packets and receipts also bind whole API captures and substantive issue/PR
+text, ordered comment bytes and repository/ref identities. Ordinary guard compares that accepted
+context even without a reuse selection. Only exact associated attempt/proof PR comments and the
+single native issue record may follow; neither author identity nor a method-looking envelope
+exempts other comments. `reference/acceptance-reuse.md` owns the complete context and proof rules.
 Before a remote mutation, the ledger durably records its intended bytes and previous receipt.
 If the response is lost, use `status` to recover the exact comment association, never repeat the
 mutation. Missing, ambiguous, or changed remote bytes leave the outcome pending and block a
@@ -383,21 +391,32 @@ The recorded count is a warning rather than a hard stop. Decide continuation fro
 gaps and convergence, never from Notes. An accepted head with only Notes cannot start another
 round. Floor 1 returns the lane for real evidence. Floor 2 stops the lane and goes to the human,
 never a fix round. A `merge-as-is` ruling cannot waive either Floor and does not substitute for
-this guard's exact-head accepted receipt. Record `continue`, `merge-as-is`, `rewrite`, `abandon`,
+this guard's accepted-receipt and exact-proof requirements. Verified substantive context drift
+may receive a fresh same-head review; its new packet/receipt retains the actual diff. Associated
+lifecycle/proof comments, changed CI observations or Notes alone never authorize that round.
+`start --refresh-context --attempt ID` admits an explicit one-time upgrade of an intact accepted
+legacy file carrier; missing/corrupt evidence is not an upgrade. Earlier verdicts remain whole.
+Record `continue`, `merge-as-is`, `rewrite`, `abandon`,
 or `change-route` on the issue; directional or human-touchpoint rulings require durable human
 authorization. `review-packet rule` refuses to fabricate that authority and is not a ruling
 publisher. Rule explicitly when repeated findings show the work is not converging.
 
 #### Two narrow exceptions to re-running check 1
 
-A changed head re-runs check 1 by default. The source method allowed two narrow merging-session
-exceptions: a Goal Yes / both Floors Pass Note's own fenced replacement applied byte-identically
-with nothing else changed, and an external artifact correction with the reviewed SHA unchanged.
-These principles remain recorded; neither unavailable reviewers nor cost justify an exception.
-The shipped guard does not wire changed-head acceptance reuse. A changed commit, including a
-quoted Note correction, therefore requires a fresh accepted receipt. Editing an external artifact
-with the same SHA must preserve the reviewed contract and evidence; disclose both identities and
-any correction on the PR, and re-review whenever substantive claims changed.
+A changed head re-runs check 1 by default. Two merging-session exceptions anchor to the latest
+actually accepted whole Goal Yes / both Floors Pass verdict: one prescribed raw Note replacement
+applied byte-identically in a sole new commit, and an exactly prescribed PR-description correction
+with identical reviewed head/base commits. An originally failing substantive review needs fresh
+actual judgment; SHA equality never manufactures acceptance. Other external artifacts refuse.
+
+Use `review-packet reuse` to compute, retain and append the exact proof, then select its comment
+id with `guard merge --reuse`. The optional raw Note grammar, placement offsets, retained
+request/proof bytes, source association, crash/publication recovery and guard recomputation are
+defined in `reference/acceptance-reuse.md`; read it before proposing either exception. A proof
+consumes no round, creates no new verdict and never changes the original returned bytes.
+Unsupported or unproved cases use fresh review. Neither unavailable reviewers nor cost grants
+an exception. Ordinary context-bound acceptance also refuses a changed description without
+the qualifying external proof or fresh review; omitted or wrong-kind reuse cannot evade it.
 
 ### Guarded operations
 
@@ -417,7 +436,8 @@ the orchestrator to integrate:
 Use the absolute installed path as the first command word, with no Python wrapper,
 directory-changing prefix, shell composition, or redirection. The guard requires an open PR into the
 current default branch, current-base ancestry, a latest locally receipted whole Goal Yes / both Floor Pass verdict for
-that exact head and base, and the CI result below, and it refuses if the PR head or the base head moved while it
+that exact head and base (or a selected exact published reuse proof of that original acceptance),
+the accepted context and the CI result below, and it refuses if the PR head or the base head moved while it
 verified; `--help` carries the record-association and API preconditions it applies. It reads no
 branch protection, because GitHub enforces that gate server-side at the merge itself. It re-fetches base and head before execution and uses
 `gh pr merge --match-head-commit`; it never automatically deletes the remote branch. One
@@ -425,10 +445,14 @@ orchestrator owns a PR. The review packet's architecture-level input travels in 
 or review record (`architecture-level: true|false` / `architecture: YES|NO`).
 
 After main moves under an accepted head, assign the lane owner a rebase continuation, resolve
-conflicts in that lane, rerun final checks, and commission check 1 for the new head. The source's
-stronger reuse property required proof of conflict-free replay and identity of every PR-changed
-byte and mode, with only synchronized monotonic version fields exempted, plus green merged-result
-CI. That acceptance-proof capability is deferred; do not claim `compare` establishes it.
+conflicts in that lane and rerun final checks. Commission check 1 for the new head by default.
+The merging session may instead select a published `replay` proof under
+`reference/acceptance-reuse.md`: actual sanitized replay, the union of old/new PR-changed entries
+with exact byte/type/mode/deletion identity and complete replay-tree equality. Only the two
+synchronized strictly monotonic descriptor version values can differ; any other conflict
+refuses. Exact old/new base/head and original evidence bind the proof. Guard recomputes it under
+the same per-PR lock, verifies the current destination/pins/context and still requires fresh
+merged-result CI. Do not claim diagnostic `compare` establishes any of these properties.
 
 The diagnostic command compares patch/tree equality only and grants no acceptance reuse:
 
@@ -444,7 +468,9 @@ green; a check nothing requires and that has not finished is not a failure.
 
 Two checks guard integration: independent Goal/Floor review, then green CI for the integrated
 result against current main. Neither substitutes for the other. The source allows acceptance reuse only when reviewed
-substance is proved unchanged; the shipped route requires the exact accepted head and base.
+substance is proved unchanged; the shipped route requires exact accepted head/base or a selected
+receipted proof of the narrow predicate, with intact original judgment and evidence. Legacy
+receipts retain their preexisting exact-head guarantee and cannot reuse acceptance.
 
 #### The role hook
 

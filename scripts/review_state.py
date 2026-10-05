@@ -29,12 +29,27 @@ def digest(text):
 
 def validate_packet_carrier(attempt):
     """Check exact local evidence only for receipts that selected the file carrier."""
+    contextual = any(key in attempt for key in ('context_version', 'context', 'context_sha256'))
+    if contextual:
+        require(attempt.get('context_version') == 'context-v1'
+                and attempt.get('packet_carrier') == 'file-sha256-v1',
+                'unsupported or partial context-bound receipt')
     if attempt.get('packet_carrier') != 'file-sha256-v1':
         return
     bundle = Path(attempt['packet_path'])
     require(bundle.is_file(), 'reserved evidence bundle is missing; retain the receipt')
     require(hashlib.sha256(bundle.read_bytes()).hexdigest() == attempt['packet_sha256'],
             'reserved evidence bundle differs; retain the original receipt')
+    if contextual:
+        from acceptance_reuse import validate_context
+        validate_context(attempt)
+
+
+def validate_instruction(attempt):
+    path = Path(attempt.get('native_instruction', ''))
+    require(path.is_file(), 'original native instruction is missing')
+    require(hashlib.sha256(path.read_bytes()).hexdigest() == attempt.get('native_instruction_sha256'),
+            'original native instruction bytes differ')
 
 
 def ledger_path(project, repo, pr):
@@ -98,17 +113,22 @@ def no_pending(ledger):
             'do not POST another reservation, launch a reviewer, replace output or mark no-output')
 
 
-def write_pending(path, ledger, intended, body, previous=None):
+def write_pending(path, ledger, intended, body, previous=None, record_type='attempt', target=None):
     """Durably retain exact outbound bytes and the old receipt before any mutation."""
     no_pending(ledger)
     ledger['pending'] = {'operation': 'PATCH' if previous else 'POST', 'body': body,
                          'attempt': deepcopy(intended), 'previous': deepcopy(previous)}
+    if record_type != 'attempt':
+        ledger['pending'].update({'record_type': record_type, 'target': target})
     save(path, ledger)
 
 
 def finish_pending(ledger, comment):
     require(isinstance(comment, dict), 'GitHub returned no identifiable comment receipt')
     pending = ledger['pending']
+    if pending.get('record_type') in ('reuse', 'native'):
+        return finish_record(ledger, comment)
+    require(pending.get('record_type', 'attempt') == 'attempt', 'unknown pending receipt version')
     attempt = deepcopy(pending['attempt'])
     body = pending['body']
     meta, text = parsed(body)
@@ -129,6 +149,30 @@ def finish_pending(ledger, comment):
     ledger['attempts'][targets[0]] = attempt
     del ledger['pending']
     return attempt
+
+
+def finish_record(ledger, comment):
+    """Commit an append-only nonverdict association only after exact remote receipt."""
+    from acceptance_reuse import record_body
+    pending = ledger['pending'];record = deepcopy(pending['attempt'])
+    require(pending['operation'] == 'POST' and pending['previous'] is None,
+            'proof/native publication must append, never PATCH a verdict')
+    require(pending['body'] == record_body(record), 'pending proof/native bytes differ')
+    record_comment(record, comment, pending['body'])
+    record['body'] = pending['body']
+    if pending['record_type'] == 'reuse':
+        require(pending['target'] == ledger['pr'], 'proof publication target differs')
+        require(not any(r['token'] == record['token'] for r in ledger.get('reuses', [])),
+                'duplicate local reuse receipt')
+        ledger.setdefault('reuses', []).append(record)
+    else:
+        targets = [a for a in ledger['attempts'] if a['token'] == record['attempt_token']]
+        require(len(targets) == 1 and not targets[0].get('native_record')
+                and targets[0]['comment_id'] == record['attempt_id']
+                and pending['target'] == targets[0]['issue'], 'native original association differs')
+        targets[0]['native_record'] = record
+    del ledger['pending']
+    return record
 
 
 def recover_pending(ledger, comments):
@@ -156,7 +200,7 @@ def recover_pending(ledger, comments):
     return True
 
 
-def new_attempt(ledger, issue, head, base, identity, author, packet):
+def new_attempt(ledger, issue, head, base, identity, author, packet, context_drift=None):
     no_pending(ledger)
     require(not any(a['state'] == 'reserved' for a in ledger['attempts']),
             'a reviewer reservation is still active; recover its output before starting another')
@@ -165,18 +209,23 @@ def new_attempt(ledger, issue, head, base, identity, author, packet):
            for a in ledger['attempts']):
         raise Refusal('Floor 2 stopped this lane; obtain human direction, not another review round')
     if last and last['state'] == 'returned' and last['head'] == head:
-        require(last['results']['ready'] != 'Yes', 'accepted head: Notes do not authorize another round')
+        require(last['results']['ready'] != 'Yes' or context_drift,
+                'accepted head: Notes do not authorize another round')
     attempt = {'token': uuid.uuid4().hex, 'issue': issue, 'head': head, 'base': base,
                'identity': identity, 'author': author, 'packet_sha256': digest(packet),
                'round': 1 + sum(a['state'] in RETURNED for a in ledger['attempts']),
                'state': 'reserved', 'repo': ledger['repo'], 'pr': ledger['pr']}
     ledger['attempts'].append(attempt)
+    if context_drift:
+        attempt['context_drift'] = context_drift
     return attempt
 
 
 def envelope(attempt, text):
     meta = {key: attempt[key] for key in ('token', 'issue', 'head', 'base', 'identity', 'author',
                                         'packet_sha256', 'round', 'state', 'repo', 'pr')}
+    if 'context_version' in attempt:
+        meta['context_version'] = attempt['context_version']
     return (f'## Merge check 1 — round {attempt["round"]}\n<!-- {FORMAT} '
             + json.dumps(meta, sort_keys=True, separators=(',', ':')) + ' -->\n\n' + text)
 
@@ -234,8 +283,8 @@ def results(text):
                                ('floor2', '2. Authorization and scope'), ('ready', 'Ready to merge')]}
 
 
-def accepted(project, repo, pr, comments, head, base):
-    ledger = load(ledger_path(project, repo, pr), repo, pr)
+def accepted(project, repo, pr, comments, head, base, ledger=None):
+    ledger = ledger if ledger is not None else load(ledger_path(project, repo, pr), repo, pr)
     no_pending(ledger)
     require(ledger['attempts'], f'no recorded review attempt on head {head}')
     attempt = ledger['attempts'][-1]
@@ -249,6 +298,8 @@ def accepted(project, repo, pr, comments, head, base):
     require(answer == {'goal': 'Yes', 'floor1': 'Pass', 'floor2': 'Pass', 'ready': 'Yes'},
             'the latest verdict is not Goal Yes with both Floors passing')
     validate_packet_carrier(attempt)
+    if attempt.get('context_version'):
+        validate_instruction(attempt)
     return attempt, text
 
 
@@ -257,6 +308,10 @@ def status(ledger, comments):
     attempts = ledger['attempts']
     for attempt in attempts:
         associated(attempt, comments)
+    from acceptance_reuse import associated_record, validate_reuse_files
+    for record in ledger.get('reuses', []):
+        associated_record(record, comments)
+        validate_reuse_files(record)
     current = attempts[-1] if attempts else None
     next_step = 'awaiting-verdict'
     if current:
@@ -273,5 +328,7 @@ def status(ledger, comments):
         elif current['state'] == 'failed':
             next_step = 'awaiting-review'
     return {'rounds': sum(a['state'] in RETURNED for a in attempts), 'next': next_step,
+            'reuses': [{'kind':r['kind'], 'comment_id':r['comment_id'], 'head':r['head'],
+                        'base':r['base']} for r in ledger.get('reuses', [])],
             'attempts': [{'round':a['round'], 'comment_id':a.get('comment_id'), 'state':a['state'],
                           'head':a['head'], 'defect':a.get('defect')} for a in attempts]}

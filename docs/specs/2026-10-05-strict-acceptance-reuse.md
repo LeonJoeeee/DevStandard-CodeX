@@ -1,6 +1,6 @@
 # Reuse an accepted review only through an exact, published proof
 
-Status: accepted
+Status: committed
 
 ## Problem & context
 

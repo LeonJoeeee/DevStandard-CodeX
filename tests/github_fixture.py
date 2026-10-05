@@ -1,6 +1,8 @@
 """A stateful GitHub boundary double; git and command consumers remain real."""
 import json
+import hashlib
 import os
+import re
 from pathlib import Path
 import subprocess
 import sys
@@ -42,6 +44,8 @@ def mutation_before(method):
             sys.exit(1)
         return fault['outcome']
 def mutation_after(comment, outcome):
+    if s.get('context_change_on_post'):
+        s['description'] += '\nconcurrent context change'
     if outcome:
         save()
         if outcome == 'empty-response':
@@ -55,7 +59,7 @@ def mutation_after(comment, outcome):
 if a[:2] == ['repo', 'view']: out({'nameWithOwner': 'owner/project'})
 if a[:2] == ['issue', 'view']: out({'body': s['issue'], 'state': 'OPEN', 'title': 'Fix acceptance'})
 if a[:2] == ['pr', 'view']:
-    r=s['pr'];out({'title':'Fix acceptance', 'body':s['description'], 'headRefOid':r['head']['sha'],
+    r=s['pr'];out({'title':s.get('title','Fix acceptance'), 'body':s['description'], 'headRefOid':r['head']['sha'],
                   'baseRefOid':r['base']['sha'], 'baseRefName':r['base']['ref'], 'state':'OPEN'})
 if a[:2] == ['pr', 'checks']: out([{'name':'test', 'bucket':'pass'}])
 if a[:2] == ['pr', 'diff']: print('code.txt'); save();sys.exit(0)
@@ -65,19 +69,31 @@ if a and a[0] == 'api':
     endpoint=next((x for x in a[1:] if x == 'user' or x.startswith('repos/')), '')
     method=a[a.index('-X')+1] if '-X' in a else 'GET'
     if endpoint == 'user': out({'login':'owner'})
-    if endpoint == 'repos/owner/project': out({'default_branch':'main'})
+    if endpoint == 'repos/owner/project': out({'default_branch':'main','full_name':'owner/project',
+                                            'clone_url':'https://github.com/owner/project.git'})
+    if endpoint == 'repos/owner/project/issues/2': out({'number':2,'body':s['issue']})
     if endpoint == 'repos/owner/project/pulls/1':
         s['pr_reads']=s.get('pr_reads', 0)+1
         if s.get('race') and s['pr_reads'] > s['race']:
             s['pr']['head']['sha']='c'*40
-        out(s['pr'])
+        if s.get('context_race') and s['pr_reads'] > s['context_race']:
+            s['description'] += '\nconcurrent context change'
+        out({**s['pr'],'title':s.get('title','Fix acceptance'),'body':s['description']})
     if endpoint.startswith('repos/owner/project/git/ref/heads/'):
         out({'object':{'sha':s['pr']['base']['sha']}})
     if '/compare/' in endpoint: out({'behind_by':s.get('behind',0), 'status':'ahead'})
     if endpoint.endswith('/check-runs'):
+        if s.get('drift_file_on_check'):
+            target=Path(s.pop('drift_file_on_check'))
+            target.write_bytes(target.read_bytes()+b'drift')
         page={'total_count':len(s['checks']), 'check_runs':s['checks']}
         out([page] if '--slurp' in a else page)
     if endpoint == 'repos/owner/project/issues/2/comments':
+        if method == 'POST':
+            outcome=mutation_before(method)
+            c={'id':s['next_id'],'user':{'login':'owner'},'body':field('body')}
+            s['next_id']+=1;s.setdefault('issue_comments',[]).append(c)
+            mutation_after(c,outcome)
         out([s.get('issue_comments', [])] if '--slurp' in a else s.get('issue_comments', []))
     if endpoint == 'repos/owner/project/issues/1/comments':
         if method == 'POST':
@@ -87,7 +103,7 @@ if a and a[0] == 'api':
             s['next_id']+=1;s['comments'].append(c);mutation_after(c, outcome)
         out([s['comments']] if '--slurp' in a else s['comments'])
     if '/issues/comments/' in endpoint:
-        c=next(x for x in s['comments'] if x['id']==int(endpoint.rsplit('/',1)[1]))
+        c=next(x for x in s['comments']+s.get('issue_comments',[]) if x['id']==int(endpoint.rsplit('/',1)[1]))
         if method == 'PATCH':
             outcome=mutation_before(method)
             c['body']=field('body')
@@ -119,8 +135,9 @@ class GitHubFixture:
         (self.project / 'code.txt').write_text('base\nhead\n')
         self.git('commit', '-am', 'head')
         self.head = self.git('rev-parse', 'HEAD').strip()
-        self.pr = {'state':'open', 'head':{'sha':self.head, 'ref':'task/2-acceptance'},
-                   'base':{'sha':self.base, 'ref':'main'}}
+        self.pr = {'state':'open', 'head':{'sha':self.head, 'ref':'task/2-acceptance',
+                                        'repo':{'full_name':'owner/project'}},
+                   'base':{'sha':self.base, 'ref':'main','repo':{'full_name':'owner/project'}}}
         self.save({'pr':self.pr, 'description':'architecture: YES\nA tested change.',
                    'issue':'## Goal\nFix acceptance.\n## Bounds\nReview lifecycle.\n## Done-check\nBehavioral tests.',
                    'comments':[], 'next_id':100,
@@ -179,6 +196,19 @@ class GitHubFixture:
 
     def guard(self, *args):
         return self.command('guard','merge','--repo','owner/project','--pr',1,*args)
+
+    def legacy_receipt(self):
+        """Construct the historical envelope shape, rather than corrupt a new one."""
+        ledger=json.loads(self.ledger.read_text());attempt=ledger['attempts'][-1]
+        for key in ('context_version','context','context_sha256'):
+            attempt.pop(key,None)
+        state=self.state();comment=next(c for c in state['comments'] if c['id']==attempt['comment_id'])
+        match=re.search(r'<!-- codex-method-attempt-v2 (\{[^\n]+\}) -->',comment['body'])
+        metadata=json.loads(match[1]);metadata.pop('context_version',None)
+        comment['body']=(comment['body'][:match.start(1)]+
+                         json.dumps(metadata,sort_keys=True,separators=(',',':'))+comment['body'][match.end(1):])
+        attempt['comment_sha256']=hashlib.sha256(comment['body'].encode()).hexdigest()
+        self.ledger.write_text(json.dumps(ledger));self.save(state)
 
     def close(self):
         self.temp.cleanup()

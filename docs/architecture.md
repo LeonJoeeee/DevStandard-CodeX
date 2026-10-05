@@ -28,8 +28,9 @@ shipped lifecycle's relationship to its public record; it is not another task tr
 | Task-local helpers | `reference/task-helper.md` owns the bounded subtask contract; the caller retains lane, acceptance and publication. Both helpers receive the unchanged shared agreements and only relevant native mechanics. Review helpers remain nonediting and cannot replace a formal review. |
 | Native delivery | Package hooks use `.codex-plugin/plugin.json` and the host-provided `PLUGIN_ROOT`. SessionStart covers startup/resume/clear/compact through one synchronous handler with `additionalContextLimit: 0`. Complete inline additionalContext (root/path header plus raw UTF-8 page) has a fixed 64,000-byte method budget; missing, empty, invalid UTF-8 or oversized pages return a stop response without partial rules. `scripts/install` separately generates project `.codex/agents/*.toml` roles: `method_worker`, `method_reviewer`, `method_helper`, `method_review_helper`. The installer inlines the shared section once into every complete role; helpers instead receive `reference/task-helper.md`, their role-specific bounds and a validated native-helper excerpt from the harness, without complete formal lane/PR pages. Roles carry developer instructions only; actual native calls supply model/effort so role config cannot silently override the invocation. Hook configuration belongs to the package. |
 | Dispatcher | `scripts/dispatch` creates or validates a lane and prepares native invocation data. Lane receipts, locks and retained briefs live in the Git common directory under `codex-method/lanes`; a repository-wide ownership lock prevents different checkouts from admitting overlapping writers. The installed typed role supplies static instructions once; the message carries only the dynamic task binding. Missing/stale roles refuse. The caller launches, observes, records and continues the real child. A resolver remains an ordinary lane worker. |
-| Review lifecycle | `scripts/review-packet`, packet assembly, and `scripts/review_state.py` use one shared parser and ledger in the common git directory: `codex-method/reviews/OWNER/REPO/PR.json`. Start qualifies installed roles and prepares the fresh six-field native instruction. Reservation id/token, issue/head/base, identity/author, packet SHA (also the retained UTF-8 bundle), instruction SHA, raw verdict SHA and exact comment SHA bind start, publish, status and guard. Short native transport avoids role duplication and large inline evidence without dropping bundle bytes. Pending intent is durable before remote mutation; status recovers only exact association, never retries an unknown outcome. |
-| Integration and protection | `scripts/guard` verifies the current default branch, current-base ancestry, exact accepted receipt/head/base, and green `merged-result / BASE_SHA / HEAD_SHA` from GitHub Actions app `15368`, with no failed head checks. It re-fetches before execute and merges with `--match-head-commit`. No automatic remote-branch deletion. Protection is provisioned deliberately with explicit required check names. |
+| Review lifecycle | `scripts/review-packet`, packet assembly, and `scripts/review_state.py` use one shared parser and common-git ledger: `codex-method/reviews/OWNER/REPO/PR.json`. Start qualifies installed roles and prepares the fresh six-field native instruction. Reservation id/token, issue/head/base, identity/author, packet/bundle, instruction, raw verdict and exact comment hashes bind start, publish, status and guard. New `context-v1` envelopes/receipts retain full API captures and accepted substantive context. `record-native` binds one exact post-start issue comment to its original attempt/instruction and retained observed return. Pending intent precedes mutation; status recovers only exact association, never retries an unknown outcome. |
+| Accepted-review reuse | `scripts/acceptance_reuse.py` implements independent replay, raw Note and exact same-head PR-description predicates. Append-only `reuses` bind the latest actual accepted original, old/new pins, retained request/proof/source bytes and exact publication. Guard recomputes proofs under the shared PR lock; proofs supply no new verdict/round and never chain. `reference/acceptance-reuse.md` owns the protocol; ADR 0002 records the decision. |
+| Integration and protection | `scripts/guard` verifies current default branch/base ancestry, exact original acceptance or selected recomputed reuse, accepted context, and green `merged-result / BASE_SHA / HEAD_SHA` from GitHub Actions app `15368`, with no failed head checks. Final original/proof/ledger/context/pin checks precede `--match-head-commit`. Legacy receipts keep only their old exact-head guarantee. No automatic remote-branch deletion. Protection is provisioned deliberately with explicit required check names. |
 | On-demand guidance | Other `reference/` pages own document admission, placement, templates, CI upkeep, red/flaky checks and fallback design. `reference/repo-agents-md.md` suggests a lean operational AGENTS template while preserving authorized project instructions; `docs/maintenance.md` is this repository's maintenance authority. |
 
 The orchestrator processes events briefly and observes outstanding lanes. Independent writable
@@ -82,7 +83,9 @@ A pending local review reservation blocks another start. Every returned verdict 
 including malformed responses; a failed attempt with no verdict burns none. Raw publication and
 its exact comment receipt precede action. Remote `codex-method-attempt-v2` metadata alone is not
 authentication; missing local receipts block. A Notes-only accepted head does not get another
-review round. Actual PREWRITE/DELIVERY captures travel as supplied; a missing historical baseline
+review round. Verified substantive context drift may receive fresh same-head judgment;
+an explicit intact legacy refresh obtains a new context-bound original without rewriting old
+verdicts. Missing/partial new context receipts refuse. Actual PREWRITE/DELIVERY captures travel as supplied; a missing historical baseline
 remains disclosed even when a prospective repair baseline is captured.
 
 ## Whole inline startup carrier
@@ -184,7 +187,7 @@ are not copied as target claims.
 | 0025 | Fallback trigger/evidence/audit/return property retained in ci-cannot-run; shipped route blocked as unqualified. |
 | 0027 | Search both rule statements and pointer/paraphrase sites → retained repository maintenance discipline. ADR bodies are corrected by amendment. |
 | 0034 | Whole verdict published at return before acting → review lifecycle; caller receives native return and publishes its exact raw bytes. |
-| 0035, 0046 | Changed-head review default and narrow acceptance-reuse proof properties retained; `compare` is diagnostic and no automatic rebase/quoted-fix/version-field reuse is shipped. |
+| 0035, 0046 | Fresh changed-head review remains default. Explicit accepted-receipt actual replay, exact raw Note and prescribed same-head PR-description proofs are wired through packet/publication/status/guard, including strict synchronized version-value replay. `compare` remains diagnostic; bare-version no-review admission remains unapproved. |
 | 0036, 0038, 0039, 0045, 0056, 0063 | Executor/host evolution is source history. Human's Codex-only native ruling replaces cross-host selection and both removals/restorations; target 0001 amendment states provenance and actual limits. |
 | 0037, 0042 | Established authority/default/expensive kinds, cache/root/retention/durability and admitted documents → placement/in-repo/out-of-repo/repo-agents. |
 | 0051, 0052, 0062 | Ordinary-path role hook, no hook policy hierarchy and irreversible boundaries → orchestrator hook rules. Native reviewer ordinary write denials are explicit; no malicious isolation claim. |
@@ -193,12 +196,16 @@ are not copied as target claims.
 
 ## Deferred capabilities and verification boundary
 
-The source acceptance-reuse design requires conflict-free replay, every PR-changed byte/mode
-unchanged, only synchronized monotonic version fields exempted, then exact merged-result CI.
-The shipped `compare` only diagnoses patch/tree equality. Re-review changed heads by default;
-never promote its output into reuse authorization. Quoted Note replacements and bare-version
-waivers likewise have no wired guard exemption. Source principle is preserved without a false
-implementation claim.
+Accepted-receipt reuse now uses actual sanitized replay, union old/new PR-changed entry identity
+and full replay-tree equality, with only strict synchronized descriptor version values exempted.
+Raw Note placement binds a sole exact new-commit substitution; prescribed PR-description changes
+retain exact head/base and complete before/after bytes. Ordinary guard compares new accepted
+context even when reuse is omitted. Original packet/instruction/verdict/comment association,
+durable pending publication recovery, local/remote race checks and fresh merged-result CI remain.
+`compare` only diagnoses equality. These code/consumer properties require separate changed
+installed-candidate native qualification and protected live GitHub evidence before final delivery
+is accepted; fixtures alone do not establish those properties. The source bare-version route
+without a verdict remains a distinct unapproved policy choice, not completed migration.
 
 The fallback design requires proven provider-wide inability to run, why waiting is ruled out,
 an exact synthetic two-parent merge, all CI jobs on that tree, fresh before/after accounting,

@@ -1,6 +1,6 @@
 # 0001 — Codex is the only main session, and every worker is its own built-in subagent
 
-Status: Accepted (2026-09-29); Amended (2026-10-03); Amended (2026-10-04); Amended (2026-10-05).
+Status: Accepted (2026-09-29); Amended (2026-10-03); Amended (2026-10-04); Amended (2026-10-05); Amended by 0002.
 
 *This ADR decides what this method ships. A reader in any seeded project should take it as method.*
 
@@ -239,3 +239,14 @@ engine, forced cleanup or hostile-peer isolation. The design was independently c
 root accepted the reachable spec blob before implementation; its canonical detail lives in
 `docs/specs/2026-10-05-squash-lane-cleanup.md`. Implementation, native qualification, hosted CI,
 formal judging, product merge approval and live rehearsal remain distinct evidence obligations.
+
+
+**Amendment (2026-10-05, see 0002):** The earlier deferred acceptance-reuse statement
+above remains historical. Explicit replay, raw prescribed Note and same-head
+PR-description proofs now anchor only to an intact actual accepted original.
+New context-bound receipts enforce substantive context even on ordinary guard;
+exact associated native issue recording replaces handwritten review-handle
+additions. Original verdicts and ordinary merged-result CI remain intact.
+Bare-version no-review admission remains unapproved/unimplemented. Consumer,
+changed native and protected live qualification are distinct evidence obligations;
+implementation alone grants no integration, installation or release authority.
