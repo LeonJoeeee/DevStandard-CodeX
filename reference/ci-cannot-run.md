@@ -1,134 +1,230 @@
-# When CI cannot run at all (the check-2 fallback)
+# When CI cannot start: evidence while integration waits
 
-Your role page makes green CI on the merged result check 2 because it is automated, impartial, and doesn't grade its own work. A local run gives up all three — same machine, same environment, run by an interested party — so what follows is a declared, evidenced, temporary degradation, never a second lane.
+Green ordinary CI and independent Goal/Floor review remain separate merge gates.
+`scripts/ci-evidence` preserves useful local evidence; it grants no waiver and always
+reports `merge_permitted: false`. `review-packet start --ci-fallback` and
+`guard merge --ci-fallback` still refuse. A comment, successful collector or helper
+audit cannot manufacture an Actions-app check or ordinary review admission.
 
-## Shipped-command boundary
+The original DevStandard fallback required the merging main session's exact
+synthetic merge, every CI job, public evidence and independent audit, with a human
+owning any protected-branch exception and immediate restoration. The evidence
+subset is migrated here. That historical degraded integration policy is still
+unapproved: agents never lower protection, bypass required checks, push the default
+branch directly or release under this route. The main session returns the precise
+policy choice to the human before any dependent implementation.
 
-This page preserves the source method's fallback design and evidence requirements. The shipped
-`review-packet` and `guard merge --ci-fallback` routes deliberately refuse as unqualified.
-A `CI-FALLBACK` marker or comment URL alone cannot authorize integration. No agent may lower
-protection, bypass a required check, substitute a partial suite, or ship a release under this
-route. First follow `reference/ci-pipelines.md`'s When hosted CI cannot start section: safe,
-already-authorized temporary self-hosted Actions keep ordinary checks and are a separate route.
-When ordinary hosted or safe self-hosted Actions cannot run, retain all safe equivalent local
-results and the concrete blockage; the guard waits for ordinary CI. Qualifying a future waiver
-requires an exact merged-tree run, full job coverage, fresh review of that evidence, local receipt
-association, and a guarded integration route; none is inferred from this prose.
+First read `reference/ci-pipelines.md`'s **When hosted CI cannot start** section.
+Safe, explicitly authorized repo-scoped self-hosted Actions produce ordinary checks
+and are a separate route. They still need a functioning Actions service and reviewed
+runner routing; `runs-on: ubuntu-latest` does not select a self-hosted runner.
 
-## Preserved source design: waiting instead of a degraded merge waiver
+## The cause and the waiting decision
 
-An outage is measured in hours; a minutes quota resets on a known date. **Waiting keeps check 2 intact and costs a delay — the fallback costs a full local run, a published evidence block, a reviewer's audit, and a return sweep, and still ends with an unverified merge.** Almost no merge is worth that trade. Everything below applies only once you can say *why* waiting was ruled out.
+Waiting preserves ordinary CI. Even a real outage rarely justifies the cost of a
+full equivalent run and audit. Before collecting, explain concretely why waiting
+was ruled out. Two source causes may qualify: a proven provider incident, or a
+private account's exhausted hosted allowance **with a proven block on further
+usage**. The cause must be external to this repository and prevent every otherwise
+eligible push in the affected provider/account scope. An absent run is no proof.
 
-Take that seriously even when the outage is real and the trigger below genuinely fires: **declining this page and waiting is still usually the right call.** Recognising the trigger and refusing it is a correct outcome, not a failure to act.
+Retain whole current provider/billing documents and authenticated, readable
+run/workflow/event/repository/organization diagnostics. The original capture must
+name its source, argv or tool input, UTC time, exit, complete stdout and stderr.
+A usage total reaching the free allowance does not prove blocking: paid overage
+may remain available. The old product-specific billing APIs are retired; use
+current billing documents and an explicit account block, reviewed independently.
+See [GitHub Actions billing](https://docs.github.com/en/billing/concepts/product-billing/github-actions)
+and [the API retirement](https://github.blog/changelog/2025-09-26-product-specific-billing-apis-are-closing-down/).
+Unreadable or ambiguous billing state refuses; do not infer a waiver from it.
 
-**The trigger is the platform, not your patience and not your repo** — two halves, both required: the cause is **outside this repo**, *and* it stops the platform producing a run **for any push**. Not both → this page does not apply. In practice that is exactly two situations, and both can be proved: the Actions minutes quota is exhausted (private repos only), or GitHub is down (check the public status page, or the self-hosted instance's own admin or incident channel; the two-part test is unchanged). Prove it, and tell the human — removing the cause is theirs. ("Would pushing again produce a run?" settles nothing: pushing to a broken workflow also produces nothing. Ask the two halves.)
-
-Every row below fails one half or the other. That is the whole reason each is excluded, so the table gives the routing rather than repeating it.
-
-| Not a trigger | Where it goes instead |
+| Observation | Required action |
 |---|---|
-| slow, queued, or flaky CI; the session nearly over | wait — a queued run *is* a run (`queued` precedes `in_progress`) |
-| self-hosted runner offline — platform up, run queued | tell the human to check or restart the runner (`reference/ci-pipelines.md` — with ephemeral runners an empty runner list is the idle state; a job `queued` past five minutes with the list still empty is the loop being down) |
-| red CI — a run that started and failed is CI working | branch → fix the branch; main → `reference/orchestrator.md`'s red-main recovery; the pipeline aged → `reference/ci-pipelines.md` |
-| no run because of this repo: invalid workflow YAML, the workflow disabled in the Actions tab, `on:` filters no longer matching | fix it in a PR — CI is back in minutes |
-| Actions switched off at the org level — outside this repo, but not a platform event | the human's or an org admin's to lift; the merge waits |
-| the repo has no CI at all — no check 2 to degrade | settle CI as a task and use the template from `reference/ci-pipelines.md` |
-| you cannot tell: no `gh` auth, no network, an unreadable Actions tab | establish the state, or wait — an unproven outage is not an outage |
+| Slow, queued, flaky, or the session is ending | Wait; a queued run exists. |
+| Red run | Fix the branch or use ordinary red-main recovery. |
+| Offline self-hosted runner | Repair the runner; the Actions service still queued a job. |
+| Disabled, invalid, absent or event-filtered workflow | Repair CI through an ordinary PR. |
+| Organization disabled Actions | Human/admin resolves it; integration waits. |
+| Unauthenticated, unreadable or network-uncertain state | Establish the state or wait. |
+| Unsupported billing response or ambiguous startup record | Retain the blockage; do not certify the cause. |
 
-A job that never starts for billing reasons is not a red run — that is the quota case above. **Reaching for the local suite in any row is the self-grading bypass this rule exists to prevent.**
+Assertions, simulated incident IDs and test fixtures are not operational proof.
+`--rehearsal` labels the whole manifest simulated and records actual working Actions
+observations separately. It never creates an operationally qualifying receipt.
+The collector's cause output is an **unauthenticated candidate** requiring the
+fresh independent cause audit below, even when its structural checks pass.
 
-**Who runs it, and on what tree.** The merging main session — never the worker, never a helper — and never the branch as pushed. Fetch the current base and PR head, materialise their exact merge as a synthetic two-parent commit, and check that commit out in a disposable worktree:
+## The focused collector
 
-    set -e
-    REPO_ROOT=$(git rev-parse --show-toplevel)
-    git fetch origin main
-    BASE_SHA=$(git rev-parse FETCH_HEAD)
-    git fetch origin "pull/<PR>/head"
-    HEAD_SHA=$(git rev-parse FETCH_HEAD)
-    MERGE_TREE=$(git merge-tree --write-tree "$BASE_SHA" "$HEAD_SHA")
-    MERGE_COMMIT=$(printf 'CI fallback: merge %s into %s\n' "$HEAD_SHA" "$BASE_SHA" |
-      git -c user.name=CI-Fallback -c user.email=ci-fallback@invalid \
-        commit-tree "$MERGE_TREE" -p "$BASE_SHA" -p "$HEAD_SHA")
-    FALLBACK_CHECKOUT=
-    cleanup() {
-      cd "$REPO_ROOT" || true
-      git worktree remove --force "$FALLBACK_CHECKOUT" 2>/dev/null || true
-      rm -rf "$FALLBACK_ROOT"
-    }
-    FALLBACK_ROOT=$(mktemp -d)
-    trap cleanup EXIT
-    trap 'exit 129' HUP
-    trap 'exit 130' INT
-    trap 'exit 143' TERM
-    FALLBACK_CHECKOUT="$FALLBACK_ROOT/checkout"
-    git worktree add --detach "$FALLBACK_CHECKOUT" "$MERGE_COMMIT"
-    cd "$FALLBACK_CHECKOUT"
+Only the integrating main session operates this evidence path. A worker's ordinary
+done-checks are never fallback check 2. Read `scripts/ci-evidence --help`; require
+explicit project, repository, PR, proof, reviewed map, whole audit context and a
+new durable output destination. Choose the execution environment before running:
+the supported native job installs Linux packages and Codex globally. Use an
+explicitly authorized disposable Ubuntu environment, never install to a production
+host merely because this guide names the command.
 
-Run every job CI would have run from that worktree, unfiltered and to completion (not just the tests the change touches). The traps return to the stable repository root and remove both the registered worktree and its temporary root on success, failure, HUP, INT, or TERM. Record the synthetic commit and tree identities with the command shown in the evidence template; base/head labels plus a clean checkout are not proof of the merge tree. Any rebase or head move invalidates the materialisation and the run. This keeps two of CI's three properties: the merged state against current main, and a run nobody can quietly skip. Impartiality is the one genuinely lost, which is why the run is published and audited instead of self-certified — including when the merging session wrote the diff itself, the ordinary case for a main-session short-branch fix. A worker's own done-check evidence is never check 2, whatever it ran.
+```sh
+scripts/ci-evidence --project <clean-source-clone> --repo <owner/repository> \
+  --pr <number> --proof <whole-cause-proof.json> --context <audit-input-directory> \
+  --map <reviewed-ci-evidence-map.json> --output <new-durable-evidence-directory>
+# Add --rehearsal only for visibly simulated qualification exercises.
+scripts/ci-evidence --verify <evidence-directory> \
+  --expected-sha256 <externally-retained-bundle-receipt-sha256>
+```
 
-**A partial run is never check 2.** If a job can't run locally — it needs secrets, a live service, another OS, a GPU — you have no fallback for that job. Wait for the platform, make the job runnable (a seeded fixture, a container, a documented local mode, in its own PR), or take it to the human. Never merge on the subset that happened to be runnable and call it evidence.
+The proof JSON contains `cause` (`provider-outage` or `minutes-exhausted`), `scope`,
+`why_waiting_ruled_out`, UTC `observed_at`, `external_to_repo: true`,
+`prevents_all_eligible_pushes: true`, `simulated`, whole `captures`, and
+`diagnostics`: authenticated/readable/workflow_enabled/event_eligible/org_enabled
+booleans and `runs`. Every capture contains original `argv`, `exit_code`, UTC
+`captured_at`, whole `stdout` and `stderr`. A provider candidate needs an unresolved
+Actions outage response from GitHub Status. A minutes candidate additionally needs
+`private_repo: true` and `blocking_capture_index` pointing at the whole current
+GitHub billing-page block document. This is a carrier check, not a billing judge;
+the auditor must establish actual blocking, affected account and provenance.
+The supplied diagnostic assertions require their original supporting records in
+the audit context; assertions alone cannot pass the audit.
 
-**Unblocking a protected main is the human's call, not yours.** With the required check never reporting, the PR sits at "Expected — waiting for status to be reported" and the merge button is dead — for admins too, because "Do not allow bypassing" is on. Do NOT drop the required check, untick the bypass setting, edit the ruleset, or push to main directly. Name the PR to the human and ask; the human resolves the cause (top up minutes, make the repo public) or decides a separately authorized future route. The source method allowed a human waiver followed by immediate protection restoration; that historical design is not an implemented waiver in this adaptation, and agents never lower the gate. An agent that switches the gate off to get past it has done more damage than the unverified merge. A private-plan limitation does not waive the evidence or audit. The shipped protection guard refuses unreadable protection or active rules rather than inferring unavailability from an error; `reference/orchestrator.md`'s Branch protection section owns that boundary.
+The context directory contains complete `issue.json` (governing issue and ordered
+comments), `accepted-spec.md` and `source-checklist.md` (the source's four audit
+questions below). Symlinks or missing/empty carriers refuse. The collector retains
+these bytes, the whole base-to-head binary/name-status diffs and original remote
+PR/repository/default-ref responses. Supply fresh records for the actual target,
+not a different repository's bundle.
 
-**Evidence first, then check 1.** As with ordinary green-PR admission, evidence precedes review. Under the fallback, run the suite and post the evidence *before* check 1, and hand that comment to the reviewer with the diff — an impartial clean reader auditing the run is the closest available substitute for an impartial runner. If check 1 sends the diff back, or the rebase moves, redo the run: the last evidence on the PR must come from the tree that actually merged.
+The shipped map is a reviewed **byte-pinned concrete map**, not a YAML interpreter.
+It covers this repository's pinned PR-event workflow: `suite`, `native`, aggregate
+`test`, and `merged-result`; it records release-workflow event exclusion. Any edited
+map, workflow, matrix, action, condition, service or secret requirement refuses
+until a reviewed product change supplies a supported map. There is no job filter.
+Linux apt/AppArmor/bwrap setup and Codex installation execute inside captured steps;
+a Mac probe or silently preinstalled dependencies cannot replace them.
 
-**Post this with it.** The reviewer is a clean context; no automatic file or link loading is assumed, so the complete checklist travels with the evidence — in the same PR comment as the `CI-FALLBACK` block below. The design requires a fresh review packet to carry the whole comment into the CI-fallback placeholder of `reference/code-review-prompt.md`, which otherwise reads `NONE`. The shipped `start --ci-fallback` refuses; do not commission or merge through this route until its receipt and evidence path is qualified:
+The collector freshly cross-checks remote default base/head through API and explicit
+fetches, computes `merge-tree --write-tree`, and creates a synthetic commit with
+exactly ordered `[base, head]` parents. It records the checked-out commit, parents
+and tree, independently recomputes the merge tree and checks remote movement again.
+A create-only direct archival ref and complete Git bundle retain the object.
+No branch/default ref is advanced. A changed base/head/map/proof requires a new run.
 
-    Audit the CI-fallback evidence above against all four items:
-    - Is the stated cause outside this repo (minutes exhausted, platform
-      outage) and proven — not "slow", "queued", "flaky", "red", or anything
-      this repo or its org could fix?
-    - Do the merging session's timestamped fetch/ref captures identify the
-      current remote main tip and PR head, matching the published base/head
-      and this packet's pins? Does its successful merge-tree capture use
-      those exact SHAs and produce the published tree? Does the captured
-      checkout identity show a commit whose first parent is that base,
-      second parent is that head, and tree is that captured merge tree?
-      Compare the supplied captures; do not execute commands. Missing or
-      inconsistent captures cannot establish that the run tested their merge.
-    - Is the run fresh (a UTC timestamp) and tracked state clean before it
-      (`git diff --quiet` and `git diff --cached --quiet`)? Are permitted
-      untracked inputs enumerated—only paths already on the pre-run baseline
-      and named by the worktree copy-list, never an invented fixture? Do
-      before/after `git status --porcelain -uall` snapshots match? Is every
-      ignored input the run depends on named?
-    - Is every CI job covered, unfiltered, with commands and exit codes shown?
+Each command retains intent **before** execution and complete binary stdout/stderr,
+exit, UTC start/end, cwd and explicit environment. Mapped jobs receive a recorded
+credential-free environment, with their own home and temporary directory. Tracked
+hashes/modes, clean diffs/status and ignored inputs are accounted for before/after
+steps. This concrete map admits no symlink, untracked or ignored source inputs; only named
+Python bytecode outputs may appear. Unsupported required inputs refuse instead of
+being silently omitted. Tool versions, executable identities and Linux dependency
+state are captured at step boundaries. Declared package/Codex setup changes are
+expected; any other source or toolchain drift fails. Generated execution caches
+remain owned disposable files; original native artifacts and evidence are retained.
 
-**What goes on the PR**, in that same comment before the merge, so GitHub alone reconstructs why this change merged without a CI run. Keep the `CI-FALLBACK` marker literal — the return sweep searches for it:
+A failed/incapable job remains failed/incapable; later normal steps are recorded
+not-run and `always()` artifact obligations still run. Aggregate/dependent jobs
+remain accounted for. No missing job becomes success. The upload action is replaced
+by whole locally retained native artifacts, with that transport difference explicit;
+no actual Actions upload or CI check is claimed by the collector.
 
-    CI-FALLBACK (check 2 degraded)
-    Reason: minutes quota exhausted | provider outage
-            + proof (billing/usage page or `gh api` output; status-page incident id)
-    Merged state: base <SHA> = current remote main tip; head <SHA> = this PR's head
-    Materialised merge: commit <SHA>; tree <TREE-ID>
-    Run at: <UTC timestamp>
-    Runner: main session — <OS, toolchain versions>
-    Captured at: <UTC timestamp; fresh for this review's base/head>
-    $ git fetch origin main              -> exit 0
-    $ git rev-parse FETCH_HEAD            -> <base SHA>
-    $ git fetch origin pull/<PR>/head     -> exit 0
-    $ git rev-parse FETCH_HEAD            -> <head SHA>
-    $ git merge-tree --write-tree <base SHA> <head SHA> -> exit 0
-      <merge tree>
-    $ git rev-parse HEAD HEAD^1 HEAD^2 'HEAD^{tree}'
-      <synthetic merge commit>
-      <base>
-      <head>
-      <tree>
-    $ git diff --quiet                    -> exit 0
-    $ git diff --cached --quiet           -> exit 0
-    Permitted untracked inputs: <baseline + copy-list paths, or NONE>
-    Ignored inputs used by the run: <paths, or NONE>
-    $ git status --porcelain -uall (before) -> <snapshot>
-    $ <command>          -> exit <code>
-    <output tail>
-    (one block per CI job; every job covered, none skipped or filtered)
-    $ git status --porcelain -uall (after)  -> <identical snapshot>
+## Publication and fresh independent audit
 
-**No releases under the fallback.** The release pipeline is a workflow too: pushing `vX.Y.Z` while runs are impossible publishes nothing and leaves a tag that looks shipped. Hold the release until the return, then tag.
+Retain `manifest.json`, complete original captures/artifacts, `merge.bundle`,
+`evidence.md`, ordered `publication-part-*.md`, `publication-parts.json`, and
+`bundle-receipt.json`. Keep the receipt SHA-256 outside the bundle before transporting
+it; `--verify` detects changed carriers, parts, captures or interrupted commands.
+Local digest files do not isolate a malicious actor holding the same credentials.
 
-**In the source fallback design, main is unverified, not red.** Dispatch continues — the stop-the-line rule answers a failing run, and there is no run. What ends the uncertainty is the sweep, not a pause.
+The main session publishes all ordered parts with the literal marker
+`CI-FALLBACK EVIDENCE — integration blocked`, the manifest/part digests and the whole
+checklist. Do not substitute output tails or inaccessible local-only evidence.
+The collector performs no POST. Its `publication_intent`/`publication_recover`
+utilities (load the script with Python `runpy`) reuse the existing durable-save and
+digest primitives without formal acceptance records. Before each POST retain/fsync
+one distinct part's exact repository/PR/author/body/token intent. Preserve the full
+POST response and refetched comment list. Recover only one exact body/author/token,
+positive comment ID and matching repository/PR URL; retain timestamps and receipt.
+Missing, duplicate or edited outcomes refuse. An unknown POST is never blindly
+retried. Check current remote base/head before and after publication and audit;
+movement invalidates applicability, not the historical evidence.
 
-**The source design's return path.** The fallback ends the moment a push can produce a run again — no grace period, no standing "fallback mode"; the next merge is back on check 2. Re-verification is free: `main`'s first CI run after the return covers every commit merged under the fallback at once. Green closes them — nothing is re-reviewed. Red makes them the prime suspects: search closed PRs for `CI-FALLBACK` to get the list, and the red-main rule applies as written (revert first; fix forward only when the fix is obvious and takes minutes). Don't let that first run wait for the next task — when minutes reset or the outage clears, trigger a run on `main` yourself, and confirm protection is back on.
+Commission a fresh independent `method_review_helper`, explicit Sol/high, with a
+whole digest-bound carrier: issue/spec/diff, all originals, published parts and exact
+receipts, source checklist and target/base/head/tree identities. The helper hashes,
+fully reads bounded numbered chunks and hashes again. Retain its actual handle,
+whole raw return, limitations and bundle/publication hashes; publish the whole return
+unchanged through the same pending-intent discipline. An audit finding is repaired
+and rerun, never hidden. This helper audit grants neither formal Goal/Floor acceptance
+nor ordinary green-head review admission.
 
-**If the fallback fires more than occasionally, the pipeline is the bug, not the gate** — see the minutes paragraph in `reference/ci-pipelines.md`.
+Carry the original questions in full:
+
+> Audit the CI-fallback evidence above against all four items:
+> - Is the stated cause outside this repo (minutes exhausted, platform
+>   outage) and proven — not "slow", "queued", "flaky", "red", or anything
+>   this repo or its org could fix?
+> - Do the merging session's timestamped fetch/ref captures identify the
+>   current remote main tip and PR head, matching the published base/head
+>   and this packet's pins? Does its successful merge-tree capture use
+>   those exact SHAs and produce the published tree? Does the captured
+>   checkout identity show a commit whose first parent is that base,
+>   second parent is that head, and tree is that captured merge tree?
+>   Compare the supplied captures; do not execute commands. Missing or
+>   inconsistent captures cannot establish that the run tested their merge.
+> - Is the run fresh (a UTC timestamp) and tracked state clean before it
+>   (`git diff --quiet` and `git diff --cached --quiet`)? Are permitted
+>   untracked inputs enumerated—only paths already on the pre-run baseline
+>   and named by the worktree copy-list, never an invented fixture? Do
+>   before/after `git status --porcelain -uall` snapshots match? Is every
+>   ignored input the run depends on named?
+> - Is every CI job covered, unfiltered, with commands and exit codes shown?
+
+## Evidence-only return
+
+As soon as ordinary CI can start, re-read the cause, end outage eligibility and mark
+this evidence historical on the existing issue/PR. Resume ordinary CI and formal
+review for the PR's exact **current** base/head. There is no standing outage mode.
+Main green does not certify an unmerged PR, and red main cannot implicate that PR.
+
+The source's degraded-merge return sweep is separately conditional on future human
+policy: actual integrated commit/tree and exact merged-PR set, human authority,
+before/after protection, and first ordinary post-return CI for exact current main
+containing those integrations. Green verifies that set; red makes the actual degraded
+merges suspects under normal red-main recovery. This implementation creates no
+fictional merged set or degraded integration route.
+
+## Release hold inspection
+
+**The integrating session consumes this obligation before creating/pushing any tag
+or invoking a release action.** Inspect existing outage issue/PR records, fresh
+provider/account cause, exact current main CI and approved protection baseline.
+Retain whole captures and a `release withheld` or `hold cleared` decision on the
+existing issue. The guard, role hook and release workflow have no outage-aware
+machine gate; this is a mandatory session obligation.
+
+A hold begins with a qualifying degraded interval. Clear it only when the cause has
+returned, the first ordinary post-return main CI is complete and green for exact
+current main, and protection matches its approved baseline. A newer main requires
+fresh verification. Under any future human-waiver policy, the actual integrated-set
+sweep must also be complete. Pending/red/stale/unreadable/incomplete evidence,
+uncertain protection/policy, or an unsupported trigger means **withhold**. This
+release inspection grants no acceptance to an unmerged PR.
+
+Current CI has no `workflow_dispatch`. A historical rerun is sufficient only when
+workflow and head exactly match current main; otherwise report the blocked trigger
+or add a dispatch interface through a separately reviewed ordinary PR. Never invent
+an API trigger or make an empty direct default-branch push. Rehearse the actual
+inspection and retained withhold/clear decision against matching current captures,
+with unchanged local/remote tag and release inventories; do not publish a product
+release to test the hold.
+
+## Interrupted runs and safe disposal
+
+An interrupted operation keeps its durable intent, partial originals, archival ref
+and registered checkout. It cannot verify as complete or resume as a successful run.
+Seal only once; retain historical failed bundles and start a new output directory.
+An input change or publication/audit movement never erases prior receipts.
+
+Before cleanup, independently verify durable export and identify the exact owned
+checkout/ref. Use ordinary nonforced worktree removal only after source/input/export
+accounting is complete. Dirty, occupied, ambiguous and sole-copy paths remain for
+caller disposition. No automatic trap forces removal or recursively erases evidence.
+The source's forced cleanup example is deliberately replaced by this retention rule.
