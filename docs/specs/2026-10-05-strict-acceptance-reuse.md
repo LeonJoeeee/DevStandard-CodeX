@@ -1,6 +1,6 @@
 # Reuse an accepted review only through an exact, published proof
 
-Status: draft
+Status: accepted
 
 ## Problem & context
 
