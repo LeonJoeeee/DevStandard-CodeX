@@ -1,6 +1,6 @@
 # Actual Codex lifecycle and safe same-lane recovery
 
-Status: draft
+Status: accepted
 
 ## Problem & context
 
