@@ -97,7 +97,9 @@ def _status(value):
         normalized.append({'context': context, 'app_id': -1 if app is None else app})
     require(set(contexts) == {item['context'] for item in normalized},
             'GitHub required_status_checks contexts and checks disagree')
-    return {'strict': strict, 'contexts': [], 'checks': normalized}
+    # GET returns both arrays; PUT must use only the checks selector so app bindings
+    # survive without the live API's ambiguous contexts/checks oneOf rejection.
+    return {'strict': strict, 'checks': normalized}
 
 
 def _reviews(value):
@@ -214,7 +216,7 @@ def protection_apply(repo, branch, checks, *, runner=None, cwd=None):
                    'required_pull_request_reviews': None, 'restrictions': None,
                    'allow_force_pushes': False, 'allow_deletions': False}
     _queue_off(base, encoded, runner=runner, cwd=cwd)
-    status = payload['required_status_checks'] or {'strict': True, 'contexts': [], 'checks': []}
+    status = payload['required_status_checks'] or {'strict': True, 'checks': []}
     status['strict'] = True
     known = {item['context'] for item in status['checks']}
     for check in checks:

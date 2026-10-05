@@ -1,5 +1,5 @@
 {
   "name": "codex-method",
-  "version": "0.2.4",
+  "version": "0.2.5",
   "description": "A development method for a Codex main session: issue, isolated lane, PR, independent review, guarded merge."
 }

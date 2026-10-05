@@ -507,7 +507,11 @@ founding and whenever protection may have changed, since `guard merge` relies on
 rather than re-reading it. Human/main-session provisioning adds `--apply` and at least one repeated
 `--check NAME`; no names refuses rather than clearing required contexts. Change protection only
 deliberately, preserving restrictions outside the authorized change; `--help` carries the payload's
-reach.
+reach. The PUT uses `required_status_checks: {strict: true, checks: [...]}` without the
+legacy `contexts` selector; sending both is rejected by the live API. Existing `(context, app_id)`
+bindings survive, with GET's any-app `null` sent as `-1`; new names omit `app_id` so GitHub selects
+the recent producer. [GitHub's REST documentation](https://docs.github.com/en/rest/branches/branch-protection#update-branch-protection)
+defines that producer selection.
 
 ### Cleanup and release
 
