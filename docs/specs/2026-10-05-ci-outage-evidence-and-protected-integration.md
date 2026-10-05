@@ -2,6 +2,9 @@
 
 Status: accepted
 
+Publication transport amendment: draft; the accepted all-comment route remains
+operative until a fresh independent challenge and explicit root acceptance.
+
 ## Problem & context
 
 [Issue 17](https://github.com/LeonJoeeee/codex-method/issues/17) migrates fallback
@@ -211,3 +214,80 @@ No version fields, shared code, native OS probes or repository provisioning chan
 in this phase. Task evidence stays in the root-authorized durable
 `outputs/migration-completion/fallback`; disposable execution stays in
 `work/migration-completion/fallback`, with no sole durable copy there.
+
+## Draft amendment — complete public archive carrier
+
+The successful simulated Linux collection at source head
+`c76996fa01b819d2e2c97ef21f6dd36fa99978b1` retained a runtime-generated public
+OpenAI plugin catalog alongside original probe outputs. Embedding every original
+byte in Base64 produced 2,452 comment parts. The root selected an intact archive
+transport proposal after reading the whole volume research. This amendment is
+**draft**, changes no integration policy and grants no upload/publication authority.
+Existing accepted wording above remains operative until challenge/root acceptance.
+
+Add one alternative to complete ordered comments: a compact exact-body public index
+pointing to the complete unchanged archive, with the original four audit questions,
+simulation/target/collector/map/context identities and externally retained pins.
+Bind original archive length/SHA-256, bundle-receipt pin, manifest/carrier/parts-index
+pins and each public object's ordered URL/length/digest. Split raw pieces are at most
+20,000,000 bytes and have explicit contiguous offsets, lengths and digests. Each
+valid ZIP wrapper binds its own length/digest and exactly one named regular member;
+reject unsafe paths, symlinks, additional members or extraction execution. Inspect
+current interface limits and use an explicitly admitted public destination, ordinary
+file tools and existing pending-comment utilities; no collector/map/native/guard
+change, object service or new lifecycle machinery is required.
+
+The selected original is artifact `11335075432` from run `37286465303`,
+340,852,094 bytes, archive SHA-256
+`a67af55d0e791f47bf7cb64f2d05d5bf348a0652b9d5e5cf01f8d6cc05d78d76`,
+bundle-receipt SHA-256
+`9fbfac949b367fbfa0910fe88a58bd5f82cb6bf291757312cee5feffc8455695`.
+Retain every original, generated carrier/part, receipt, failure and outer execution
+record without resealing or rerunning jobs for transport. It remains historical
+simulated evidence at that exact source head/base; publication of a later amendment
+head requires its own ordinary exact-head CI and formal review. Transport/recovery
+qualification against the old pins does not certify a newer PR head.
+
+Before publishing the index, independently download every complete public object,
+verify wrapper/member safety, exact lengths/digests/ordering, reconstruct the original
+ZIP byte-for-byte, and run the unchanged verifier with the outside receipt pin.
+Retain complete original upload/fetch/verification records. A UI upload control,
+index-only claim, expiring authenticated Actions URL or inaccessible local sole copy
+cannot establish public completeness. Name an accountable keeper and explicit
+preservation disposition through review, interruption/recovery, audit and later
+inspection; keep a complete durable export and outside receipt independently.
+Recheck public availability before audit and before relying on it. Missing/changed/
+expired/unreadable objects block completion. Recover identical originals only through
+an admitted route and a new exact index/receipt, preserving old records.
+
+Apply exact durable pending body/token/author/target intent before the index POST;
+POST once and refetch. Recover only one exact envelope/body/author/comment ID/URL/
+timestamp association, including interruption before receipt save; never retry an
+unknown POST. Retain public-object receipts and actual byte verification separately
+from the comment receipt. Recheck base/head around publication/audit; movement
+invalidates current applicability, not the preserved historical evidence.
+
+Keep a fresh independent Sol/high helper audit against all four unchanged questions.
+The whole carrier includes verified originals and all index/object/comment receipts.
+Keep original collection-context bytes unchanged; separately pin the current transport
+amendment, root acceptance and ordered issue record for the audit.
+The helper explicitly fully reads governing context, original command outputs and
+native provider/hook/session records necessary to the questions. All artifact bytes
+are accounted for with inventories/digests and proportionate binary/public-source
+provenance verification; semantic reading of every unrelated vendor image/source
+asset is not implied. Record exact read coverage, repeated/public-source assets,
+checks and limitations. Unknown origins or required unreadable records are findings;
+the index alone never constitutes full reading or audit. Prepublication confidentiality
+inspection includes logs/requests/configuration, SQLite/WAL, Git objects and binary
+origins; unresolved confidential content blocks upload. Required originals are never
+silently redacted or removed. Publish the complete raw helper return unchanged through
+pending-intent recovery. Formal Goal/Floor review, ordinary CI, human policy and all
+protection/release refusal boundaries remain separate and unchanged.
+
+Qualification must actually prove public upload and complete independent retrieval,
+ordered reconstruction and unchanged verification, plus index POST interrupted before
+receipt save and uniquely recovered without a duplicate POST. Exercise refusal for
+missing/changed/duplicate/wrong-author outcomes in dedicated safe fixtures and bind
+any live observations to their actual target. Preserve objects and receipts through
+recovery and recheck availability/identity around fresh audit. No transport claim is
+complete before these observations; root owns the selected destination and execution.

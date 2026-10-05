@@ -161,6 +161,78 @@ Missing, duplicate or edited outcomes refuse. An unknown POST is never blindly
 retried. Check current remote base/head before and after publication and audit;
 movement invalidates applicability, not the historical evidence.
 
+### Draft amendment: intact public archive transport
+
+**DRAFT — pending fresh independent challenge and root acceptance.** The accepted
+all-comment route above remains operative. This proposal adds an alternative public
+carrier; it does not change collection, verification, the four audit questions or
+integration refusal. No upload or successful publication is implied by this draft.
+
+After acceptance, the main session may either publish every existing ordered comment
+or publish a small digest-bound index to the **complete original archive** through
+an explicitly admitted public attachment interface. Preserve all original captures,
+native artifacts, carrier/parts, receipts, failures and outer execution records.
+Use ordinary archive/split/download/hash tools; add no product publisher service.
+An index or expiring Actions artifact URL alone is incomplete evidence.
+
+The index carries the literal evidence marker and whole audit checklist, simulation
+status, repository/PR/base/head/synthetic commit/tree, collector/map/context digests,
+original archive SHA-256 and length, externally retained bundle-receipt SHA-256,
+manifest/carrier/parts-index digests, and each ordered public object's URL, exact
+length/digest and reconstruction instructions. For split transport, record contiguous
+byte offsets/order and raw-piece lengths/digests separately from their valid ZIP
+wrappers' lengths/digests; permit exactly the named regular member, with no traversal,
+symlink, extra member or execution during extraction. Raw pieces are at most 20,000,000 bytes.
+Wrapper sizes must satisfy the current upload limit; never rename raw bytes as ZIPs.
+
+Before POST, independently fetch **every complete public object**, inspect its wrapper,
+verify lengths/digests/order, reconstruct the exact original ZIP, verify its outside
+archive pin, and run the unchanged collector verifier against the reconstructed
+bundle with the outside receipt pin. Retain whole upload/download responses, object
+URLs, original byte manifests and verification outputs. Public attachment readability
+and a UI upload control do not establish retention: name the accountable keeper and
+explicit preservation disposition through review, interruption/recovery, audit and
+later inspection. Preserve a durable complete export and receipt outside the hosting
+service. Recheck public availability before audit and before relying on its result;
+expired, deleted, altered, unreadable or unaccounted objects block publication/audit
+completion. Recover or republish the same original bytes through an admitted route
+with a new exact index/receipt; preserve prior URLs, failed captures and receipts.
+No missing public carrier becomes complete merely because a local copy survives.
+
+Apply the existing pending-intent discipline to the complete index body: save/fsync
+exact repository/PR/author/body/token before POST, POST once, and refetch/recover only
+one exact author/body/envelope/ID/URL/timestamp match. An interruption before receipt
+save requires observation and exact recovery, never a blind repeat POST. Archive-object
+receipts and complete public-byte verification supplement that comment receipt; they
+cannot be inferred from the index text. Recheck actual target base/head around
+publication and audit; movement invalidates applicability while retaining history.
+
+Give the fresh independent helper the complete verified archive, index/object/comment
+receipts and whole governing context. Keep the original collection context unchanged;
+separately pin the current transport amendment, acceptance ruling and ordered issue
+record. The helper fully reads the governing records,
+original command outputs and native probe/provider/hook/session records needed for
+all four questions, not just the index. Account for every artifact byte via the exact
+inventory/digests; verify binary/source/catalog origins proportionally instead of
+requiring semantic reading of every unrelated image or vendor asset. Explicitly
+record inspected records, repeated/public-source assets, byte/provenance checks and
+limits; unknown origins or required unreadable evidence are findings, never silently
+omitted. Prepublication inspection covers logs, requests, configuration, SQLite/WAL,
+Git objects and binary origins. Unresolved confidentiality blocks upload; do not redact
+or discard required originals to manufacture public completeness. Publish the helper's
+whole raw audit unchanged using the same pending-intent discipline. This is not formal
+Goal/Floor acceptance, cause qualification or a merge waiver.
+
+The selected transport rehearsal preserves the exact successful **simulated, historical**
+archive from run `37286465303` / artifact `11335075432`: 340,852,094 bytes, SHA-256
+`a67af55d0e791f47bf7cb64f2d05d5bf348a0652b9d5e5cf01f8d6cc05d78d76`, receipt
+`9fbfac949b367fbfa0910fe88a58bd5f82cb6bf291757312cee5feffc8455695`.
+Its source head is `c76996fa01b819d2e2c97ef21f6dd36fa99978b1` and base is
+`1a9e1d386313cf784559ee0dda54723e4b88f129`. A later documentation head needs its
+own ordinary exact-head CI and formal review; this archive proves neither. Qualify
+public transport/recovery against its recorded historical identity without rerunning
+collector jobs to reduce volume or claiming applicability to a moved PR head.
+
 Commission a fresh independent `method_review_helper`, explicit Sol/high, with a
 whole digest-bound carrier: issue/spec/diff, all originals, published parts and exact
 receipts, source checklist and target/base/head/tree identities. The helper hashes,
