@@ -356,14 +356,43 @@ def diagnostics(project, repo, pr, current, recorder, rehearsal):
     workflows = json.loads(recorder.read(['gh', 'api', '--paginate', '--slurp',
          f'repos/{repo}/actions/workflows?per_page=100'], project))
     entries = [w for page in workflows for w in page['workflows']]
-    require({w['path'] for w in entries} == {'.github/workflows/ci.yml', '.github/workflows/release.yml'} and
-            all(w['state'] == 'active' for w in entries), 'missing, disabled or unsupported remote workflow')
+    ci_path, release_path = '.github/workflows/ci.yml', '.github/workflows/release.yml'
+    managed_path = 'dynamic/dependabot/dependabot-updates'
+    paths = [w.get('path') for w in entries]
+    require(all(isinstance(p, str) for p in paths) and len(set(paths)) == len(paths) and
+            set(paths) <= {ci_path, release_path, managed_path}, 'unsupported or duplicate remote workflow')
+    ci = [w for w in entries if w['path'] == ci_path]
+    require(len(ci) == 1 and ci[0].get('state') == 'active', 'missing or disabled eligible PR CI workflow')
+    # The byte-pinned map only supports pull_request. Its release file is tag-only;
+    # remote registration/disablement is retained, never used as PR startup proof.
+    excluded = [{'workflow': next((w for w in entries if w['path'] == release_path), None),
+                 'reason': 'tag-only push v*; ineligible for mapped pull_request event',
+                 'proves_ci_enabled': False}]
+    for workflow in (w for w in entries if w['path'] == managed_path):
+        workflow_id = workflow.get('id')
+        require(type(workflow_id) is int and workflow_id > 0 and
+                workflow.get('url') == f'https://api.github.com/repos/{repo}/actions/workflows/{workflow_id}' and
+                workflow.get('html_url') == f'https://github.com/{repo}/actions/workflows/dependabot/dependabot-updates',
+                'unproven managed workflow provenance')
+        pages = json.loads(recorder.read(['gh', 'api', '--paginate', '--slurp',
+             f'repos/{repo}/actions/workflows/{workflow_id}/runs?per_page=100'], project))
+        updates = [r for page in pages for r in page['workflow_runs']]
+        require(updates and all(r.get('workflow_id') == workflow_id and r.get('path') == managed_path and
+                r.get('event') == 'dynamic' and r.get('repository', {}).get('full_name') == repo and
+                r.get('actor', {}).get('login') == 'dependabot[bot]' and
+                r.get('actor', {}).get('id') == 49699333 and r.get('actor', {}).get('type') == 'Bot'
+                for r in updates), 'managed workflow has missing or unsupported event/provenance evidence')
+        excluded.append({'workflow': workflow, 'actual_runs': updates, 'proves_ci_enabled': False,
+                         'reason': 'GitHub-generated Dependabot update event, not mapped PR CI'})
     runs = json.loads(recorder.read(['gh', 'api', '--paginate', '--slurp',
          f'repos/{repo}/actions/runs?event=pull_request&head_sha={current["head"]}&per_page=100'], project))
     observations = [r for page in runs for r in page['workflow_runs']]
     # A rehearsal observes working Actions; it never describes those runs as an outage.
     require(rehearsal or not observations, 'run exists; queued/started/red or ambiguous startup is not qualified')
-    return {'workflow_count': len(entries), 'actual_runs': observations,
+    require(all(r.get('path') == ci_path and r.get('event') == 'pull_request' for r in observations),
+            'unsupported workflow/event in actual PR runs')
+    return {'workflow_count': len(entries), 'eligible_workflow_paths': [ci_path],
+            'excluded_workflows': excluded, 'actual_runs': observations,
             'rehearsal_observation_only': rehearsal, 'repo': repo, 'pr': pr, **current}
 
 

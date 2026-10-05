@@ -127,7 +127,7 @@ No route imports another host, quotas as routing authority, or a weaker gate.
 | `reference/repo-claude-md.md` | `reference/repo-agents-md.md`: a suggested commands/gotchas/copy-list/language template, authorized-root relay, useful writeback and a brevity target that cannot delete effective project instructions, established record language and canonical translation mirrors. Existing operational sources are respected. |
 | `reference/ci-pipelines.md` | Same target templates: exact merged-result binding, least privilege, action pins/Dependabot, retention, spend diagnosis, ephemeral runner constraints, maintenance, protection and release. Startup refusal diagnosis and safe already-authorized temporary repo-only self-hosted Actions keep normal gates; the degraded local merge waiver remains distinct. Agent model quota balancing is absent. |
 | `reference/red-check.md` | Same target: own regression, deliberately staled assumption and unrelated failure routes; visible reviewed quarantine, no retry-to-green. Gate changes require independent scrutiny while both checks still run. |
-| `reference/ci-cannot-run.md` | Preserved degraded local waiver design: proven external platform trigger, wait default after normal Actions routes, exact two-parent synthetic merge and fresh full-job evidence, review audit, protection/return sweep, no fallback release. CLI fallback is blocked as unqualified; no marker-based waiver or gate lowering. |
+| `reference/ci-cannot-run.md`, `scripts/ci-evidence`, `scripts/ci-evidence-map.json` | Focused evidence-only collector and byte-pinned PR map: exact two-parent merge, complete outputs/input-state, independent audit and durable publication recovery. Event-aware remote diagnostics distinguish mapped active CI from tag-only release registration and proven GitHub-managed Dependabot updates. Release hold inspection is an integrating-session obligation. Protected degraded integration remains unqualified and blocked; no marker-based waiver or gate lowering. |
 | `agents/worker.md`, `agents/reviewer.md` | Generated project native TOML roles use canonical worker/harness/reviewer instructions. Claude frontmatter, tool-denial and hooks fields are not transplanted as effective Codex role fields. |
 | `scripts/dispatch`, `scripts/review-packet`, `scripts/review_packet.py`, `scripts/guard`, `scripts/hard_edges.py` | Corresponding target command responsibilities; native receipt/lane observation and common local review ledger replace external lifecycle. Exact receipt/head/base and Actions-app CI producer checks strengthen the ordinary shipped route. |
 | `hooks/session-start`, `hooks/hooks.json`, `hooks/pre-tool-use` | Corresponding target hooks: whole-role delivery, actual native role identity, structured denial and ordinary-path enforcement. Source host matcher/cap/runtime claims require new qualification. |
@@ -203,8 +203,14 @@ implementation claim.
 The fallback design requires proven provider-wide inability to run, why waiting is ruled out,
 an exact synthetic two-parent merge, all CI jobs on that tree, fresh before/after accounting,
 independent audit, exact receipt association, a protected integration route and prompt return sweep.
-The shipped fallback refuses; a comment substring is not a waiver. No release uses that route.
-These are code/qualification follow-ups, not deleted source requirements. Safe temporary
+The focused `scripts/ci-evidence` collector now retains local evidence and publication
+receipts under its concrete PR-event map, always with `merge_permitted: false`.
+The integrating session must perform the guide's Release hold inspection before any
+tag/release and retain its decision; no guard, hook or release workflow enforces an
+outage-aware machine gate. Actual collector qualification, independent audit and
+protected integration policy remain follow-ups. The shipped fallback still refuses;
+a comment substring is not a waiver, and no release uses that route. These are
+retained source requirements. Safe temporary
 self-hosted GitHub Actions in `reference/ci-pipelines.md` produce ordinary checks with full
 workflow/merge identity and preserve the normal guard; they are separate from that waiver.
 

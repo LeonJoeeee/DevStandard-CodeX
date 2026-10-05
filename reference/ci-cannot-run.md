@@ -98,6 +98,21 @@ It covers this repository's pinned PR-event workflow: `suite`, `native`, aggrega
 `test`, and `merged-result`; it records release-workflow event exclusion. Any edited
 map, workflow, matrix, action, condition, service or secret requirement refuses
 until a reviewed product change supplies a supported map. There is no job filter.
+
+Remote registration is evaluated for that exact PR event: the mapped `ci.yml`
+entry must be unique and active. The byte-pinned `release.yml` runs only for `v*`
+tag pushes; its absent/disabled registration is retained as ineligible evidence,
+not a prerequisite or cause for this PR collector. Never create a tag or change
+registration to manufacture eligibility. Unknown or duplicate registrations refuse.
+
+GitHub also lists its generated `dynamic/dependabot/dependabot-updates` workflow.
+Only that exact path, canonical repository API/UI URLs and retained matching
+`dynamic` runs by the actual Dependabot bot establish the narrow managed-update
+exclusion. Missing/unreadable provenance, a name alone, another dynamic path or an
+actual unsupported PR event refuses. The whole registry and event records remain
+in the bundle. These update jobs can bypass repository/organization Actions
+settings, so their activity never proves CI enabled or an outage qualified;
+see [GitHub's dynamic workflow documentation](https://docs.github.com/en/code-security/concepts/supply-chain-security/dependabot-on-actions).
 Linux apt/AppArmor/bwrap setup and Codex installation execute inside captured steps;
 a Mac probe or silently preinstalled dependencies cannot replace them.
 

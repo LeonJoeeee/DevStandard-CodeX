@@ -556,7 +556,12 @@ Note. An unavoidable bare bump confined to all synchronized declared fields need
 use ordinary check 1 and an exact accepted receipt for every shipped merge.
 
 Release only under the human's words or a standing delegation they granted. A major release needs
-explicit direction. Keep release manifests in lockstep at the next version above current main,
+explicit direction. Before creating/pushing any tag or invoking a release action, consume
+`reference/ci-cannot-run.md`'s Release hold inspection: retain the existing outage
+record, fresh cause, exact current-main CI/protection and a withhold/clear decision.
+Pending, stale, unreadable or uncertain evidence withholds release. This is a mandatory
+integrating-session obligation; the guard, hook and release workflow have no outage-aware
+machine gate. Keep release manifests in lockstep at the next version above current main,
 perform the authorized release after cleanup, and report the result.
 
 ## 4. Interacting with the human
@@ -702,6 +707,10 @@ still takes ordinary review and CI. If no offending commit identifies the cause,
 diagnose infrastructure refusal and run safe already-authorized temporary self-hosted Actions
 when its conditions hold. This retains ordinary checks. `reference/ci-cannot-run.md` preserves
 a separate degraded local merge-waiver design; its shipped CLI route remains unqualified.
+Its focused `scripts/ci-evidence` collector and pinned PR map preserve exact local
+merge/job evidence, whole audit inputs and publication recovery without authorizing
+integration. Use the guide's independent audit and Release hold inspection; actual
+operational qualification and human protection/exception policy remain required.
 No release ships under that waiver. Slow, queued, flaky and red runs are not outage triggers.
 
 **Architecture disagreement or expansion:** record decisions that change accepted scope and return

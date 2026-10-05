@@ -305,6 +305,91 @@ class CollectorTest(unittest.TestCase):
         self.assertTrue(all('toolchain_before' in s and 'toolchain_after' in s for s in report['steps']))
 
 
+    def remote_diagnostics(self, m, entries, *, managed_runs=None, pr_runs=None, rehearsal=True):
+        class Remote:
+            def read(inner, argv, cwd):
+                endpoint = argv[-1]
+                if endpoint.endswith('/actions/workflows?per_page=100'):
+                    return json.dumps([{'workflows': entries}])
+                if '/actions/workflows/3/runs?' in endpoint:
+                    return json.dumps([{'workflow_runs': managed_runs or []}])
+                if '/actions/runs?' in endpoint:
+                    return json.dumps([{'workflow_runs': pr_runs or []}])
+                raise AssertionError('unsupported test request: '+endpoint)
+        return m['diagnostics'](self.home, 'owner/project', 1, {'head':'h'*40}, Remote(), rehearsal)
+
+    def remote_entries(self):
+        return [{'path':'.github/workflows/ci.yml', 'state':'active'},
+                {'path':'.github/workflows/release.yml', 'state':'active'}]
+
+    def managed_entry(self):
+        return {'id':3, 'path':'dynamic/dependabot/dependabot-updates', 'state':'active',
+                'url':'https://api.github.com/repos/owner/project/actions/workflows/3',
+                'html_url':'https://github.com/owner/project/actions/workflows/dependabot/dependabot-updates'}
+
+    def managed_run(self):
+        return {'id':4, 'workflow_id':3, 'event':'dynamic',
+                'path':'dynamic/dependabot/dependabot-updates',
+                'repository':{'full_name':'owner/project'},
+                'actor':{'login':'dependabot[bot]', 'type':'Bot', 'id':49699333}}
+
+    def test_github_managed_update_evidence_is_separate_from_eligible_pr_ci(self):
+        m=self.load(); entries=self.remote_entries()+[self.managed_entry()]
+        d=self.remote_diagnostics(m, entries, managed_runs=[self.managed_run()])
+        self.assertEqual(d['eligible_workflow_paths'], ['.github/workflows/ci.yml'])
+        self.assertEqual(d['excluded_workflows'][-1]['workflow'], self.managed_entry())
+        self.assertEqual(d['excluded_workflows'][-1]['actual_runs'], [self.managed_run()])
+        self.assertFalse(d['excluded_workflows'][-1]['proves_ci_enabled'])
+
+    def test_tag_only_release_registration_is_not_a_pr_ci_prerequisite(self):
+        m=self.load()
+        for release in (None, {'path':'.github/workflows/release.yml','state':'disabled_manually'}):
+            entries=[self.remote_entries()[0]]+([release] if release else [])
+            d=self.remote_diagnostics(m, entries)
+            self.assertEqual(d['excluded_workflows'][0]['workflow'], release)
+            self.assertIn('tag', d['excluded_workflows'][0]['reason'])
+        for entries in ([], self.remote_entries()[1:],
+                        [{'path':'.github/workflows/ci.yml','state':'disabled_manually'}],
+                        [self.remote_entries()[0], self.remote_entries()[0]]):
+            with self.subTest(entries=entries), self.assertRaises(m['Refusal']):
+                self.remote_diagnostics(m, entries)
+
+    def test_dynamic_name_and_unknown_or_ineligible_provenance_never_waive_coverage(self):
+        m=self.load(); good=self.managed_entry(); run=self.managed_run()
+        for entry in ({'path':'.github/workflows/extra.yml','state':'active','name':'Dependabot Updates'},
+                      {**good,'path':'dynamic/unknown'}, {**good,'url':'https://example.invalid/workflow'},
+                      {**good,'html_url':'https://github.com/other/project/actions/workflows/dependabot/dependabot-updates'},
+                      {**good,'id':True}):
+            with self.subTest(entry=entry), self.assertRaises(m['Refusal']):
+                self.remote_diagnostics(m, self.remote_entries()+[entry], managed_runs=[run])
+        for runs in ([], [{**run,'event':'pull_request'}], [{**run,'event':'push'}],
+                     [{**run,'workflow_id':8}], [{**run,'repository':{'full_name':'other/project'}}],
+                     [{**run,'actor':{'login':'dependabot[bot]','type':'User','id':49699333}}]):
+            with self.subTest(runs=runs), self.assertRaises(m['Refusal']):
+                self.remote_diagnostics(m, self.remote_entries()+[good], managed_runs=runs)
+
+    def test_rehearsal_does_not_ignore_an_unsupported_actual_pr_event(self):
+        m=self.load(); entries=self.remote_entries()+[self.managed_entry()]
+        normal={'path':'.github/workflows/ci.yml','event':'pull_request','status':'completed'}
+        d=self.remote_diagnostics(m, entries, managed_runs=[self.managed_run()], pr_runs=[normal])
+        self.assertEqual(d['actual_runs'], [normal])
+        for path in ('dynamic/dependabot/dependabot-updates','.github/workflows/release.yml',
+                     '.github/workflows/unknown.yml'):
+            with self.subTest(path=path), self.assertRaises(m['Refusal']):
+                self.remote_diagnostics(m, entries, managed_runs=[self.managed_run()],
+                                        pr_runs=[{**normal,'path':path}])
+
+    def test_actual_pr_runs_still_disqualify_an_operational_outage(self):
+        m=self.load(); entries=self.remote_entries()+[self.managed_entry()]
+        for state in ('queued','in_progress','completed'):
+            with self.subTest(state=state), self.assertRaises(m['Refusal']):
+                self.remote_diagnostics(m, entries, managed_runs=[self.managed_run()],
+                                        pr_runs=[{'status':state}], rehearsal=False)
+        disabled=self.remote_entries(); disabled[0]['state']='disabled_manually'
+        with self.assertRaises(m['Refusal']):
+            self.remote_diagnostics(m, disabled+[self.managed_entry()], managed_runs=[self.managed_run()])
+
+
     def test_collection_retains_original_failure_when_remote_head_moves(self):
         m = self.load(); repo, base, head = self.repo(); out = self.home / 'collection'
         cause = self.home / 'proof.json'; cause.write_text(json.dumps(proof()))
