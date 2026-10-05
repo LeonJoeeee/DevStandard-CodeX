@@ -4,20 +4,18 @@ Status: draft
 
 ## Problem & context
 
-[Issue 18](https://github.com/LeonJoeeee/codex-method/issues/18) requires actual lifecycle
-qualification on installed 0.2.6 (`1a9e1d386313cf784559ee0dda54723e4b88f129`) and Codex
-0.160.0, followed by separate qualification of candidate bytes. Current production evidence
-covers startup/helper only; 0.2.4 resume/compact and failed 0.2.3 TUI-clear attempts remain
-historical. Current dispatch cannot replace a session-local handle after its spawning runtime
-ends, because it requires a fresh old-handle entry. Absence alone proves no stopped lifetime.
+[Issue 18](https://github.com/LeonJoeeee/codex-method/issues/18) qualifies installed 0.2.6
+(`1a9e1d386313cf784559ee0dda54723e4b88f129`), Codex 0.160.0 and separately candidate bytes.
+Current production evidence covers startup/helper; 0.2.4 resume/compact and failed 0.2.3 clear
+remain historical. Dispatch needs a fresh old-handle entry, stranding ended session-local handles.
+Absence alone proves no stopped lifetime.
 
 ## Options considered
 
-1. Keep completed-handle evidence only: simple, but a genuinely ended session can strand a lane.
-2. Accept absent handles/stopped flags: rejected because old processes or commands can survive.
-3. Add bounded, independently checked runtime evidence: selected. Preserve native observations,
-   prove termination separately, and block unaccounted work. Unrestricted desktop/crash recovery
-   would need another process-accounting mechanism; neither PID guesses nor snapshot claims suffice.
+1. Completed-handle evidence only: simple, but ended sessions strand lanes.
+2. Absent handles/stopped flags: rejected; old processes or commands can survive.
+3. Bounded validated runtime evidence: selected. Preserve native observations, prove termination
+   separately and block unaccounted work. Desktop/crash recovery needs another accounting mechanism.
 
 ## Decision
 
@@ -63,9 +61,8 @@ hashed synchronous method hooks, whose source/launch chain is audited for the sa
 property. Hook start/completion IDs and idle group censuses must reconcile. All native actors,
 command tickets/groups and hook invocations enter the observer's append-only registry from
 launch. Gaps, unregistered actors/processes or unknown item/tool kinds invalidate coverage.
-No normal-worker positive is claimed from a zero-command-only child. If this host cannot supply
-useful audited command accounting, report the precise capability limit and retain this proposal;
-do not manufacture a positive by weakening coverage or building a general supervisor.
+Zero-command-only success cannot qualify normal workers. Unavailable useful accounting yields
+an explicit capability limit, never weaker coverage or a new general supervisor.
 
 ### Strict evidence carriers and phase rules
 
@@ -106,13 +103,11 @@ rechecks immutable originals, identities, coverage and a direct census taken wit
 of receipt mutation. Unreadable census/stale evidence refuses. Caller captures are not authenticated
 runtime attestations; original bytes and correlations remain inspectable under the ordinary boundary.
 
-**Unexpected exit is a separate blocked case**, including a crash during an active turn or
-command. Preserve unfinished/interrupted native state and any surviving identities. Even a
-known root death is insufficient without admitted descendant coverage; this first route never
-reconstructs pre-stop quiescence or stop/wait success. Missing origin/coverage/lifetime is safely
-blocked. Supporting crash recovery later requires independent design/qualification.
+**Unexpected exit is blocked**, including active-turn/command crashes. Preserve unfinished native
+state and surviving identities; never reconstruct quiescence or stop/wait success from root death.
+Missing origin/coverage/lifetime blocks. Crash recovery needs separate design/qualification.
 
-### One next writer; unchanged acceptance and cleanup
+### One next writer; distinct lifetime and acceptance
 
 Closure appends `runtime_closure`, sets `status=runtime-ended`, and does not change old native
 spawn/status observations or native `finished`, invent completion, or accept work. Prefer usable
@@ -121,10 +116,32 @@ Otherwise `--continue --brief FILE --runtime-closure FILE` (exclusive with `--na
 revalidates the latest run's closure plus the new runtime's actual absent/not-found lookup;
 ambiguous or live old-handle results refuse. Under the same lock, require unchanged lane identities,
 no pending cleanup, current typed-role qualification and freshly fetched whole ordered issue/
-authorized continuation. Append one prepared identity in the same lane; rejection leaves it unchanged.
-The existing fresh-finished-native route remains. **Cleanup remains unchanged**: unavailable
-historical handles can still block automatic teardown after replacement. Retain that lane/receipt;
-recovery is not fully cleaned delivery, integration authority or an acceptance/CI exemption.
+authorized continuation. Append one prepared identity in the same lane and bind its predecessor
+run ID and admitted closure digest; rejection leaves it unchanged. The existing fresh-finished-native
+route remains. Lifetime proof never grants task success, accepted review or integration authority.
+
+### Narrow cleanup consumer of the same proof
+
+Add repeatable `--cleanup-runtime-closure FILE` with required `--cleanup --pr N --native-status FILE`.
+Only unavailable **historical worker runs** already superseded by this lane's closure-based
+continuation qualify. Each original carrier's origin/digest/run must match the successor's
+recorded predecessor binding; duplicate, extra, changed or never-used carriers refuse. Live or
+unfinished old handles contradict closure; usable finished handles use ordinary native evidence.
+The latest worker requires fresh actual `completed`; borrowing reviewers retain fresh native
+lifetime gates without closure exemptions.
+
+Under the shared lock, reuse the same validator/source/coverage checks at admission and within
+five seconds before each destructive removal, with fresh direct OS absence/group census.
+Recheck the lifetime inventory for late activity or receipt drift. Retain per-run proof kind and
+origin/closure digests in cleanup intent/final receipt; never rewrite old native observations or
+set old `finished` true. Retry requires the same carriers plus fresh native/OS evidence.
+
+Preserve every existing merged-PR/repository/exact-head/integration/tree, clean/ignored/sole-copy,
+archive CAS/ownership, occupancy/configuration, durable marker and final verification gate.
+Ambiguous present paths still refuse; closure cannot authorize a retry. Latest missing handles,
+reviewer gaps, legacy/no-origin and uncertain crashes remain blocked. `cleaned` records verified
+removal, never task success, accepted review or a CI exemption. This limited consumer prevents
+qualified recovered lanes from being permanently stranded without admitting general crash cleanup.
 
 ### Maintained harness, qualification and ownership
 
@@ -138,7 +155,7 @@ then start the ordinary follow-up; missing/ambiguous events refuse without consu
 | Probe row | Required observation |
 |---|---|
 | Frozen 0.2.6 | Fresh startup; genuine resume after actual old-server reap; compact without resume; API `sessionStartSource=clear`; separate actual PTY `/clear` and subsequent model turn; retained typed-child continuation. |
-| Candidate only | Upfront origin, useful audited synchronous command, planned closure, unavailable old handle, actual dispatcher same-lane replacement and bounded outcome. Frozen 0.2.6 lacks new actions; record this limitation. |
+| Candidate only | Upfront origin, useful audited synchronous command, planned closure, unavailable old handle, actual dispatcher same-lane replacement, completed successor, authorized exact merged head and cleanup consuming the same retired-run proof. Frozen 0.2.6 lacks new actions. |
 | Negatives | Cached resume; real surviving command descendant; deliberate detachment/accounting gap; active-turn/active-command crash; missing origin, stale/hash/identity/actor mismatch, unqualified collector and pending cleanup. |
 
 Use production Sol/high for behavioral claims; controlled provider input captures prove mechanics
@@ -152,20 +169,25 @@ Root assigns a separate authorized probe lane. Preserve main settings, installed
 AGENTS and prior experiments. Durable private captures use caller-authorized workspace
 `outputs/migration-completion/recovery` (0700/0600); disposable adapters use
 `work/migration-completion/recovery`. Reap only owned processes with final OS proof; publish only
-secret-free indexes. This lane owns dispatcher/tests and worker/harness recovery guidance. Root
-coordinates shared O/architecture/README/ADR amendment/version fields with Issue 16. A minor
-bump is suggested only. Independent accepted reachable spec precedes implementation/probes.
+secret-free indexes. This lane proposes dispatcher/tests, this cleanup consumer and worker/harness guidance.
+Root coordinates shared O/architecture/README/ADR/version changes with Issue 16. Minor bump
+suggested only; independent accepted reachable spec precedes implementation/probes.
 
 ## Out of scope
 
 General desktop/crash supervision, Linux privileged environment setup, persistent handles,
-retrospective origins, force cleanup, merge/release/production upgrade and main setting changes.
+retrospective origins, cleanup exemptions beyond retired qualified worker lifetimes, force cleanup,
+merge/release/production upgrade and main setting changes.
 
 ## Verification and failure detection
 
 Regression checks bind actual Git lane mutation and prove valid continuation prepares once;
-all refused carriers preserve original ownership/run history. Preserve retained/native-finished
-paths, legacy receipt/version behavior and locks. Real native negatives include surviving and
+all refused carriers preserve original ownership/run history. Prove recovered-lane cleanup retains
+the exact archive/head/ancestry and observes both removals while old native `finished` stays false.
+Negatives cover missing/current-worker completion, changed/extra/unused closure, late live actor/
+descendant, unavailable reviewer, expired census and every existing removal gate. Preserve all
+cleanup interruption/ambiguous-present-path regressions; closure does not clear them.
+Preserve retained/native-finished paths, legacy receipt/version behavior and locks. Real native negatives include surviving and
 detached children with exact owned cleanup evidence, not fabricated census JSON. Run final full
 suite plus routing/ADR/release checks after implementation; draft revisions need static checks only.
 Independent Goal/Floor review examines candidate bytes and original captures before human merge.
