@@ -1,6 +1,6 @@
 # Actual Codex lifecycle and safe same-lane recovery
 
-Status: accepted
+Status: draft
 
 ## Problem & context
 
@@ -238,3 +238,159 @@ Use existing atomic durable receipt writes; ambiguous partial records block and 
 Never reset history or retry failures into an unqualified pass. Remove only proved owned temporary
 settings against current bytes, preserving concurrent changes. Teardown/restoration failure remains
 unfinished. Stable installed 0.2.6 is the rollback subject; candidate reversion uses ordinary review.
+
+## Proposed executor accounting amendment (2026-10-05; not yet accepted)
+
+The complete preceding contract remains the independently accepted baseline at commit
+`4d1f98cc0e91c6501729daeb76ab301b7cc1798c`, blob
+`3168676a6a9732c816cfe02c33910a8aed92845d`. This appended proposal does not authorize its
+new runtime interface or change that baseline's observations. Independent challenge and an
+explicit root choice of the route precede consumption. Preserve the preceding bytes apart
+from this whole proposal's draft status; keep the prior accepted blob reachable.
+
+### Actual capability and provenance
+
+Official `openai/codex` tag `rust-v0.160.0` resolves annotated tag
+`79b1b666f2e8551f8abbbca34957227f67f3f553` to commit
+`a956835d020762cb2b570053af06f643a11c0ecc`. In that source,
+`code-mode/src/remote_session.rs:35–84,105–171` uses one lazily created local process host;
+`remote_session/connection.rs:157–173` spawns it with `process_group(0)`. Its separate PGID
+is outside a server-and-command-only group registry. The actual native `commandExecution`
+item's `processId` still does not expose this host's OS PID. Captured transport attempt 2
+therefore establishes a useful command and its correlations, never complete executor coverage.
+
+`install-context/src/lib.rs:176–212` chooses the packed resource/adjacent host executable.
+The public `with_host_program` Rust constructor is not a CLI/config executable override.
+No launcher insertion, executable replacement, relocation or inferred override is admitted.
+`app-server/src/code_mode_host.rs:12–39` instead exposes the supported HTTP gRPC host selector;
+`app-server/src/lib.rs:596–612` requires `features.code_mode_host=true` for that route.
+`code-mode-host/src/main.rs:19–36` exposes `--listen grpc://IP:PORT`;
+`grpc_transport.rs:24–40` publishes the actual bound HTTP endpoint on stdout and serves gRPC.
+The actual two binaries' `--help` commands both exited 0 and confirm these argument surfaces.
+No gRPC runtime or new initialization experiment has been started by this proposal.
+
+Actual app binary SHA-256 is
+`6b582e8813ce7e8ed4c52814ee5cf230dba647bf2292df747a4003f2657ef201`, observed
+`codex-cli 0.160.0`. Actual packed host at
+`/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex-code-mode-host` has SHA-256
+`680a24a8aa7f0d7f9ab06c1416d465fd30a50fe40f46d2073c9d123f1f227328`.
+The host help exposes no version flag. The original adjacent `codex-package.json` reports
+version `0.160.0`, target `aarch64-apple-darwin`, with SHA-256
+`404c4c935bf9b7a57fc02b6f0d09ba6b7bbbf15cf14286fc017de2a6c01cab47`.
+This ties both selected files to an inspected same-version package, while package metadata and
+source tag remain distinct from a reproducible source-to-binary build attestation. Before any supported qualification,
+root must bind both actual packaged binary hashes to this source-audited candidate, disclose
+that limit, and requalify changed package/source bytes. An unknown host package refuses.
+Whole official source originals and capability outputs are privately retained under the
+already authorized `outputs/migration-completion/recovery`; evidence indexes supplement them.
+
+### Bounded alternatives and recommendation
+
+| Route | Utility and maintained/operational cost | Remaining evidence requirement |
+|---|---|---|
+| Keep the original strict local route blocked | Lowest cost: no new host interface; retained/native-completed continuation still works. Cannot qualify useful missing-handle recovery or its cleanup consumer on this host. | Report separate local executor coverage refusal; never omit its group. |
+| Local no-tool initialization, then discovery/enrollment | Smaller candidate: one exact no-tool native cell, one direct-child collector operation and initialization/enrollment tests (rough estimate 80–150 maintained lines); no new network endpoint or extra process beyond the ordinary lazy host. Preserves the default executable selection. | Amend the previously continuous-from-launch actor registry into a closed, non-writing initialization phase; prove unique source-correlated child, complete direct-child enumeration and exact birth/PGID registration before any admitted command. |
+| Caller-owned gRPC host from launch | Recommended for the initially strict missing-handle route: caller owns both Popen/wait handles before lane work. Same process count as ordinary server plus its lazy host; a second supervisor handle, endpoint validation, and two-stop sequencing (rough estimate 120–200 maintained lines plus 6–10 focused cases). Adds an unauthenticated loopback endpoint during the task. | Actual gRPC/native role/tool semantics, both launch identities, no-detach source audit, complete owned registry, session shutdown, two waits and final empty-group proof. |
+
+Estimates are comparative engineering judgments, not implemented counts or qualification.
+The smaller local route is source-supported as an **option**, not claimed executed or selected:
+`core/src/tools/code_mode/mod.rs:128–145,232–257` initializes its `OnceCell` session through
+`create_session()` on execution; the process provider above establishes the lazy host.
+An exact `text("codex-method-executor-enrollment-v1");` cell uses the actually advertised
+`functions.exec` tool without a nested command/tool. No public initialize-host RPC is assumed.
+If root selects this alternative, while writer admission is closed the observer must byte-match
+that exact source and its complete output/call/turn IDs, await ordinary exact completion, and
+refuse any tool, timer, extra JavaScript, hook/command activity or unknown item in this phase.
+Then kernel `proc_listpids(PROC_PPID_ONLY=6, server_pid, ...)` membership-to-birth-to-membership
+must find exactly the source-resolved packed host with matching executable hash, actual parent
+birth, stable child birth and PID=PGID, accounting every other direct child rather than skipping
+it. Qualify that collector API first; unknown, vanished, reparented, multiple matching children,
+permission failure or a replaced host refuses. A later lazy reconnection/generation or new
+unregistered process invalidates admission; no repeat prewarm during lane work. Closed-phase
+initialization is not a zero-command positive: an actual useful gated command is still required.
+This alternative explicitly changes creation-time registration into registration after a bounded
+non-writing initialization; it cannot silently satisfy the previous continuous registration rule.
+
+### Proposed gRPC interface and lifetime ordering
+
+If accepted and chosen, add a narrowly versioned `caller-owned-grpc-v1` transport to the same
+origin/closure validator and maintained lifecycle harness. The origin contains the original
+app runtime identity and **one additional executor runtime identity**, each with full kernel
+birth, executable hash, exact argv/cwd, boot identity, same surviving observer parent and own
+PID=PGID. Bind actual endpoint and immutable original stdout selector to the executor's launch.
+No caller boolean, existing unrelated listener or desktop PID substitutes for either Popen.
+Both native actor threads continue to map to their real spawning app-server; code-mode host
+is an executor, never a method worker/reviewer, and does not receive invented native handles.
+
+Launch the exact packed host with argv `[host_binary, "--listen", "grpc://127.0.0.1:0"]`
+through `Popen(start_new_session=True)` in the assigned lane. Immediately retain its returned
+Popen/kernel origin before any gRPC session is opened. Read its single original stdout endpoint,
+require exactly `http://127.0.0.1:<positive ephemeral port>` with no path/query/credentials,
+and corroborate same owned birth and listener readiness. Ambiguity or non-loopback refuses.
+Then launch `[app_binary, "app-server", "--strict-config", "--code-mode-host", endpoint]`
+through the same observer with `start_new_session=True`; retain its origin before first thread.
+`features.code_mode_host=true` belongs only to the task-private configuration. Preserve model,
+effort, tier, installed roles/hook package and production/main configuration. Native V2 discovery,
+explicit Sol/high dispatch and role delivery retain their ordinary gates. The first useful wrapper
+must traverse this selected provider; a fallback-created local host invalidates coverage.
+
+Bind only IPv4 loopback, ephemeral port and the one task lifetime. Do not enable OTEL listeners,
+exporters, remote addresses, public tunnels or an additional daemon. This API has no authentication
+in the inspected listener path; it is admissible only under the already stated cooperative,
+non-hostile local boundary. It is not containment from arbitrary local clients. Unknown sessions,
+peer activity, uncorrelated callbacks or registry gaps refuse; inability to observe/reconcile
+those events is a capability block, never assumed exclusivity. Close the endpoint on owned host
+termination and corroborate its listener is gone. Neither an HTTP health check nor an empty
+process group authenticates endpoint ownership or proves complete session accounting.
+
+Enroll both runtime groups, every source-audited synchronous hook, the owned-command launcher
+and gated child birth **before command execution**. Audit code-mode-host session/runtime globals,
+app-server callback/tool routing, sandbox/PTY launch chain and exact command dependencies; native
+Rust tasks/threads must be distinguished from OS subprocesses. No arbitrary MCP, unknown Git
+hook/helper, detached program, additional executor or unknown source chain is covered. Hash
+all inspected originals and target binary/package provenance. Changed bytes refuse until audited.
+Gated bootstrap-to-command exec preserves the enrolled PID/birth/group; the registry retains the
+allowed executable transition and exact target argv/assets, never infers a second OS birth.
+Actual callback/native command item/wrapper/ticket/source selectors and idle censuses remain mandatory.
+
+Before stop, close admission and reconcile all actual app threads, cells, callbacks, hooks and
+command waits against the complete original stream; bind executor session close/idle evidence.
+Unexpected app or executor crash, active cell/command, missing close event or unresolved callback
+blocks planned closure. Freshly census all registered groups and identity-check both owned runtime
+births within five seconds. Close app-server stdin, wait/reap up to five seconds and retain the
+actual result; any failure remains labeled failure, with only the previously permitted separately
+recorded identity-checked SIGTERM teardown. Confirm app-native sessions/callbacks cannot remain
+live before stopping the executor. A gRPC listener runs independently of stdin: its closure is
+an explicit identity-checked **SIGTERM** followed by actual wait/reap, never graceful-stdin evidence.
+If source/actual observations cannot prove quiescence, terminate only as owned cleanup and refuse
+recovery qualification. Do not invent a global gRPC shutdown RPC. No SIGKILL fallback qualifies.
+Final closure needs every recorded app/executor/command/hook birth absent, every registered group
+empty and listener absent, with direct fresh checks at each receipt mutation/removal as before.
+A reused/live/unknown process or open endpoint refuses without signals to unknown owners.
+
+Same-lane continuation and historical-worker cleanup consume that one complete two-runtime proof;
+all predecessor/origin/digest, latest actual-completed, reviewer, integration/archive/exact-head,
+clean-tree/sole-copy and ambiguous-removal rules remain. No route means task success or acceptance.
+Keep ordinary default local and desktop missing-handle recovery **unsupported** until a separately
+chosen, accepted and actually qualified registration route exists. Refusal names the missing
+executor origin/group rather than claiming a usable lane or silently switching transport.
+
+### Amendment verification and failure handling
+
+After acceptance and explicit route binding, retain a fresh controlled mechanics run with actual
+selected provider, discovered typed worker/shared role bytes, useful gated Git and synchronous test
+commands, whole wrapper/native/registry correlations and actual two-runtime closure. Negative runs
+include a live executor after app reap, surviving/reparented command child, deliberate detachment,
+unknown callback/client, host restart/replacement, stale/hash/endpoint identity changes and unexpected
+active exit; none may admit continuation or cleanup. Preserve original failures and no-op cuts.
+The actual production Sol/high/full-method/lifecycle/GitHub checks still require root's concrete
+probe-lane handoff and separate current-candidate evidence. Source reading and help output establish
+an available interface, not those end-to-end claims. A required observation absent on the actual
+host blocks the affected row; do not broaden into a generic supervisor to manufacture completion.
+
+Before integration, root coordinates shared documentation/ADR0004/version0.5.0 ownership as before.
+This proposal holds all new interface code/probes until independently accepted; already accepted
+strict validation and the command barrier may proceed independently. Rollback is to the original
+strict fail-closed contract: preserve receipts/captures and owned work, leave main/installed 0.2.6
+unchanged, reap only identified owned processes and restore task-private settings against exact
+current bytes. A teardown/restoration failure stays unfinished; never retry it into passing proof.
