@@ -57,7 +57,15 @@ Third-party (non-`actions/*`) actions: pin to a full commit SHA, not a tag — a
 
 Artifacts: upload one only when a later step or a person actually consumes it, and always set `retention-days:` — the default keeps every copy for 90 days, and on a private repo the 500 MB storage quota fills in days of routine pushes, after which uploads start failing. CI output is not an archive: actual release deliverables ship through the release pipeline; a report worth retaining goes where `reference/where-it-goes.md` sends it rather than being published merely to keep it, and any build can be reproduced from its commit.
 
-Minutes are the other finite quota, and the one that stops everything: on a private repo an exhausted monthly balance runs *no* workflow at all — CI, release and Dependabot alike — so the merge gate goes absent rather than red (a public repo's standard runners are free, so this cannot happen there). Treat exhaustion as a pipeline-spend bug before an allowance problem; the usual causes are cheap to fix — a job triggering on every push to every branch when `pull_request` alone would do, a matrix kept wide out of habit, no dependency cache so every run re-downloads the world, no `paths:` filter so a docs typo rebuilds everything, no `concurrency:` group canceling superseded branch runs, and the default 6-hour `timeout-minutes` letting a hung job burn an afternoon. Fix the spend, and tell the human the balance is out — topping it up, or making the repo public, is theirs. `reference/ci-cannot-run.md` preserves a separate degraded local merge-waiver design; its CLI
+Minutes are another finite quota. On a private repository, an exhausted included
+allowance alone does not prove that workflows cannot start: paid overage may remain
+available. Require current external evidence that the affected account is actually
+blocked (for example, no valid payment method after exhausting the allowance or an
+exhausted stopping budget). Public standard runners are free. A current provider
+incident or evidenced private-account usage block may meet the separate fallback
+trigger; queued/red, workflow or organization configuration and unreadable state do
+not. See [GitHub Actions billing](https://docs.github.com/en/billing/concepts/product-billing/github-actions)
+and [budgets](https://docs.github.com/en/billing/how-tos/set-up-budgets). Treat exhaustion as a pipeline-spend bug before an allowance problem; the usual causes are cheap to fix — a job triggering on every push to every branch when `pull_request` alone would do, a matrix kept wide out of habit, no dependency cache so every run re-downloads the world, no `paths:` filter so a docs typo rebuilds everything, no `concurrency:` group canceling superseded branch runs, and the default 6-hour `timeout-minutes` letting a hung job burn an afternoon. Fix the spend, and tell the human the balance is out — topping it up, or making the repo public, is theirs. `reference/ci-cannot-run.md` preserves a separate degraded local merge-waiver design; its CLI
 route is unqualified. Use the safe self-hosted Actions route below before waiting when authorized.
 
 The minimal template above includes none of these controls; add the language setup action's `cache:` input, job-level `timeout-minutes:`, `on: pull_request: paths:`, `strategy: matrix:`, and a top-level `concurrency:` group.

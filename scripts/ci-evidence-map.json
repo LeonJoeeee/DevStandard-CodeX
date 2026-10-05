@@ -1,0 +1,148 @@
+{
+  "format": "codex-method-ci-map-v1",
+  "event": "pull_request",
+  "workflows": {
+    ".github/workflows/release.yml": "60c1b7fb9719387be69cc5554fdf1f5477a14de70a6a66ef6d33ee68b7c6f349",
+    ".github/workflows/ci.yml": "c72781b3fa5d19f7ff03c656467bf4dee632e4ecf66fde64c99e96d254caa276"
+  },
+  "generated_outputs": [
+    "**/__pycache__/*.pyc",
+    "__pycache__/*.pyc"
+  ],
+  "jobs": [
+    {
+      "id": "suite",
+      "steps": [
+        {
+          "id": "checkout-equivalence",
+          "kind": "run",
+          "run": "git diff --quiet && git diff --cached --quiet",
+          "always": false
+        },
+        {
+          "id": "merge-check",
+          "kind": "run",
+          "run": "python3 .github/check-merge-checkout.py --base \"$BASE_SHA\" --head \"$HEAD_SHA\"",
+          "always": false
+        },
+        {
+          "id": "full-suite",
+          "kind": "run",
+          "run": "python3 -m unittest discover -s tests -t .",
+          "always": false
+        },
+        {
+          "id": "release-lockstep",
+          "kind": "run",
+          "run": "python3 .github/check-release.py",
+          "always": false
+        },
+        {
+          "id": "path-references",
+          "kind": "run",
+          "run": "! grep -rn \"@[a-zA-Z0-9_-]*/\" reference/ --include='*.md' | grep -v actions/ | grep .",
+          "always": false
+        },
+        {
+          "id": "routing",
+          "kind": "run",
+          "run": "python3 .github/check-routing.py",
+          "always": false
+        },
+        {
+          "id": "adr-index",
+          "kind": "run",
+          "run": "python3 .github/check-adr-index.py",
+          "always": false
+        }
+      ]
+    },
+    {
+      "id": "native",
+      "steps": [
+        {
+          "id": "checkout-equivalence",
+          "kind": "run",
+          "run": "git diff --quiet && git diff --cached --quiet",
+          "always": false
+        },
+        {
+          "id": "sandbox-setup",
+          "kind": "linux-setup",
+          "run": "sudo apt-get update\nsudo apt-get install -y bubblewrap apparmor-profiles apparmor-utils\nsudo install -m 0644 /usr/share/apparmor/extra-profiles/bwrap-userns-restrict /etc/apparmor.d/bwrap-userns-restrict\nsudo apparmor_parser -r /etc/apparmor.d/bwrap-userns-restrict\nbwrap --unshare-user --unshare-net --ro-bind / / /bin/true",
+          "always": false
+        },
+        {
+          "id": "codex-setup",
+          "kind": "run",
+          "run": "npm install --global @openai/codex@0.160.0",
+          "always": false
+        },
+        {
+          "id": "native-runtime",
+          "kind": "run",
+          "run": "python3 .github/test-native-runtime.py --installer scripts/install --log-dir \"$TMPDIR/evidence\"",
+          "always": false
+        },
+        {
+          "id": "retain-native-artifact",
+          "kind": "artifact",
+          "run": "",
+          "always": true
+        }
+      ]
+    },
+    {
+      "id": "test",
+      "needs": [
+        "suite",
+        "native"
+      ],
+      "always": true,
+      "steps": [
+        {
+          "id": "require-both",
+          "kind": "run",
+          "run": "test \"$SUITE_RESULT\" = success && test \"$NATIVE_RESULT\" = success",
+          "always": false
+        }
+      ]
+    },
+    {
+      "id": "merged-result",
+      "needs": [
+        "test"
+      ],
+      "steps": [
+        {
+          "id": "checkout-equivalence",
+          "kind": "run",
+          "run": "git diff --quiet && git diff --cached --quiet",
+          "always": false
+        },
+        {
+          "id": "merge-check",
+          "kind": "run",
+          "run": "python3 .github/check-merge-checkout.py --base \"$BASE_SHA\" --head \"$HEAD_SHA\"",
+          "always": false
+        }
+      ]
+    }
+  ],
+  "equivalence_notes": [
+    "checkout action is replaced by the captured exact synthetic two-parent checkout",
+    "native upload action is replaced by whole retained local artifacts; no actual GitHub upload claimed"
+  ],
+  "environment": {
+    "shell": "bash -eo pipefail",
+    "cwd": "exact synthetic checkout",
+    "runner": "Ubuntu Linux",
+    "inherit_job_environment": false,
+    "setup_changes": [
+      "native/sandbox-setup",
+      "native/codex-setup"
+    ],
+    "artifact_transport": "whole local native directory, no Actions upload claim",
+    "release_event_excluded": "only push v*; collector event pull_request"
+  }
+}

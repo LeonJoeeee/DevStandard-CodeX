@@ -1,0 +1,587 @@
+#!/usr/bin/env python3
+"""Collect exact local CI evidence. No merge, waiver or release authority.
+
+The integrating session owns execution, cause judgment, publication and audit.
+The only supported workflow is the accompanying reviewed byte-pinned map.
+"""
+import argparse
+import base64
+from datetime import datetime, timezone
+import fnmatch
+import hashlib
+import json
+import os
+from pathlib import Path
+import platform
+import re
+import subprocess
+import sys
+import shutil
+import uuid
+
+sys.dont_write_bytecode = True
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT / 'scripts'))
+from hard_edges import Refusal, require  # noqa: E402
+from review_state import digest, save  # noqa: E402
+
+FORMAT = 'codex-method-ci-evidence-v1'
+APPROVED_MAP_SHA256 = '0d6553a1d1e601fe9b602879596747566f9408ae51f06595b80f3b40b5ff5507'
+SHA = re.compile(r'[0-9a-f]{40}|[0-9a-f]{64}')
+STATUS_URL = 'https://www.githubstatus.com/api/v2/incidents/unresolved.json'
+AUDIT = '''Audit every item; this evidence grants no merge permission:
+1. Proven named external cause, affected scope and why waiting was ruled out;
+   exclude slow/queued/flaky/red, repo/org misconfiguration and unreadable state.
+2. Fresh remote base/head, exact merge-tree and exactly ordered [base, head]
+   parents of the checked-out synthetic commit/tree; no identity movement.
+3. UTC captures, clean tracked inputs, copy-list/untracked/ignored accounting,
+   before/after state and declared setup-generated dependencies/outputs.
+4. Every eligible workflow/job/step covered unfiltered, including setup, failure
+   and always() artifacts; identify every incapable step and coverage gap.
+A helper audit is distinct from formal Goal/Floor acceptance and ordinary CI.
+'''
+
+
+def utc():
+    return datetime.now(timezone.utc).isoformat()
+
+
+def timestamp(value):
+    parsed = datetime.fromisoformat(value.replace('Z', '+00:00'))
+    require(parsed.tzinfo is not None and parsed.utcoffset().total_seconds() == 0,
+            'capture timestamps must be UTC')
+    require(parsed <= datetime.now(timezone.utc), 'capture timestamp is in the future')
+    return parsed
+
+
+def qualify(proof, rehearsal=False):
+    """Validate an auditable candidate, not authenticate supplied cause documents."""
+    require(proof.get('cause') in ('provider-outage', 'minutes-exhausted'), 'not a named external cause')
+    require(proof.get('scope') and proof.get('why_waiting_ruled_out'), 'scope and waiting decision required')
+    require(proof.get('external_to_repo') is True and proof.get('prevents_all_eligible_pushes') is True,
+            'cause must prevent all otherwise eligible pushes outside this repo')
+    timestamp(proof['observed_at'])
+    require(rehearsal or proof.get('simulated') is False, 'simulated proof cannot qualify operationally')
+    diag = proof.get('diagnostics', {})
+    require(all(diag.get(key) is True for key in ('authenticated', 'readable', 'workflow_enabled',
+                                                'event_eligible', 'org_enabled')),
+            'unreadable, unauthenticated or misconfigured state is not an outage')
+    require(diag.get('runs') == [], 'queued, started or red runs are not outage evidence')
+    captures = proof.get('captures')
+    require(isinstance(captures, list) and captures, 'whole original cause captures required')
+    supported = False
+    for index, capture in enumerate(captures):
+        require(set(('argv', 'exit_code', 'captured_at', 'stdout', 'stderr')) <= set(capture),
+                'incomplete original cause capture')
+        timestamp(capture['captured_at'])
+        if capture['exit_code'] != 0:
+            continue
+        argv = capture['argv']
+        if proof['cause'] == 'minutes-exhausted':
+            # Current usage APIs show spending, not whether an account can start CI.
+            # Preserve a whole current billing block document for independent judgment.
+            supported |= proof.get('private_repo') is True and proof.get('blocking_capture_index') == index and \
+                bool(capture['stdout']) and any(re.fullmatch(
+                    r'https://github.com/(settings/billing|organizations/[\w.-]+/settings/billing)(/.*)?', a)
+                    for a in argv)
+            continue
+        try:
+            body = json.loads(capture['stdout'])
+        except (ValueError, TypeError):
+            continue
+        if proof['cause'] == 'provider-outage' and STATUS_URL in argv:
+            supported |= any(incident.get('id') and incident.get('status') in
+                             ('investigating', 'identified', 'monitoring') and any(
+                                 c.get('name') == 'Actions' and c.get('status') in
+                                 ('major_outage', 'partial_outage') for c in incident.get('components', []))
+                             for incident in body.get('incidents', []))
+    require(supported, 'original provider/quota response does not establish the named cause candidate')
+    # Raw response provenance and the all-push causal claim still need the independent audit.
+    return {'candidate': True, 'operationally_qualified': False,
+            'independent_cause_audit_required': True, 'simulated': bool(rehearsal),
+            'billing_carrier_only': proof['cause'] == 'minutes-exhausted'}
+
+
+class Recorder:
+    """Write intent before execution; preserve complete original bytes on every exit."""
+    def __init__(self, output):
+        self.output = Path(output)
+        self.directory = self.output / 'captures'
+        self.directory.mkdir(exist_ok=True)
+        require(not list(self.directory.iterdir()), 'capture directory already contains an operation')
+        self.index = 0
+
+    def run(self, argv, cwd, env=None, input=None, inherit_environment=True):
+        number = self.index
+        self.index += 1
+        intent = {'argv': list(map(str, argv)), 'cwd': str(Path(cwd).resolve()),
+                  'started_at': utc(), 'environment_overrides': env or {}, 'inherit_environment': inherit_environment,
+                  'stdin_b64': base64.b64encode(input or b'').decode()}
+        save(self.directory / f'{number:04}-started.json', intent)
+        result = subprocess.run(intent['argv'], cwd=cwd, env={**(os.environ if inherit_environment else {}), **(env or {})},
+                                input=input, capture_output=True)
+        completed = {**intent, 'completed_at': utc(), 'exit_code': result.returncode,
+                     'stdout_b64': base64.b64encode(result.stdout).decode(),
+                     'stderr_b64': base64.b64encode(result.stderr).decode()}
+        save(self.directory / f'{number:04}-result.json', completed)
+        return result
+
+    def read(self, argv, cwd, **kwargs):
+        result = self.run(argv, cwd, **kwargs)
+        require(result.returncode == 0,
+                f'command exited {result.returncode}: {argv}; whole original output retained')
+        return result.stdout.decode().strip()
+
+
+def git(project, *args):
+    proc = subprocess.run(['git', '-C', str(project), *args], capture_output=True)
+    require(proc.returncode == 0, f'git {args} failed: {proc.stderr.decode(errors="replace")}')
+    return proc.stdout
+
+
+def file_identity(path):
+    if path.is_symlink():
+        return {'mode': path.lstat().st_mode, 'symlink': os.readlink(path)}
+    require(path.is_file(), f'input is not a regular file: {path}')
+    return {'mode': path.stat().st_mode, 'sha256': hashlib.sha256(path.read_bytes()).hexdigest()}
+
+
+def inventory(project, ignored_inputs=(), generated=()):
+    project = Path(project)
+    require(not git(project, 'diff', '--name-only') and not git(project, 'diff', '--cached', '--name-only'),
+            'tracked source is dirty')
+    untracked = git(project, 'ls-files', '--others', '--exclude-standard', '-z').decode().split('\0')
+    require(not any(untracked), 'untracked inputs require a prior baseline and copy-list; this map admits none')
+    paths = [p for p in git(project, 'ls-files', '-z').decode().split('\0') if p]
+    ignored = [p for p in git(project, 'ls-files', '--others', '--ignored', '--exclude-standard', '-z').decode().split('\0') if p]
+    require(set(ignored_inputs) <= set(ignored), 'declared ignored input is missing or not ignored')
+    extras = [p for p in ignored if p not in ignored_inputs and not any(fnmatch.fnmatch(p, g) for g in generated)]
+    require(not extras, f'undeclared ignored inputs: {extras}')
+    require(not any((project / p).is_symlink() for p in paths + ignored),
+            'source/generated symlink hides an unsupported input; this map admits none')
+    return {'captured_at': utc(), 'status': git(project, 'status', '--porcelain', '-uall').decode(),
+            'inputs': {p: file_identity(project / p) for p in paths + list(ignored_inputs)},
+            'generated': {p: file_identity(project / p) for p in ignored if p not in ignored_inputs}}
+
+
+def unchanged(before, after):
+    require(before['status'] == after['status'] and before['inputs'] == after['inputs'],
+            'source or declared input changed during execution')
+
+
+def check_map(project, approved):
+    raw = (ROOT / 'scripts/ci-evidence-map.json').read_bytes()
+    require(hashlib.sha256(raw).hexdigest() == APPROVED_MAP_SHA256 and approved == json.loads(raw),
+            'map is not the exact shipped reviewed map; no edited steps or unsupported semantics')
+    actual = {p.relative_to(project).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
+              for p in (Path(project) / '.github/workflows').glob('*') if p.is_file()}
+    require(actual == approved.get('workflows'), 'unsupported or changed workflow; reviewed map must be updated')
+    require(approved.get('format') == 'codex-method-ci-map-v1' and
+            [j['id'] for j in approved.get('jobs', [])] == ['suite', 'native', 'test', 'merged-result'],
+            'unsupported workflow/job map')
+
+
+def materialize(project, base, head, output, recorder):
+    require(SHA.fullmatch(base) and SHA.fullmatch(head), 'full immutable base/head required')
+    tree = recorder.read(['git', 'merge-tree', '--write-tree', base, head], project)
+    require(SHA.fullmatch(tree), 'merge-tree did not produce one conflict-free tree')
+    commit = recorder.read(['git', '-c', 'user.name=CI-Evidence', '-c', 'user.email=ci-evidence@invalid',
+                            'commit-tree', tree, '-p', base, '-p', head], project,
+                           input=b'Exact CI evidence; integration blocked\n')
+    token = uuid.uuid4().hex
+    archive = f'refs/codex-method/ci-evidence/{token}'
+    save(Path(output) / 'materialization-intent.json', {'base': base, 'head': head, 'tree': tree,
+         'commit': commit, 'archive_ref': archive, 'checkout': str(Path(output) / 'checkout'), 'created_at': utc()})
+    recorder.read(['git', 'update-ref', '--stdin'], project,
+                  input=f'option no-deref\ncreate {archive} {commit}\n'.encode())
+    ref = recorder.read(['git', 'for-each-ref', '--format=%(refname) %(objectname) %(symref)', archive], project)
+    require(ref.split() == [archive, commit], 'archive is not a direct ref for the synthetic commit')
+    actual = recorder.read(['git', 'rev-list', '--parents', '-n', '1', commit], project).split()
+    require(actual == [commit, base, head], 'synthetic parents differ')
+    require(recorder.read(['git', 'rev-parse', f'{commit}^{{tree}}'], project) == tree, 'synthetic tree differs')
+    checkout = Path(output) / 'checkout'
+    recorder.read(['git', 'worktree', 'add', '--detach', str(checkout), commit], project)
+    require(recorder.read(['git', 'rev-parse', 'HEAD', 'HEAD^1', 'HEAD^2', 'HEAD^{tree}'], checkout).split()
+            == [commit, base, head, tree], 'checked-out synthetic identity differs')
+    recorder.read(['git', 'bundle', 'create', str(Path(output) / 'merge.bundle'), archive], project)
+    return {'base': base, 'head': head, 'commit': commit, 'tree': tree,
+            'archive_ref': archive, 'checkout': str(checkout)}
+
+
+def durable_bytes(path, raw):
+    path = Path(path)
+    with path.with_suffix(path.suffix + '.new').open('wb') as stream:
+        stream.write(raw); stream.flush(); os.fsync(stream.fileno())
+    os.replace(stream.name, path)
+    fd = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
+    try: os.fsync(fd)
+    finally: os.close(fd)
+
+
+def seal(output, report):
+    output = Path(output)
+    require(not (output / 'manifest.json').exists(), 'bundle already sealed; never replace historical evidence')
+    files = {}
+    for path in sorted(output.rglob('*')):
+        relative = path.relative_to(output).as_posix()
+        if relative == 'checkout' or relative.startswith('checkout/') or relative.startswith('publication') or relative == 'job-home' or relative.startswith('job-home/') or \
+                relative in ('manifest.json', 'manifest.sha256', 'evidence.md'):
+            continue
+        if path.is_file():
+            require(not path.is_symlink(), 'evidence file is a symlink')
+            files[relative] = hashlib.sha256(path.read_bytes()).hexdigest()
+    manifest = {'format': FORMAT, 'sealed_at': utc(), **report, 'merge_permitted': False, 'files': files}
+    save(output / 'manifest.json', manifest)
+    manifest_sha = hashlib.sha256((output / 'manifest.json').read_bytes()).hexdigest()
+    durable_bytes(output / 'manifest.sha256', (manifest_sha+'\n').encode())
+    text = 'CI-FALLBACK EVIDENCE — integration blocked\n\n' + AUDIT + '\n'
+    text += json.dumps(manifest, indent=2) + '\n'
+    for name in files:
+        # Base64 is reversible and keeps binary captures and artifacts complete.
+        text += '\nFILE '+name+' SHA256 '+files[name]+'\n'+base64.b64encode((output/name).read_bytes()).decode()+'\n'
+    durable_bytes(output / 'evidence.md', text.encode())
+    parts = []
+    payloads = [text[i:i+50000] for i in range(0, len(text), 50000)]
+    for index, payload in enumerate(payloads, 1):
+        name = f'publication-part-{index:04}.md'
+        body = f'CI-FALLBACK EVIDENCE — integration blocked; part {index}/{len(payloads)}; manifest {manifest_sha}\n\n'+payload
+        durable_bytes(output / name, body.encode())
+        parts.append({'path': name, 'sha256': digest(body), 'number': index})
+    save(output / 'publication-parts.json', {'manifest_sha256': manifest_sha,
+         'carrier_sha256': digest(text), 'parts': parts})
+    save(output / 'bundle-receipt.json', {'manifest_sha256': manifest_sha, 'carrier_sha256': digest(text),
+         'parts_index_sha256': hashlib.sha256((output / 'publication-parts.json').read_bytes()).hexdigest()})
+    return manifest
+
+
+def verify(output, expected_sha256=None):
+    output = Path(output)
+    receipt_raw = (output / 'bundle-receipt.json').read_bytes()
+    if expected_sha256:
+        require(hashlib.sha256(receipt_raw).hexdigest() == expected_sha256, 'external bundle pin differs')
+    receipt = json.loads(receipt_raw)
+    raw = (output / 'manifest.json').read_bytes()
+    require(hashlib.sha256(raw).hexdigest() == (output / 'manifest.sha256').read_text().strip(), 'manifest bytes changed')
+    require(hashlib.sha256(raw).hexdigest() == receipt['manifest_sha256'], 'manifest receipt differs')
+    require(digest((output / 'evidence.md').read_text()) == receipt['carrier_sha256'], 'whole carrier bytes changed')
+    parts_raw = (output / 'publication-parts.json').read_bytes()
+    require(hashlib.sha256(parts_raw).hexdigest() == receipt['parts_index_sha256'], 'part index changed')
+    index = json.loads(parts_raw)
+    require(index['manifest_sha256'] == receipt['manifest_sha256'] and
+            index['carrier_sha256'] == receipt['carrier_sha256'], 'part association differs')
+    payload = ''
+    for number, part in enumerate(index['parts'], 1):
+        require(part['number'] == number and part['path'] == f'publication-part-{number:04}.md', 'part order differs')
+        body = (output / part['path']).read_text()
+        require(digest(body) == part['sha256'], 'publication part bytes changed')
+        payload += body.split('\n\n', 1)[1]
+    require(digest(payload) == receipt['carrier_sha256'], 'publication parts omit original bytes')
+    manifest = json.loads(raw)
+    require(manifest.get('format') == FORMAT and manifest.get('merge_permitted') is False, 'not an evidence-only bundle')
+    for name, sha in manifest['files'].items():
+        path = output / name
+        require(path.resolve().is_relative_to(output.resolve()) and path.is_file() and not path.is_symlink(),
+                'evidence carrier is missing or outside its bundle')
+        require(hashlib.sha256(path.read_bytes()).hexdigest() == sha, f'evidence bytes changed: {name}')
+    started = set((output / 'captures').glob('*-started.json'))
+    complete = set((output / 'captures').glob('*-result.json'))
+    require({p.name.replace('-started.json', '') for p in started} ==
+            {p.name.replace('-result.json', '') for p in complete}, 'interrupted command cannot verify as complete')
+    for path in started:
+        intent = json.loads(path.read_text())
+        completed = json.loads(path.with_name(path.name.replace('-started', '-result')).read_text())
+        require(all(completed.get(k) == v for k, v in intent.items()), 'command completion differs from durable intent')
+        require(timestamp(completed['completed_at']) >= timestamp(intent['started_at']), 'command timestamps differ')
+        require(isinstance(completed['exit_code'], int), 'command exit is missing')
+        base64.b64decode(completed['stdout_b64'], validate=True)
+        base64.b64decode(completed['stderr_b64'], validate=True)
+    require(all(p.relative_to(output).as_posix() in manifest['files'] for p in started | complete),
+            'unlisted capture added after sealing')
+    return manifest
+
+
+def publication_intent(directory, repo, pr, author, body, token):
+    """Low-level publication utility; never a formal review receipt."""
+    directory = Path(directory)
+    require(re.fullmatch(r'[\w.-]+/[\w.-]+', repo) and pr > 0 and author and token, 'publication identity required')
+    require(not (directory / 'publication-pending.json').exists() and
+            not (directory / 'publication-receipt.json').exists(), 'existing publication outcome; recover, never repeat')
+    exact = f'<!-- ci-evidence-part {token} -->\n'+body
+    intent = {'repo': repo, 'pr': pr, 'author': author, 'token': token, 'body': exact,
+              'body_sha256': digest(exact), 'created_at': utc()}
+    save(directory / 'publication-pending.json', intent)
+    return intent
+
+
+def publication_recover(directory, comments):
+    directory = Path(directory)
+    intent = json.loads((directory / 'publication-pending.json').read_text())
+    require(digest(intent['body']) == intent['body_sha256'], 'pending publication bytes changed')
+    envelope = f'<!-- ci-evidence-part {intent["token"]} -->\n'
+    candidates = [c for c in comments if (c.get('body') or '').startswith(envelope)]
+    require(len(candidates) == 1, 'publication outcome missing or ambiguous; do not POST again')
+    comment = candidates[0]
+    require(comment.get('body') == intent['body'] and (comment.get('user') or {}).get('login') == intent['author'],
+            'publication bytes or author differ')
+    require(isinstance(comment.get('id'), int) and comment['id'] > 0 and
+            comment.get('html_url') == f'https://github.com/{intent["repo"]}/pull/{intent["pr"]}#issuecomment-{comment["id"]}',
+            'publication repository/PR/comment association differs')
+    timestamp(comment['created_at']); timestamp(comment['updated_at'])
+    receipt = {**intent, 'comment_id': comment['id'], 'url': comment['html_url'],
+               'comment_created_at': comment.get('created_at'), 'comment_updated_at': comment.get('updated_at'),
+               'verified_at': utc()}
+    old = directory / 'publication-receipt.json'
+    if old.exists():
+        previous = json.loads(old.read_text())
+        require(all(previous[k] == receipt[k] for k in intent) and
+                all(previous[k] == receipt[k] for k in ('comment_id', 'url', 'comment_created_at', 'comment_updated_at')),
+                'publication receipt differs')
+        return previous
+    save(old, receipt)
+    return receipt
+
+
+def view(project, repo, pr, recorder):
+    def api(endpoint):
+        return json.loads(recorder.read(['gh', 'api', endpoint], project))
+    remote = api(f'repos/{repo}')
+    pull = api(f'repos/{repo}/pulls/{pr}')
+    current = api(f'repos/{repo}/git/ref/heads/{remote["default_branch"]}')['object']['sha']
+    require(pull['state'] == 'open' and pull['base']['ref'] == remote['default_branch'] and
+            pull['base']['sha'] == current, 'PR is not open on exact current default base')
+    return {'base': current, 'head': pull['head']['sha'], 'branch': remote['default_branch']}
+
+
+def diagnostics(project, repo, pr, current, recorder, rehearsal):
+    workflows = json.loads(recorder.read(['gh', 'api', '--paginate', '--slurp',
+         f'repos/{repo}/actions/workflows?per_page=100'], project))
+    entries = [w for page in workflows for w in page['workflows']]
+    ci_path, release_path = '.github/workflows/ci.yml', '.github/workflows/release.yml'
+    managed_path = 'dynamic/dependabot/dependabot-updates'
+    paths = [w.get('path') for w in entries]
+    require(all(isinstance(p, str) for p in paths) and len(set(paths)) == len(paths) and
+            set(paths) <= {ci_path, release_path, managed_path}, 'unsupported or duplicate remote workflow')
+    ci = [w for w in entries if w['path'] == ci_path]
+    require(len(ci) == 1 and ci[0].get('state') == 'active', 'missing or disabled eligible PR CI workflow')
+    # The byte-pinned map only supports pull_request. Its release file is tag-only;
+    # remote registration/disablement is retained, never used as PR startup proof.
+    excluded = [{'workflow': next((w for w in entries if w['path'] == release_path), None),
+                 'reason': 'tag-only push v*; ineligible for mapped pull_request event',
+                 'proves_ci_enabled': False}]
+    for workflow in (w for w in entries if w['path'] == managed_path):
+        workflow_id = workflow.get('id')
+        require(type(workflow_id) is int and workflow_id > 0 and
+                workflow.get('url') == f'https://api.github.com/repos/{repo}/actions/workflows/{workflow_id}' and
+                workflow.get('html_url') == f'https://github.com/{repo}/actions/workflows/dependabot/dependabot-updates',
+                'unproven managed workflow provenance')
+        pages = json.loads(recorder.read(['gh', 'api', '--paginate', '--slurp',
+             f'repos/{repo}/actions/workflows/{workflow_id}/runs?per_page=100'], project))
+        updates = [r for page in pages for r in page['workflow_runs']]
+        require(updates and all(r.get('workflow_id') == workflow_id and r.get('path') == managed_path and
+                r.get('event') == 'dynamic' and r.get('repository', {}).get('full_name') == repo and
+                r.get('actor', {}).get('login') == 'dependabot[bot]' and
+                r.get('actor', {}).get('id') == 49699333 and r.get('actor', {}).get('type') == 'Bot'
+                for r in updates), 'managed workflow has missing or unsupported event/provenance evidence')
+        excluded.append({'workflow': workflow, 'actual_runs': updates, 'proves_ci_enabled': False,
+                         'reason': 'GitHub-generated Dependabot update event, not mapped PR CI'})
+    runs = json.loads(recorder.read(['gh', 'api', '--paginate', '--slurp',
+         f'repos/{repo}/actions/runs?event=pull_request&head_sha={current["head"]}&per_page=100'], project))
+    observations = [r for page in runs for r in page['workflow_runs']]
+    # A rehearsal observes working Actions; it never describes those runs as an outage.
+    require(rehearsal or not observations, 'run exists; queued/started/red or ambiguous startup is not qualified')
+    require(all(r.get('path') == ci_path and r.get('event') == 'pull_request' for r in observations),
+            'unsupported workflow/event in actual PR runs')
+    return {'workflow_count': len(entries), 'eligible_workflow_paths': [ci_path],
+            'excluded_workflows': excluded, 'actual_runs': observations,
+            'rehearsal_observation_only': rehearsal, 'repo': repo, 'pr': pr, **current}
+
+
+def current_provider_cause(project, proof, recorder, rehearsal):
+    if rehearsal or proof['cause'] != 'provider-outage':
+        return {'refresh': 'simulated' if rehearsal else 'billing UI must be re-read by integrating session before audit'}
+    raw = recorder.read(['curl', '--fail', '--silent', '--show-error', STATUS_URL], project)
+    fresh = {**proof, 'observed_at': utc(), 'captures': [{'argv': ['curl', STATUS_URL],
+             'exit_code': 0, 'captured_at': utc(), 'stdout': raw, 'stderr': ''}]}
+    return qualify(fresh, False)
+
+
+def same_identity(original, current):
+    require(original == current, 'remote base/head/default branch moved; collect a new bundle')
+
+
+def environment_snapshot(checkout, recorder, environment):
+    snapshot = {'environment': environment, 'platform': platform.platform(), 'tools': {}}
+    for tool in ('python3', 'git', 'node', 'npm', 'codex', 'bwrap', 'apparmor_parser'):
+        binary = shutil.which(tool, path=environment['PATH'])
+        if binary:
+            proc = recorder.run([binary, '--version'], checkout, env=environment, inherit_environment=False)
+            snapshot['tools'][tool] = {'path': binary, 'identity': file_identity(Path(binary).resolve()),
+                'exit_code': proc.returncode, 'stdout_b64': base64.b64encode(proc.stdout).decode(),
+                'stderr_b64': base64.b64encode(proc.stderr).decode()}
+        else: snapshot['tools'][tool] = {'absent': True}
+    for name in ('/etc/os-release', '/var/lib/dpkg/status', '/etc/apparmor.d/bwrap-userns-restrict'):
+        path = Path(name)
+        snapshot[name] = file_identity(path) if path.is_file() else {'absent': True}
+    return snapshot
+
+
+def run_jobs(checkout, approved, recorder, output, ignored_inputs=()):
+    check_map(checkout, approved)
+    native = Path(output) / 'native'; native.mkdir()
+    home = Path(output) / 'job-home'; home.mkdir()
+    environment = {'PATH': os.environ['PATH'], 'HOME': str(home), 'TMPDIR': str(native), 'LANG': 'C.UTF-8'}
+    # Jobs need no secrets; do not inherit GH_TOKEN or the collector's other credentials.
+
+    results, gaps = {}, []
+    details = []
+    for args in (['diff', '--quiet'], ['diff', '--cached', '--quiet'], ['status', '--porcelain', '-uall']):
+        recorder.read(['git', *args], checkout)
+    initial = inventory(checkout, ignored_inputs=ignored_inputs)
+    save(Path(output) / 'inputs-before.json', initial)
+    for job in approved['jobs']:
+        status = 'success'
+        if any(results.get(dep) != 'success' for dep in job.get('needs', [])) and not job.get('always'):
+            status = 'dependency-failed'
+            gaps.append(job['id']+': dependency failed; CI would not start this job')
+        else:
+            for step in job['steps']:
+                if status != 'success' and not step.get('always'):
+                    details.append({'job': job['id'], 'step': step['id'], 'result': 'not-run-after-failure'})
+                    continue
+                if step['kind'] == 'linux-setup' and (platform.system() != 'Linux' or
+                        not Path('/etc/os-release').is_file() or 'ID=ubuntu' not in Path('/etc/os-release').read_text()):
+                    status = 'incapable'
+                    gaps.append(job['id']+': Ubuntu Linux apt/AppArmor/bwrap unavailable')
+                    details.append({'job': job['id'], 'step': step['id'], 'result': 'incapable'})
+                    continue
+                before = inventory(checkout, ignored_inputs, approved['generated_outputs'])
+                env = dict(environment)
+                if job['id'] == 'test':
+                    env.update(SUITE_RESULT=results['suite'], NATIVE_RESULT=results['native'])
+                env.update(BASE_SHA=git(checkout, 'rev-parse', 'HEAD^1').decode().strip(),
+                           HEAD_SHA=git(checkout, 'rev-parse', 'HEAD^2').decode().strip())
+                toolchain_before = environment_snapshot(checkout, recorder, env)
+                if step['kind'] == 'artifact':
+                    artifact_files = [p for p in native.rglob('*') if p.is_file()]
+                    result = f'artifact retained-locally ({len(artifact_files)} files); upload transport unavailable'
+                    if status == 'success' and not artifact_files:
+                        status = 'failure'; gaps.append(job['id']+': required native artifact missing')
+                else:
+                    proc = recorder.run(['bash', '-eo', 'pipefail', '-c', step['run']], checkout, env=env, inherit_environment=False)
+                    result = 'success' if proc.returncode == 0 else 'failure'
+                    if result != 'success':
+                        status = result
+                        gaps.append(job['id']+'/'+step['id']+f': exit {proc.returncode}')
+                toolchain_after = environment_snapshot(checkout, recorder, env)
+                if job['id']+'/'+step['id'] not in approved['environment']['setup_changes']:
+                    require(toolchain_before == toolchain_after, 'undeclared toolchain/dependency change')
+                after = inventory(checkout, ignored_inputs, approved['generated_outputs'])
+                unchanged(before, after)
+                details.append({'job': job['id'], 'step': step['id'], 'result': result,
+                                'inputs_before': before, 'inputs_after': after,
+                                'toolchain_before': toolchain_before, 'toolchain_after': toolchain_after})
+        results[job['id']] = status
+    after = inventory(checkout, ignored_inputs, approved['generated_outputs'])
+    unchanged(initial, after)
+    for args in (['diff', '--quiet'], ['diff', '--cached', '--quiet'], ['status', '--porcelain', '-uall']):
+        recorder.read(['git', *args], checkout)
+    save(Path(output) / 'inputs-after.json', after)
+    return {'jobs': results, 'steps': details, 'gaps': gaps,
+            'coverage_complete': not gaps and all(v == 'success' for v in results.values())}
+
+
+def retain_context(context, output):
+    retained = {}
+    for name in ('issue.json', 'accepted-spec.md', 'source-checklist.md'):
+        path = Path(context) / name
+        require(path.is_file() and not path.is_symlink() and path.read_bytes(),
+                f'whole audit context missing or unsafe: {name}')
+        raw = path.read_bytes()
+        durable_bytes(Path(output) / ('audit-'+name), raw)
+        retained[name] = {'sha256': hashlib.sha256(raw).hexdigest(), 'bytes': len(raw)}
+    return retained
+
+
+def collect(args):
+    project, output = args.project.resolve(), args.output.resolve()
+    require(not output.exists(), 'output already exists; preserve interrupted evidence and use a new destination')
+    output.mkdir(parents=True, mode=0o700)
+    recorder = Recorder(output)
+    report = {'simulated': args.rehearsal, 'coverage_complete': False, 'merge_permitted': False}
+    try:
+        report['audit_context'] = retain_context(args.context, output)
+        proof = json.loads(args.proof.read_text())
+        durable_bytes(output / 'cause-original.json', args.proof.read_bytes())
+        report['cause'] = qualify(proof, args.rehearsal)
+        approved = json.loads(args.map.read_text())
+        require(hashlib.sha256(args.map.read_bytes()).hexdigest() == APPROVED_MAP_SHA256, 'map byte pin differs')
+        durable_bytes(output / 'reviewed-map.json', args.map.read_bytes())
+        inventory(project)
+        current = view(project, args.repo, args.pr, recorder)
+        report['diagnostics_before'] = diagnostics(project, args.repo, args.pr, current, recorder, args.rehearsal)
+        report['cause_refresh_before'] = current_provider_cause(project, proof, recorder, args.rehearsal)
+        origin = recorder.read(['git', 'remote', 'get-url', 'origin'], project)
+        require(origin in (f'https://github.com/{args.repo}.git', f'https://github.com/{args.repo}',
+                           f'git@github.com:{args.repo}.git'), 'origin repository differs')
+        recorder.read(['git', 'fetch', 'origin', current['branch']], project)
+        require(recorder.read(['git', 'rev-parse', 'FETCH_HEAD'], project) == current['base'], 'fetched base moved')
+        recorder.read(['git', 'fetch', 'origin', f'pull/{args.pr}/head'], project)
+        require(recorder.read(['git', 'rev-parse', 'FETCH_HEAD'], project) == current['head'], 'fetched head moved')
+        same_identity(current, view(project, args.repo, args.pr, recorder))
+        merge = materialize(project, current['base'], current['head'], output, recorder)
+        report['identity'] = {**merge, 'repo': args.repo, 'pr': args.pr}
+        recorder.read(['git', 'diff', '--binary', current['base'], current['head']], project)
+        recorder.read(['git', 'diff', '--name-status', current['base'], current['head']], project)
+        checkout = Path(merge['checkout'])
+        check_map(checkout, approved)
+        report.update(run_jobs(checkout, approved, recorder, output))
+        same_identity(current, view(project, args.repo, args.pr, recorder))
+        report['diagnostics_after'] = diagnostics(project, args.repo, args.pr, current, recorder, args.rehearsal)
+        report['cause_refresh_after'] = current_provider_cause(project, proof, recorder, args.rehearsal)
+        require(args.proof.read_bytes() == (output / 'cause-original.json').read_bytes() and
+                args.map.read_bytes() == (output / 'reviewed-map.json').read_bytes(), 'proof/map input moved')
+        require(recorder.read(['git', 'merge-tree', '--write-tree', current['base'], current['head']], project)
+                == merge['tree'], 'merge tree changed')
+    except BaseException as error:
+        report['error'] = f'{type(error).__name__}: {error}'
+        report['coverage_complete'] = False
+        save(output / 'failure.json', {'original_error': report['error'], 'captured_at': utc()})
+        try:
+            seal(output, report)
+        except BaseException as sealing_error:
+            save(output / 'seal-failure.json', {'error': f'{type(sealing_error).__name__}: {sealing_error}',
+                 'original_error': report['error'], 'captured_at': utc()})
+        raise
+    return seal(output, report)
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--verify', type=Path, help='verify retained digest-bound captures; no commands rerun')
+    parser.add_argument('--expected-sha256', help='externally retained SHA-256 of bundle-receipt.json for verification')
+    parser.add_argument('--project', type=Path)
+    parser.add_argument('--repo')
+    parser.add_argument('--pr', type=int)
+    parser.add_argument('--proof', type=Path)
+    parser.add_argument('--map', type=Path, default=ROOT / 'scripts/ci-evidence-map.json')
+    parser.add_argument('--output', type=Path)
+    parser.add_argument('--context', type=Path, help='whole issue.json, accepted-spec.md and source-checklist.md audit inputs')
+    parser.add_argument('--rehearsal', action='store_true')
+    args = parser.parse_args()
+    if args.verify:
+        require(args.expected_sha256 and re.fullmatch('[0-9a-f]{64}', args.expected_sha256), 'external bundle pin required')
+        report = verify(args.verify, args.expected_sha256)
+    else:
+        require(args.project and args.repo and args.pr and args.proof and args.output and args.context, 'explicit collector inputs required')
+        require(re.fullmatch(r'[\w.-]+/[\w.-]+', args.repo) and args.pr > 0, 'invalid repository/PR')
+        report = collect(args)
+    print(json.dumps({k: report.get(k) for k in ('merge_permitted', 'coverage_complete', 'simulated', 'gaps', 'error')}, indent=2))
+    return 0 if report.get('coverage_complete') else 1
+
+
+if __name__ == '__main__':
+    try:
+        sys.exit(main())
+    except (Refusal, ValueError, KeyError, OSError) as error:
+        print(f'ci-evidence refused: {error}', file=sys.stderr)
+        sys.exit(1)

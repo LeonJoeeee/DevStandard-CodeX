@@ -135,7 +135,13 @@ and returns the exact native JSON at its `instruction` path; recovery follows th
 Safe already-authorized temporary self-hosted Actions for hosted allowance/capacity refusal
 keep ordinary review and CI gates; [the CI guidance](reference/ci-pipelines.md) owns diagnosis,
 trust/isolation, equivalence, retained logs and cleanup. The separate degraded local merge-waiver
-design remains documented, but its CLI route refuses as unqualified. Rebase
+design remains documented, but its CLI route refuses as unqualified. The focused
+[`scripts/ci-evidence`](scripts/ci-evidence) collector preserves the mapped exact
+merge evidence and publication receipts; its [guide](reference/ci-cannot-run.md)
+keeps independent audit, operational qualification and human policy separate.
+Before any tag or release, the integrating session must consume that guide's
+Release hold inspection and retain the withhold/clear decision; this is a session
+obligation, not an outage-aware machine gate. Rebase
 comparison is diagnostic patch/tree equality and does not authorize acceptance reuse; changed
 heads need fresh check 1. Version-only review waivers are source principles, not implemented guard
 exemptions. See [the architecture](docs/architecture.md) for these dispositions.
