@@ -8,7 +8,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / 'scripts'))
 from hard_edges import Refusal, api, merged_result, protection_check, require, resolved, run  # noqa: E402
-from review_state import accepted  # noqa: E402
+from review_state import accepted, ledger_path, load, locked  # noqa: E402
+from acceptance_reuse import capture, require_context, validate_reuse_files, verify_reuse  # noqa: E402
 
 
 def main():
@@ -28,6 +29,7 @@ def main():
     parser.add_argument('--old-head')
     parser.add_argument('--base')
     parser.add_argument('--head')
+    parser.add_argument('--reuse', type=int, help='exact published accepted-review reuse receipt id')
     args = parser.parse_args()
     project = resolved(args.project, 'project')
     if args.action == 'protection':
@@ -50,6 +52,12 @@ def main():
                           'acceptance_reused':False}, indent=2))
         return
     require(args.repo and args.pr, 'merge needs --repo and --pr')
+    with locked(project, args.repo, args.pr) as ledger:
+        initial = load(ledger_path(project, args.repo, args.pr), args.repo, args.pr)
+        verify_merge(args, project, ledger, initial)
+
+
+def verify_merge(args, project, ledger, initial):
     require(not args.ci_fallback,
             'CI fallback is not qualified at this boundary; retain evidence and wait, never waive CI')
     repo = api(f'repos/{args.repo}')
@@ -66,7 +74,18 @@ def main():
             'PR head does not contain the current base')
     pages = api(f'repos/{args.repo}/issues/{args.pr}/comments', '--paginate','--slurp') or []
     comments = [c for page in pages for c in page]
-    attempt, _ = accepted(project, args.repo, args.pr, comments, head, base)
+    current = None
+    if args.reuse:
+        require(ledger['attempts'], 'no original accepted review receipt')
+        current = capture(args.repo, args.pr, ledger['attempts'][-1]['issue'])
+        attempt, proof = verify_reuse(project, ledger, current, args.reuse)
+        require(proof['head'] == head and proof['base'] == base, 'selected proof head or base differs')
+        require(args.ci_app_id == 15368, 'reuse requires ordinary GitHub Actions integration evidence')
+    else:
+        attempt, _ = accepted(project, args.repo, args.pr, comments, head, base, ledger)
+        if attempt.get('context'):
+            current = capture(args.repo, args.pr, attempt['issue'])
+            require_context(attempt, ledger, current)
     pages = api(f'repos/{args.repo}/commits/{head}/check-runs', '--paginate','--slurp') or []
     checks = [c for page in pages for c in page.get('check_runs',[])]
     latest = {}
@@ -87,6 +106,28 @@ def main():
     require(after['state'] == 'open' and after['head']['sha'] == head
             and after['base']['sha'] == base and base_after == base,
             'PR head or base moved during verification; verify again')
+    require(load(ledger_path(project, args.repo, args.pr), args.repo, args.pr) == initial,
+            'local review ledger moved during verification')
+    if current:
+        final = capture(args.repo, args.pr, attempt['issue'])
+        require(current['fields'] == final['fields']
+                and final['raw']['pr']['head']['sha'] == head
+                and final['raw']['pr']['base']['sha'] == base,
+                'review context/head/base moved during verification')
+        if args.reuse:
+            validate_reuse_files(proof)
+            accepted(project,args.repo,args.pr,final['raw']['pr_comments'],
+                     proof['old_head'],proof['old_base'],ledger)
+            require_context(attempt,ledger,final,
+                            proof['proof']['replacement'] if proof['kind'] == 'external' else None)
+        else:
+            # Re-read original packet/instruction/verdict association too.
+            accepted(project,args.repo,args.pr,final['raw']['pr_comments'],head,base,ledger)
+            require_context(attempt, ledger, final)
+        require(api(f'repos/{args.repo}/git/ref/heads/{default}')['object']['sha'] == base,
+                'default base moved at verification end')
+    require(load(ledger_path(project,args.repo,args.pr),args.repo,args.pr) == initial,
+            'local review ledger moved at verification end')
     if not args.execute:
         print(json.dumps({'action':'merge','merge':'pass','head':head,'base':base,
                           'attempt':attempt['comment_id']}, indent=2))

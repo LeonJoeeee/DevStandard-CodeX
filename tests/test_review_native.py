@@ -200,8 +200,11 @@ class ReviewNativeTest(unittest.TestCase):
         started = self.start()
         self.assertEqual(started.returncode, 0, started.stderr)
         data = json.loads(started.stdout)
+        self.fx.legacy_receipt()
         ledger = json.loads(self.fx.ledger.read_text())
         ledger['attempts'][-1].pop('packet_carrier')
+        # A historical inline receipt predates context-v1 as well. Removing only
+        # the carrier from a new context-bound receipt must not weaken that proof.
         self.fx.ledger.write_text(json.dumps(ledger))
         Path(data['packet']).unlink()
         verdict = self.fx.root / 'verdict.md'

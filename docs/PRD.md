@@ -26,7 +26,8 @@ history; this repository's decision log starts at 0000.
 - Obtain fresh independent Goal/Floor review. Only goal fulfillment and evidence/authorization
   Floors decide readiness; Notes do not trigger review rounds. Repeated nonconvergence earns a
   decision about the work rather than endless polishing.
-- Integrate only through an exact-head/base local acceptance receipt and green CI for the merge
+- Integrate only through an exact-head/base local acceptance receipt or its narrowly proven
+  accepted-review reuse, and green CI for the exact merge
   result, then clean up owned artifacts and perform a separately authorized release.
 - Keep general collaboration agreements in one method source, delivered whole to main and child
   roles without role promotion or a permanent user-level AGENTS bootstrap. Ordinary research and

@@ -10,6 +10,7 @@ from copy import deepcopy
 import json
 import runpy
 import sys
+import uuid
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -18,7 +19,11 @@ from hard_edges import Refusal, anchored_roles, api, helper_line, require, resol
 from review_packet import (FORMAT, UNPINNED, ci_configuration_paths, issue_contract, predicate,
                            render, template)  # noqa: E402
 from review_state import (associated, digest, envelope, finish_pending, ledger_path, locked, new_attempt,
-                          publish, recover_pending, save, status, validate_packet_carrier, write_pending)  # noqa: E402
+                          publish, recover_pending, save, status, validate_packet_carrier,
+                          validate_instruction, write_pending, accepted, load, no_pending)  # noqa: E402
+from acceptance_reuse import (NATIVE, canonical, capture, context_attachment, context_diff,
+                              prepare_reuse, record_body, require_context, sha,
+                              validate_reuse_files, verify_reuse)  # noqa: E402
 
 
 def repo_of(project):
@@ -48,6 +53,12 @@ def packet_text(project, issue, number, architecture, output, model, effort,
     contract = issue_contract(issue_body)
     issue_comments = comments(repo, issue)
     pr_comments = comments(repo, number)
+    context = capture(repo, number, issue)
+    require(context['fields']['issue_body'] == issue_body
+            and context['fields']['body'] == (pr['body'] or '')
+            and context['raw']['pr']['head']['sha'] == head
+            and context['raw']['pr']['base']['sha'] == base,
+            'issue/PR context moved while assembling; assemble again')
     identity = f'Codex, {model} at {effort}, read-only'
     gaps = []
     captures = []
@@ -79,7 +90,7 @@ def packet_text(project, issue, number, architecture, output, model, effort,
     if unit and not gap:
         slots['IN_REPO_WRITES_PREDICATE'] = unit
     packet = {'template': template(), 'slots': slots, 'issue_body': issue_body, 'format': FORMAT,
-              'integrity_gaps': gaps, 'pr_comments': pr_comments}
+              'integrity_gaps': gaps, 'pr_comments': pr_comments, 'context': context}
     if accepted_spec != 'NONE':
         try:
             packet['accepted_spec_contents'] = run('git', 'cat-file', 'blob', accepted_spec, cwd=project)
@@ -102,17 +113,21 @@ def packet_text(project, issue, number, architecture, output, model, effort,
     after = pr_of(project, number)
     require(before == (after['headRefOid'], after['baseRefOid'], after['body']),
             'PR head, base or description moved while assembling; assemble again')
+    require(context['fields'] == capture(repo, number, issue)['fields'],
+            'review context moved while assembling; assemble again')
+    text += context_attachment(context)
     Path(output).mkdir(parents=True, exist_ok=True)
     (Path(output) / 'packet.md').write_text(text)
     (Path(output) / 'packet.json').write_text(json.dumps(packet, indent=2) + '\n')
     return text, head, base, identity
 
 
-def remote_comment(project, repo, number, issue, ledger, intended, body, previous=None):
+def remote_comment(project, repo, number, issue, ledger, intended, body, previous=None,
+                   record_type='attempt', target=None):
     path = ledger_path(project, repo, number)
-    write_pending(path, ledger, intended, body, previous)
+    write_pending(path, ledger, intended, body, previous, record_type, target)
     endpoint = (f'repos/{repo}/issues/comments/{previous["comment_id"]}' if previous else
-                f'repos/{repo}/issues/{number}/comments')
+                f'repos/{repo}/issues/{target or number}/comments')
     try:
         response = api(endpoint, '-X', 'PATCH' if previous else 'POST', '-f', 'body=' + body)
         return finish_pending(ledger, response)
@@ -123,6 +138,9 @@ def remote_comment(project, repo, number, issue, ledger, intended, body, previou
 
 
 def reconcile(project, repo, number, ledger, history):
+    pending = ledger.get('pending')
+    if pending and pending.get('record_type') == 'native':
+        history = comments(repo, pending['target'])
     if recover_pending(ledger, history):
         # A later refusal (for example fail after a recovered return) must not undo recovery.
         save(ledger_path(project, repo, number), ledger)
@@ -175,7 +193,8 @@ def native_instruction(attempt):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=['assemble', 'start', 'status', 'publish', 'fail', 'rule'])
+    parser.add_argument('action', choices=['assemble', 'start', 'status', 'publish', 'fail', 'rule',
+                                           'reuse', 'record-native'])
     parser.add_argument('number', type=int)
     parser.add_argument('--issue', type=int, required=True)
     parser.add_argument('--architecture-level', dest='arch', choices=['yes', 'no'])
@@ -189,6 +208,15 @@ def main():
     parser.add_argument('--delivery-status', type=Path)
     parser.add_argument('--attempt', type=int)
     parser.add_argument('--verdict', type=Path)
+    parser.add_argument('--kind', choices=['replay','note','external'])
+    parser.add_argument('--old-base')
+    parser.add_argument('--old-head')
+    parser.add_argument('--base')
+    parser.add_argument('--head')
+    parser.add_argument('--request', type=Path)
+    parser.add_argument('--native-handle')
+    parser.add_argument('--observation', type=Path)
+    parser.add_argument('--refresh-context', action='store_true')
     parser.add_argument('--decision', choices=['continue','merge-as-is','rewrite','abandon','change-route'])
     parser.add_argument('--reason')
     parser.add_argument('--project', type=Path, default=Path.cwd())
@@ -209,6 +237,92 @@ def main():
         installer = dispatcher['qualify'](project, args.host_version)
     repo = repo_of(project)
     number, issue = args.number, args.issue
+    if args.action in ('reuse', 'record-native'):
+        require(args.attempt, 'reuse/record-native requires --attempt')
+        with locked(project, repo, number) as ledger:
+            reconcile(project, repo, number, ledger, comments(repo, number))
+            no_pending(ledger)
+            initial_ledger = deepcopy(load(ledger_path(project, repo, number), repo, number))
+            current = capture(repo, number, issue)
+            targets = [a for a in ledger['attempts'] if a.get('comment_id') == args.attempt]
+            require(len(targets) == 1 and targets[0] is ledger['attempts'][-1],
+                    'action requires the latest original attempt receipt')
+            attempt = targets[0]
+            require(attempt['issue'] == issue, 'attempt belongs to a different issue')
+            require(api('user')['login'] == attempt['author'], 'publication author differs from original attempt')
+            if args.action == 'reuse':
+                require(args.output and args.request and args.kind
+                        and all((args.old_base,args.old_head,args.base,args.head)),
+                        'reuse requires kind, four immutable pins, request and output')
+                request_bytes = args.request.read_bytes()
+                record, body = prepare_reuse(project, ledger, current, args.attempt, args.kind,
+                                             [args.old_base,args.old_head,args.base,args.head],
+                                             request_bytes, args.output)
+                require(args.request.read_bytes() == request_bytes, 'request moved during proof computation')
+                # The files and source are re-read before publishing, not merely
+                # trusted from a previously returned pass value.
+                require(Path(record['bundle_path']).is_file(), 'retained proof bundle disappeared')
+            else:
+                require(args.native_handle and args.native_handle.strip() == args.native_handle
+                        and '\n' not in args.native_handle and args.observation,
+                        'record-native requires an exact handle and observed return file')
+                require(not attempt.get('native_record') and attempt['state'] in ('reserved','returned'),
+                        'native observation is already recorded or attempt is not active/returned')
+                associated(attempt, current['raw']['pr_comments'])
+                validate_packet_carrier(attempt);validate_instruction(attempt)
+                require_context(attempt, ledger, current)
+                raw = args.observation.read_bytes();require(raw, 'native observed return is empty')
+                record = {'format': NATIVE, 'repo': repo, 'pr': number, 'issue': issue,
+                          'token': uuid.uuid4().hex, 'attempt_token': attempt['token'],
+                          'attempt_id': attempt['comment_id'], 'head': attempt['head'], 'base': attempt['base'],
+                          'author': attempt['author'], 'instruction_sha256': attempt['native_instruction_sha256'],
+                          'native_handle': args.native_handle, 'observation_sha256': sha(raw)}
+                path = Path(attempt['packet_path']).parent / ('native-observation-'+record['token']+'.bin')
+                path.write_bytes(raw);record['observation_path'] = str(path)
+                require(args.observation.read_bytes() == raw, 'native observation moved during recording')
+                body = record_body(record)
+            require(load(ledger_path(project, repo, number), repo, number) == initial_ledger,
+                    'local review ledger moved during proof/observation preparation')
+            final = capture(repo, number, issue)
+            require(current['fields'] == final['fields']
+                    and all(current['raw']['pr'][side] == final['raw']['pr'][side] for side in ('head','base')),
+                    'remote context/head/base moved during proof/observation preparation')
+            validate_packet_carrier(attempt);validate_instruction(attempt)
+            if args.action == 'reuse':
+                # Validate newly retained bytes before they can acquire an id.
+                record['body'] = body
+                validate_reuse_files(record)
+            record = remote_comment(project, repo, number, issue, ledger, record, body,
+                                    record_type='reuse' if args.action == 'reuse' else 'native',
+                                    target=number if args.action == 'reuse' else issue)
+            # The returned association is known, even if a later race refuses.
+            # Preserve it rather than mislabeling a known POST as an unknown one.
+            save(ledger_path(project, repo, number), ledger)
+            final = capture(repo, number, issue)
+            require(final['raw']['pr']['head']['sha'] == record['head']
+                    and final['raw']['pr']['base']['sha'] == record['base'],
+                    'head/base moved during proof/native publication')
+            if args.action == 'reuse':
+                verify_reuse(project, ledger, final, record['comment_id'])
+                require(args.request.read_bytes() == request_bytes, 'request moved during proof publication')
+            else:
+                validate_packet_carrier(attempt);validate_instruction(attempt)
+                require_context(attempt, ledger, final)
+                require(args.observation.read_bytes() == raw, 'observation moved during native publication')
+            completed = capture(repo, number, issue)
+            require(final['fields'] == completed['fields']
+                    and completed['raw']['pr']['head']['sha'] == record['head']
+                    and completed['raw']['pr']['base']['sha'] == record['base'],
+                    'remote context/head/base moved at publication end')
+            if args.action == 'reuse':
+                validate_reuse_files(record)
+            validate_packet_carrier(attempt);validate_instruction(attempt)
+            require(load(ledger_path(project, repo, number), repo, number) == ledger,
+                    'local review ledger moved during proof/native publication')
+        print(json.dumps({'kind':args.action,'comment_id':record['comment_id'],
+                          'head':record['head'],'base':record['base'],
+                          'bundle':record.get('bundle_path'),'observation':record.get('observation_path')},indent=2))
+        return
     if args.action == 'status':
         with locked(project, repo, number) as ledger:
             history = comments(repo, number)
@@ -259,7 +373,32 @@ def main():
         history = comments(repo, number)
         reconcile(project, repo, number, ledger, history)
         status(ledger, history)
-        attempt = new_attempt(ledger, issue, head, base, identity, author, text)
+        context = json.loads((args.output / 'packet.json').read_text())['context']
+        require(context['fields'] == capture(repo, number, issue)['fields'],
+                'review context moved before reservation')
+        drift = None
+        latest = ledger['attempts'][-1] if ledger['attempts'] else None
+        if args.refresh_context:
+            require(latest and latest.get('comment_id') == args.attempt
+                    and not any(key in latest for key in ('context_version','context','context_sha256')),
+                    'refresh-context requires the latest accepted legacy attempt without a context binding')
+            accepted(project,repo,number,history,head,base,ledger)
+            require(latest.get('packet_carrier') == 'file-sha256-v1',
+                    'legacy refresh requires an intact retained packet carrier')
+            validate_instruction(latest)
+            drift = {'legacy_context_upgrade': latest['comment_id']}
+        elif latest and latest['head'] == head and latest.get('results', {}).get('ready') == 'Yes':
+            accepted(project,repo,number,history,head,base,ledger)
+            if latest.get('context'):
+                drift = context_diff(latest, ledger, context)
+        if drift:
+            attachment = context_attachment(context)
+            require(text.endswith(attachment), 'assembled context attachment differs')
+            text = text[:-len(attachment)] + '\n\n## Verified reviewed-context drift\n' + canonical(drift) + attachment
+            (args.output / 'packet.md').write_text(text)
+        attempt = new_attempt(ledger, issue, head, base, identity, author, text, drift)
+        attempt.update({'context_version': 'context-v1', 'context': context,
+                        'context_sha256': sha(canonical(context))})
         prepare_native(project, args.output, attempt, text, model, effort)
         body = envelope(attempt, 'Reviewer reserved; native invocation and whole returned verdict pending.')
         attempt = remote_comment(project, repo, number, issue, ledger, attempt, body)
@@ -268,7 +407,7 @@ def main():
                       'packet':attempt['packet_path'], 'instruction':native_instruction(attempt),
                       'verdict_file':str(args.output / 'verdict.md'),
                       'notice':'Prepared only. Call native spawn_agent with the exact instruction, '
-                               'record its actual handle on the issue, observe completion, and publish '
+                               'record its actual handle with record-native, observe completion, and publish '
                                'the whole returned verdict. This command launches no executor.'}, indent=2))
 
 

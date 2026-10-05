@@ -36,5 +36,6 @@ python3 .github/test-native-runtime.py --installer scripts/install --scratch-roo
 ## Version bumps
 
 Fold the lockstep bump into the change PR and put the semver call in its description. Every shipped merge, including a bare version bump, requires an exact accepted check-1
-receipt and merged-result CI through `scripts/guard merge`. The source-only bare-bump waiver
+receipt (or its selected exact recomputed accepted-review reuse proof) and merged-result CI
+through `scripts/guard merge`. The source-only bare-bump waiver
 is not implemented in this target.

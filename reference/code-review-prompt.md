@@ -30,7 +30,8 @@ This also covers a main session reviewing its own short-branch PR, which never p
 delivery.
 
 **Whether a changed head needs a fresh check 1 is the merging session's call, never the reviewer's:**
-`reference/orchestrator.md`'s Two narrow exceptions to re-running check 1 section states the source cases and their shipped-command limits.
+`reference/orchestrator.md`'s Two narrow exceptions to re-running check 1 section and
+`reference/acceptance-reuse.md` state the exact source predicates and consumer proof requirements.
 
 **Context rules:** the discovered native role supplies this complete static contract and host
 mechanics. Ordinary review-start messages bind issue/head/base/reviewer identity, workdir and the
@@ -189,6 +190,26 @@ Ready to merge: [Yes | No] — decided only by the Goal verdict and these two Fl
 ### Notes
 [Everything else observed, or “None.”] Notes never affect the verdict or trigger a re-review;
 leaving them on the PR is the default.
+
+When you explicitly prescribe one byte-identical replacement for optional reuse, use one
+top-level block wholly inside Notes, outside quoted examples or other fences. Ordinary Notes
+need no structured block. Target ranges select [start, end) UTF-8 bytes in the reviewed blob;
+the caller cannot adapt your locator or replacement. A qualifying example (tildes are allowed):
+
+<!-- codex-method-note-v1 -->
+Replacement: {"target":"a.md","start":0,"end":4}
+~~~replacement
+Corrected text.
+~~~
+<!-- /codex-method-note-v1 -->
+
+For an exact entire PR-description correction, metadata is solely
+`Replacement: {"artifact":"pr-description"}`. Delimiters/metadata start in column zero and
+end LF; the next line opens `replacement` with zero to three spaces and at least three
+identical backticks or tildes. Close with identical indentation/marker, then immediately the
+closing delimiter. No duplicates, nesting, alternatives or adapted prose acquire authority.
+`reference/acceptance-reuse.md` owns raw extraction and exact consumer proof. This optional
+prescription never changes Goal/Floor judgment, readiness or the default of leaving Notes.
 
 Write those four decision lines — the Goal answer, both Floor lines and Ready to merge — in plain
 text: no bold or italic emphasis around the label or the result.
