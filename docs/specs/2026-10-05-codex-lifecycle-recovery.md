@@ -382,10 +382,32 @@ nested-command hook shells therefore create groups outside the app and local-hos
 each actual hook event/handler identity, input, source/config digest, shell argv/initialization,
 PID/birth/PPID/PGID, enrollment barrier, full stdout/stderr, completion and actual descendant/wait
 correlations. Require audited synchronous hooks only, with no unknown login-shell startup, detached
-helper, async hook, arbitrary MCP or unaccounted subprocess. A hook wrapper must register its
-own shell/script group and any audited descendant before task work is released, without changing
-hook results or omitting actual native originals. A completed hook response alone is not proof of
-OS reaping. If the actual public surface cannot correlate and gate that full chain, B is blocked.
+helper, async hook, arbitrary MCP or unaccounted subprocess. Before releasing an original hook
+entry, enroll its actual native handler/launcher chain and every process group. Bind the exact
+hook, wrapper, resolved executable/dependency bytes, argv, environment and shell initialization,
+including fixed synchronous descendant source classes audited to preserve those groups. Retain
+every descendant birth actually observed, correlated to its invocation and audited chain, and
+every actual available wait/completion. A transient internal helper completing between observations
+has no invented individual PID, birth or wait record: its coverage rests on that exact audited
+chain, original handler completion/waits and fresh complete registered-group emptiness plus absence
+of every recorded birth. A hook response alone proves no individual helper reaping. Unknown or
+changed initialization/dependencies, identity gaps, races, group reuse, detaching or surviving
+activity and contradictory observations refuse. If the source/environment audit or actual public
+surface cannot correlate and gate the full chain, B is blocked.
+
+This task-private B target may use supported `features.plugins=false` and `features.hooks=true`
+to suppress plugin loading and unrelated background catalog synchronization. Configure exactly
+one normal synchronous handler route through the declared wrapper to each unchanged original
+entry, preserving effective matchers, payload/role identity, original arguments, complete results,
+timeout, trust and full inline-context semantics. Use one admitted declaration representation per
+layer; do not combine JSON and TOML declarations of the same handler. Verify the effective handler
+inventory and actual invocations: duplicate handlers, omitted enforcement or ignored entries refuse.
+These observations qualify only this configured harness, never pristine plugin loading, package
+defaults or ordinary desktop missing-handle recovery. The startup Git failure remains a failure.
+The exact bounded conditions are accepted in Issue 18 comments `5993308802` and `5993343367`;
+comment `5993363557` resolves the separate launcher/native-path comparison. Fresh B attempts directly
+select the original native Mach-O path and verify the app/packed-host/package pins above; the shell
+launcher and distinct npm build do not inherit its actual launch observations or qualification.
 
 Startup hooks run and finish under their own gate before the marker. Later nested `exec_command`
 PreToolUse/PostToolUse hooks receive the same accounting independently of the Custom wrapper.
