@@ -7,12 +7,18 @@ the filled review packet owns formal PR judgment. Task-local helpers keep their 
 
 ## Qualified host and role delivery
 
-The supported host is Codex **0.160.0**, native V2; the probes below qualify its mechanics.
+The qualified hosts are Codex **0.160.0** and **0.160.1**, native V2, with captured Linux
+controlled-provider mechanics and scoped authenticated Windows 0.160.1 startup/role evidence.
+The isolated Windows workspace-write probe remains blocked by host subprocess policy.
+Installer, dispatcher and native probes share `scripts/host_contract.py`;
+unknown or missing observed host identities refuse. Windows uses Python hook entry points via
+`commandWindows`; Unix retains the shell entry. Admission and successful installation do not
+establish a passing native probe, trusted hooks or model access.
 Target probes
 captured loaded role discovery, full worker/reviewer role bytes, explicit `gpt-6.1-sol`/`high`,
 `fork_turns="none"`, allowed `pwd`, and ordinary worker merge, reviewer write and reviewer
 cross-role refusals. A controlled provider establishes host mechanics rather than production
-worker execution or uncoached compliance. A separate production Sol/high typed reviewer call with
+worker execution or uncoached compliance. A separate production `gpt-6.1-sol`/`high` typed reviewer call with
 an explicitly active role-config layer retained prompt heading/end marker and omitted a parent-only
 token; an earlier inactive-config discovery block remains recorded. This establishes that call
 rather than universal account access or user-level installation. The earlier 0.159.2 source
@@ -95,7 +101,7 @@ Gating review uses `method_reviewer`; its native message follows the formal tran
 <!-- BEGIN NATIVE HELPER MECHANICS -->
 ## Native helper mechanics
 
-Inspect the actual native schema before invoking it. Qualified Codex 0.160.0 V2 accepts
+Inspect the actual native schema before invoking it. Qualified Codex 0.160.0/0.160.1 V2 accepts
 `task_name`, `message`, `agent_type`, `fork_turns="none"`, `model` and `reasoning_effort`.
 Ordinary task helpers use `method_helper`; fresh design challenge and pre-PR arbitration use
 `method_review_helper`. A reviewer's helpers keep `method_review_helper` and its nonediting

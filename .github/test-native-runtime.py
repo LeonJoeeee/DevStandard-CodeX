@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Qualify Codex 0.160.0 native agents against an auth-free LOCAL Responses provider.
+"""Qualify an explicitly admitted native host against an auth-free LOCAL Responses provider.
 
 One `codex exec` hosts the root and actual native children. No worker/reviewer CLI
 processes, external provider, credentials, remote writes, or sandbox bypass are used.
@@ -31,7 +31,7 @@ import os
 from pathlib import Path
 import re
 import runpy
-import select
+import queue
 import time
 import shlex
 import shutil
@@ -44,6 +44,10 @@ import tomllib
 
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / 'scripts'))
+from host_contract import HOST_HELP, require_host_version  # noqa: E402
+from hard_edges import Refusal  # noqa: E402
+
 VERSION = '0.160.0'
 MODEL = 'gpt-6.1-sol'
 EFFORT = 'high'
@@ -57,6 +61,10 @@ REVIEW_HELPER_TASK = 'NATIVE_FIXTURE_REVIEW_HELPER_TASK_1600'
 DONE = {role: 'NATIVE_FIXTURE_' + role.upper() + '_DONE_1600'
         for role in ('root', 'worker', 'reviewer', 'control', 'helper', 'review_helper')}
 PLUGIN_ID = 'codex-method@codex-method'
+
+
+class RuntimeBlocked(Exception):
+    """A host setup/policy refusal prevented an intended ordinary fixture probe."""
 
 
 def require(condition, message):
@@ -233,12 +241,20 @@ def trusted_inventory(response):
 def discover_hook_trust(binary, env, project, scratch):
     """Ask the actual engine for resolved hashes; do not emulate its hashing API."""
     command = [binary, 'app-server', '--strict-config']
-    (scratch / 'hook-discovery.command.json').write_text(json.dumps(command) + '\n')
+    (scratch / 'hook-discovery.command.json').write_text(json.dumps(command) + '\n', encoding='utf-8')
     with (scratch / 'hook-discovery.stderr').open('w') as error_log, \
             (scratch / 'hook-discovery.jsonl').open('w') as log:
         process = subprocess.Popen(command, env=env, cwd=project, stdin=subprocess.PIPE,
                                    stdout=subprocess.PIPE, stderr=error_log)
-        buffered = b''
+        lines = queue.Queue()
+        def read_lines():
+            while True:
+                line = process.stdout.readline()
+                lines.put(line)
+                if not line:
+                    break
+        reader = threading.Thread(target=read_lines, daemon=True)
+        reader.start()
         def send(identity, method, params):
             message = {'method': method, 'params': params}
             if identity is not None:
@@ -246,23 +262,18 @@ def discover_hook_trust(binary, env, project, scratch):
             process.stdin.write((json.dumps(message) + '\n').encode())
             process.stdin.flush()
         def receive(identity):
-            nonlocal buffered
             deadline = time.monotonic() + 20
             while time.monotonic() < deadline:
-                while b'\n' in buffered:
-                    line, buffered = buffered.split(b'\n', 1)
-                    if not line:
-                        continue
-                    log.write(line.decode() + '\n')
-                    log.flush()
-                    response = json.loads(line)
-                    if response.get('id') == identity:
-                        return response
-                if not select.select([process.stdout], [], [], 0.25)[0]:
+                try:
+                    line = lines.get(timeout=min(0.25, max(0.001, deadline - time.monotonic())))
+                except queue.Empty:
                     continue
-                chunk = os.read(process.stdout.fileno(), 65536)
-                require(chunk, 'hook discovery app-server exited before its response')
-                buffered += chunk
+                require(line, 'hook discovery app-server exited before its response')
+                log.write(line.decode('utf-8'))
+                log.flush()
+                response = json.loads(line)
+                if response.get('id') == identity:
+                    return response
             raise TimeoutError('hook discovery response ' + str(identity))
         try:
             send(1, 'initialize', {'clientInfo': {'name': 'codex_method_qualification', 'version': '1'},
@@ -279,6 +290,7 @@ def discover_hook_trust(binary, env, project, scratch):
                 process.kill()
                 process.wait(timeout=5)
             process.stdin.close()
+            reader.join(timeout=5)
             process.stdout.close()
 
 
@@ -286,7 +298,12 @@ def isolated_env(scratch, inherited=None):
     inherited = os.environ if inherited is None else inherited
     env = {'PATH': inherited.get('PATH', '/usr/bin:/bin'), 'LANG': 'C.UTF-8',
            'HOME': str(scratch / 'home'), 'CODEX_HOME': str(scratch / 'codex-home'),
-           'TMPDIR': str(scratch / 'tmp'), 'PYTHONDONTWRITEBYTECODE': '1'}
+           'TMPDIR': str(scratch / 'tmp'), 'PYTHONDONTWRITEBYTECODE': '1', 'PYTHONUTF8': '1'}
+    # Windows process/sandbox bootstrap needs OS paths, never credentials or user config.
+    for key in ('SystemRoot', 'SYSTEMROOT', 'WINDIR', 'COMSPEC', 'PATHEXT'):
+        if key in inherited:
+            env[key] = inherited[key]
+    env.update(TEMP=env['TMPDIR'], TMP=env['TMPDIR'], USERPROFILE=env['HOME'])
     for key in ('HOME', 'CODEX_HOME', 'TMPDIR'):
         Path(env[key]).mkdir(parents=True, exist_ok=True)
     for key in ('XDG_CONFIG_HOME', 'XDG_CACHE_HOME', 'XDG_DATA_HOME'):
@@ -313,25 +330,27 @@ def inventory(project, codex_home):
 
 
 def run_logged(command, env, cwd, directory, name, **kwargs):
-    (directory / (name + '.command.json')).write_text(json.dumps(command) + '\n')
+    (directory / (name + '.command.json')).write_text(json.dumps(command) + '\n', encoding='utf-8')
     try:
         result = subprocess.run(command, env=env, cwd=cwd, capture_output=True, text=True,
-                                timeout=kwargs.pop('timeout', 30), **kwargs)
+                                encoding='utf-8', timeout=kwargs.pop('timeout', 30), **kwargs)
     except subprocess.TimeoutExpired as error:
         for suffix, data in (('stdout', error.stdout), ('stderr', error.stderr)):
             (directory / (name + '.' + suffix)).write_bytes(
                 data if isinstance(data, bytes) else (data or '').encode())
         raise
-    (directory / (name + '.stdout')).write_text(result.stdout)
-    (directory / (name + '.stderr')).write_text(result.stderr)
+    (directory / (name + '.stdout')).write_text(result.stdout, encoding='utf-8')
+    (directory / (name + '.stderr')).write_text(result.stderr, encoding='utf-8')
     require(result.returncode == 0, name + ' failed (' + str(result.returncode) + '): '
             + result.stderr[-2000:])
     return result
 
 
 HOOK_OBSERVER = '''#!/usr/bin/env python3
-import json, os, subprocess, sys
+import json, os, subprocess, sys, time
 from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
+from filelock import try_lock
 payload_text = sys.stdin.read()
 payload = json.loads(payload_text)
 settings = json.loads((Path(__file__).parent / 'fixture-observer.json').read_text())
@@ -342,14 +361,24 @@ ungated = (payload.get('agent_type') == 'runtime_readonly_control'
 if ungated:
     code, out, err = 0, '', ''
 else:
-    result = subprocess.run([str(Path(__file__).with_name('pre-tool-use.shipped'))],
-                            input=payload_text, capture_output=True, text=True)
+    result = subprocess.run([sys.executable, '-X', 'utf8',
+                             str(Path(__file__).with_name('pre-tool-use.shipped'))],
+                            input=payload_text, capture_output=True, text=True, encoding='utf-8')
     code, out, err = result.returncode, result.stdout, result.stderr
 record = {'payload': payload, 'exit_code': code, 'stdout': out, 'stderr': err,
           'ungated_control': ungated, 'plugin_root': os.environ.get('PLUGIN_ROOT'),
           'plugin_data': os.environ.get('PLUGIN_DATA')}
-with open(settings['log'], 'a') as stream:
-    stream.write(json.dumps(record) + '\\n')
+lock_fd = os.open(settings['log'] + '.lock', os.O_CREAT | os.O_RDWR, 0o600)
+try:
+    deadline = time.monotonic() + 5
+    while not try_lock(lock_fd):
+        if time.monotonic() >= deadline:
+            raise TimeoutError('native fixture observer log lock was busy for 5 seconds')
+        time.sleep(0.01)
+    with open(settings['log'], 'a', encoding='utf-8') as stream:
+        stream.write(json.dumps(record) + '\\n')
+finally:
+    os.close(lock_fd)
 sys.stdout.write(out)
 sys.stderr.write(err)
 sys.exit(code)
@@ -361,11 +390,16 @@ import json, os, subprocess, sys
 from pathlib import Path
 payload_text = sys.stdin.read()
 settings = json.loads((Path(__file__).parent / 'fixture-observer.json').read_text())
-result = subprocess.run([str(Path(__file__).with_name('session-start.shipped')), *sys.argv[1:]],
-                        input=payload_text, capture_output=True, text=True)
+if os.name == 'nt':
+    command = [sys.executable, '-X', 'utf8', str(Path(__file__).with_name('session-start.py')),
+               str(Path(__file__).resolve().parents[1]), *sys.argv[1:]]
+else:
+    command = [str(Path(__file__).with_name('session-start.shipped')), *sys.argv[1:]]
+result = subprocess.run(command, input=payload_text, capture_output=True,
+                        text=True, encoding='utf-8')
 record = {'payload': json.loads(payload_text), 'exit_code': result.returncode,
           'stdout': result.stdout, 'stderr': result.stderr, 'plugin_root': os.environ.get('PLUGIN_ROOT')}
-with open(settings['session_log'], 'a') as stream:
+with open(settings['session_log'], 'a', encoding='utf-8') as stream:
     stream.write(json.dumps(record) + '\\n')
 sys.stdout.write(result.stdout)
 sys.stderr.write(result.stderr)
@@ -373,11 +407,29 @@ sys.exit(result.returncode)
 '''
 
 
-def prepare(binary, scratch, env, installer, evidence):
+def shell_path(path):
+    return '"' + str(path).replace('"', '`"') + '"' if os.name == 'nt' else shlex.quote(str(path))
+
+
+def file_write_command(path):
+    if os.name == 'nt':
+        return 'New-Item -ItemType File -Path ' + shell_path(path) + ' -Force'
+    return 'touch ' + shell_path(path)
+
+
+def fake_gh_command(fake, arguments):
+    return ('& ' if os.name == 'nt' else '') + shell_path(fake) + ' ' + arguments
+
+
+def cwd_command():
+    return '(Get-Location).Path' if os.name == 'nt' else 'pwd'
+
+
+def prepare(binary, scratch, env, installer, evidence, version=VERSION):
     project, package = scratch / 'project', scratch / 'marketplace'
     project.mkdir()
     (project / 'worker-lane').mkdir()
-    (project / 'helper-material.txt').write_text('Ordinary material; no repository lane or PR is assigned.\n')
+    (project / 'helper-material.txt').write_text('Ordinary material; no repository lane or PR is assigned.\n', encoding='utf-8')
     run_logged(['git', 'init', '--quiet', str(project)], env, scratch, scratch, 'git-init')
     evidence['isolation'] = inventory(project, Path(env['CODEX_HOME']))
     # Snapshot only shipped local assets; never copy .git, auth, or home state.
@@ -387,31 +439,44 @@ def prepare(binary, scratch, env, installer, evidence):
             shutil.copytree(ROOT / name, package / name, ignore=shutil.ignore_patterns('__pycache__'))
     manifest = package / '.codex-plugin/plugin.json'
     require(manifest.exists(), 'legacy plugin manifest consumer missing')
-    require(json.loads(manifest.read_text()).get('hooks') == './hooks/hooks.json',
+    require(json.loads(manifest.read_text(encoding='utf-8')).get('hooks') == './hooks/hooks.json',
             'legacy plugin manifest does not bind shipped hooks')
     marketplace = package / '.agents/plugins/marketplace.json'
     marketplace.parent.mkdir(parents=True)
     marketplace.write_text(json.dumps({'name': 'codex-method', 'plugins': [
-        {'name': 'codex-method', 'source': './'}]}) + '\n')
+        {'name': 'codex-method', 'source': './'}]}) + '\n', encoding='utf-8')
 
-    control_command = 'touch ' + shlex.quote(str(project / 'inherited-permissions.txt'))
+    control_command = file_write_command(project / 'inherited-permissions.txt')
     observer = package / 'hooks/pre-tool-use'
     evidence['shipped_hook_sha256'] = hashlib.sha256(observer.read_bytes()).hexdigest()
     observer.rename(observer.with_name('pre-tool-use.shipped'))
-    observer.write_text(HOOK_OBSERVER)
+    observer.write_text(HOOK_OBSERVER, encoding='utf-8')
     observer.chmod(0o755)
     (observer.parent / 'fixture-observer.json').write_text(json.dumps({
         'log': str(project / 'hook-payloads.jsonl'), 'control_command': control_command,
-        'session_log': str(project / 'session-start-payloads.jsonl')}))
+        'session_log': str(project / 'session-start-payloads.jsonl')}), encoding='utf-8')
     session = package / 'hooks/session-start'
-    evidence['shipped_session_start_sha256'] = hashlib.sha256(session.read_bytes()).hexdigest()
+    session_entry = session.with_name('session-start.py') if os.name == 'nt' else session
+    evidence['shipped_session_start_entry'] = str(session_entry.relative_to(package))
+    evidence['shipped_session_start_sha256'] = hashlib.sha256(session_entry.read_bytes()).hexdigest()
     session.rename(session.with_name('session-start.shipped'))
-    session.write_text(SESSION_OBSERVER)
+    session.write_text(SESSION_OBSERVER, encoding='utf-8')
     session.chmod(0o755)
+    if os.name == 'nt':
+        # Instrument the installed Windows entry without changing its shipped policy.
+        hooks_path = package / 'hooks/hooks.json'
+        hooks = json.loads(hooks_path.read_text(encoding='utf-8'))
+        for event, name in (('SessionStart', 'session-start'), ('PreToolUse', 'pre-tool-use')):
+            for group in hooks['hooks'][event]:
+                for hook in group['hooks']:
+                    hook['commandWindows'] = ('py -3 -X utf8 '
+                        + '"${PLUGIN_ROOT}/hooks/' + name + '"'
+                        + (' orchestrator' if event == 'SessionStart' else ''))
+        hooks_path.write_text(json.dumps(hooks, indent=2) + '\n', encoding='utf-8')
     evidence['instrumentation'] = 'payload observer; exact control bypass only; shipped policy delegated'
 
     home_config = Path(env['CODEX_HOME']) / 'config.toml'
-    home_config.write_text('[projects.' + json.dumps(str(project)) + ']\ntrust_level="trusted"\n')
+    home_config.write_text('[projects.' + json.dumps(str(project)) + ']\ntrust_level="trusted"\n', encoding='utf-8')
     run_logged([binary, 'plugin', 'marketplace', 'add', str(package)],
                env, project, scratch, 'marketplace-add')
     run_logged([binary, 'plugin', 'add', PLUGIN_ID], env, project, scratch, 'plugin-add')
@@ -423,22 +488,22 @@ def prepare(binary, scratch, env, installer, evidence):
                 '--installer must select this repository scripts/install')
         evidence['installer_sha256'] = hashlib.sha256(installer.read_bytes()).hexdigest()
         run_logged([sys.executable, str(installer.resolve()), '--project', str(project),
-                    '--host-version', VERSION], env, project, scratch, 'role-install')
+                    '--host-version', version], env, project, scratch, 'role-install')
         evidence['role_consumer'] = 'scripts/install ran on fixture project'
     else:
         roles.mkdir(parents=True)
         for name, source in (('method_worker', 'worker.md'), ('method_reviewer', 'code-review-prompt.md')):
-            instructions = (package / 'reference' / source).read_text()
+            instructions = (package / 'reference' / source).read_text(encoding='utf-8')
             (roles / (name + '.toml')).write_text('\n'.join(key + '=' + toml(value)
                 for key, value in {'name': name, 'description': 'Local qualification ' + name,
-                                   'developer_instructions': instructions}.items()) + '\n')
+                                   'developer_instructions': instructions}.items()) + '\n', encoding='utf-8')
         evidence['role_consumer'] = 'MISSING: instructions-only fixture roles; installer not selected'
     for name in (('method_worker', 'method_reviewer', 'method_helper', 'method_review_helper')
                  if installer else ('method_worker', 'method_reviewer')):
-        role = tomllib.loads((roles / (name + '.toml')).read_text())
+        role = tomllib.loads((roles / (name + '.toml')).read_text(encoding='utf-8'))
         source = ('task-helper.md' if name.endswith('helper') else
                   'code-review-prompt.md' if 'review' in name else 'worker.md')
-        require((package / 'reference' / source).read_text() in role.get('developer_instructions', ''),
+        require((package / 'reference' / source).read_text(encoding='utf-8') in role.get('developer_instructions', ''),
                 name + ': installed role does not carry the full shipped role')
         if name.endswith('helper'):
             excerpt = runpy.run_path(str(ROOT / 'scripts/install'))['native_helper_mechanics']()
@@ -458,21 +523,24 @@ def prepare(binary, scratch, env, installer, evidence):
                'developer_instructions': 'Harmless local inherited-permission control. ' + CONTROL_TASK,
                'sandbox_mode': 'read-only'}
     (roles / 'runtime_readonly_control.toml').write_text('\n'.join(
-        key + '=' + toml(value) for key, value in control.items()) + '\n')
+        key + '=' + toml(value) for key, value in control.items()) + '\n', encoding='utf-8')
 
     trust = discover_hook_trust(binary, env, project, scratch)
     for item in trust:
         with home_config.open('a') as stream:
             stream.write('\n[hooks.state.' + toml(item['key']) + ']\nenabled=true\ntrusted_hash='
                          + toml(item['hash']) + '\n')
-    (scratch / 'hook-trust.json').write_text(json.dumps(trust, indent=2) + '\n')
+    (scratch / 'hook-trust.json').write_text(json.dumps(trust, indent=2) + '\n', encoding='utf-8')
     evidence['trusted_hook_count'] = len(trust)
-    fake = project / 'fixture-bin/gh'
+    fake = project / ('fixture-bin/gh.cmd' if os.name == 'nt' else 'fixture-bin/gh')
     fake.parent.mkdir()
-    fake.write_text('#!' + sys.executable + '\nimport json, sys\nfrom pathlib import Path\n'
+    fake_source = fake.with_suffix('.py') if os.name == 'nt' else fake
+    fake_source.write_text('#!' + sys.executable + '\nimport json, sys\nfrom pathlib import Path\n'
         + 'p=Path(' + repr(str(project / 'fake-gh-calls.jsonl')) + ')\n'
         + "with p.open('a') as s: s.write(json.dumps(sys.argv[1:])+'\\n')\n"
-        + "print('NATIVE_FIXTURE_FAKE_GH_ONLY')\n")
+        + "print('NATIVE_FIXTURE_FAKE_GH_ONLY')\n", encoding='utf-8')
+    if os.name == 'nt':
+        fake.write_text('@"' + sys.executable + '" -X utf8 "%~dp0gh.py" %*\n', encoding='utf-8')
     fake.chmod(0o755)
     return project, control_command, fake
 
@@ -486,10 +554,10 @@ class ResponsesFixture:
         self.spawn_fields = None
         self.root_stage = 0
         self.root_context_verified = False
-        self.review_role = tomllib.loads((project / '.codex/agents/method_reviewer.toml').read_text())[
+        self.review_role = tomllib.loads((project / '.codex/agents/method_reviewer.toml').read_text(encoding='utf-8'))[
             'developer_instructions']
         roles = project / '.codex/agents'
-        self.role_contracts = {name: tomllib.loads((roles / ('method_' + name + '.toml')).read_text())['developer_instructions']
+        self.role_contracts = {name: tomllib.loads((roles / ('method_' + name + '.toml')).read_text(encoding='utf-8'))['developer_instructions']
                                for name in ('worker', 'reviewer', 'helper', 'review_helper')
                                if (roles / ('method_' + name + '.toml')).exists()}
         self.shared = (runpy.run_path(str(ROOT / 'scripts/install'))['shared_agreements']()
@@ -600,14 +668,14 @@ class ResponsesFixture:
                     role + ': static role must occur once in actual provider input')
             require(carried.count(self.shared) == 1,
                     role + ': shared agreements must occur once in actual provider input')
-            require((ROOT / 'reference/orchestrator.md').read_text() not in carried,
+            require((ROOT / 'reference/orchestrator.md').read_text(encoding='utf-8') not in carried,
                     role + ': full orchestrator must not promote a child')
         for item in request.get('input', []):
             if item.get('type') in ('function_call_output', 'custom_tool_call_output'):
                 self.outputs[item['call_id']] = output_text(item.get('output', ''))
         index = self.counts[role]
         if index == 0:
-            (self.scratch / (role + '.tools.json')).write_text(json.dumps(advertised_tools(request), indent=2))
+            (self.scratch / (role + '.tools.json')).write_text(json.dumps(advertised_tools(request), indent=2), encoding='utf-8')
             if role == 'root':
                 validate_root_context(request, (ROOT / 'reference/orchestrator.md').read_bytes().decode('utf-8'))
                 self.root_context_verified = True
@@ -617,9 +685,9 @@ class ResponsesFixture:
             return self.root_response(request)
         if role == 'worker':
             if index == 0:
-                return self.shell(request, 'pwd', 'worker_lane_pwd', self.project / 'worker-lane')
+                return self.shell(request, cwd_command(), 'worker_lane_pwd', self.project / 'worker-lane')
             if index == 1:
-                return self.shell(request, 'pwd', 'worker_session_pwd')
+                return self.shell(request, cwd_command(), 'worker_session_pwd')
             if index == 2:
                 return self.shell(request, 'git merge fixture-never-merge', 'worker_merge', self.project)
         elif role == 'reviewer':
@@ -628,9 +696,9 @@ class ResponsesFixture:
                 source = 'const r = await tools.apply_patch(' + json.dumps(patch) + '); text(r);'
                 return self.call(request, 'exec', source, 'reviewer_patch')
             if index == 1:
-                return self.shell(request, 'touch reviewer-shell.txt', 'reviewer_shell', self.project)
+                return self.shell(request, file_write_command('reviewer-shell.txt'), 'reviewer_shell', self.project)
             if index == 2:
-                return self.shell(request, shlex.quote(str(self.fake)) + ' issue comment 1 --body fixture',
+                return self.shell(request, fake_gh_command(self.fake, 'issue comment 1 --body fixture'),
                                   'reviewer_remote', self.project)
             if index == 3:
                 return self.call(request, 'spawn_agent', dict(task_name='rejected_cross_role',
@@ -643,7 +711,7 @@ class ResponsesFixture:
             if role == 'helper' and index == 1:
                 return self.shell(request, 'git merge fixture-never-merge', 'helper_merge', self.project)
             if role == 'review_helper' and index == 1:
-                return self.shell(request, 'touch review-helper-shell.txt', 'review_helper_shell', self.project)
+                return self.shell(request, file_write_command('review-helper-shell.txt'), 'review_helper_shell', self.project)
             if role == 'review_helper' and index == 2:
                 return self.call(request, 'spawn_agent', dict(task_name='rejected_helper_cross_role',
                     message='Local refusal probe; this child must never start.',
@@ -665,9 +733,9 @@ class ResponsesFixture:
         if stage < 4:
             self.root_stage += 1
             if stage == 0:
-                return self.shell(request, 'pwd', 'root_pwd')
+                return self.shell(request, cwd_command(), 'root_pwd')
             if stage == 1:
-                return self.shell(request, shlex.quote(str(self.fake)) + ' --version', 'fake_gh_baseline')
+                return self.shell(request, fake_gh_command(self.fake, '--version'), 'fake_gh_baseline')
             if stage == 2:
                 args = dict(task_name='bad_unknown', message='Harmless invalid spawn',
                             fork_turns='none', cwd=str(self.project))
@@ -719,6 +787,9 @@ class ResponsesFixture:
         require(set(self.handles) == set(self.sequence), 'missing native spawn handles')
         for call in ('root_pwd', 'worker_lane_pwd', 'worker_session_pwd', 'control_write',
                      'helper_material', 'review_helper_material'):
+            output = self.outputs.get(call, '')
+            if 'CreateProcess' in output and 'blocked by policy' in output:
+                raise RuntimeBlocked(call + ': ordinary fixture command was blocked by host policy: ' + output)
             setup_errors = [line.strip() for line in self.outputs.get(call, '').splitlines()
                             if line.strip().startswith('bwrap:')]
             require(not setup_errors, call + ': sandbox setup failed: ' + '; '.join(setup_errors))
@@ -729,12 +800,12 @@ class ResponsesFixture:
                 'per-role read-only negative control did not actually write under parent permissions')
         for name in ('reviewer-patch.txt', 'reviewer-shell.txt', 'review-helper-shell.txt'):
             require(not (self.project / name).exists(), 'reviewer sentinel was written: ' + name)
-        fake_calls = [json.loads(line) for line in (self.project / 'fake-gh-calls.jsonl').read_text().splitlines()]
+        fake_calls = [json.loads(line) for line in (self.project / 'fake-gh-calls.jsonl').read_text(encoding='utf-8').splitlines()]
         require(fake_calls == [['--version']], 'reviewer remote probe reached the fake gh executable')
         require(self.root_context_verified, 'whole inline orchestrator was not observed at the provider')
         session_log = self.project / 'session-start-payloads.jsonl'
         require(session_log.exists(), 'actual SessionStart invocation was not observed')
-        starts = [json.loads(line) for line in session_log.read_text().splitlines()]
+        starts = [json.loads(line) for line in session_log.read_text(encoding='utf-8').splitlines()]
         require(len(starts) == 1 and starts[0]['payload'].get('source') == 'startup',
                 'expected one SessionStart invocation for root startup, without extra part calls')
         start = starts[0]
@@ -748,16 +819,16 @@ class ResponsesFixture:
                 'SessionStart did not deliver one complete budgeted page from its actual plugin root')
         hook_log = self.project / 'hook-payloads.jsonl'
         require(hook_log.exists(), 'installed plugin hook did not run')
-        records = [json.loads(line) for line in hook_log.read_text().splitlines()]
+        records = [json.loads(line) for line in hook_log.read_text(encoding='utf-8').splitlines()]
         expected = {
             'worker_merge': ('method_worker', 'shell', 'git merge fixture-never-merge'),
             'reviewer_patch': ('method_reviewer', 'apply_patch', None),
-            'reviewer_shell': ('method_reviewer', 'shell', 'touch reviewer-shell.txt'),
-            'reviewer_remote': ('method_reviewer', 'shell', shlex.quote(str(self.fake)) + ' issue comment 1 --body fixture'),
+            'reviewer_shell': ('method_reviewer', 'shell', file_write_command('reviewer-shell.txt')),
+            'reviewer_remote': ('method_reviewer', 'shell', fake_gh_command(self.fake, 'issue comment 1 --body fixture')),
             'reviewer_cross_role': ('method_reviewer', 'collaborationspawn_agent', 'method_worker')}
         if 'helper' in self.sequence:
             expected['helper_merge'] = ('method_helper', 'shell', 'git merge fixture-never-merge')
-            expected['review_helper_shell'] = ('method_review_helper', 'shell', 'touch review-helper-shell.txt')
+            expected['review_helper_shell'] = ('method_review_helper', 'shell', file_write_command('review-helper-shell.txt'))
             expected['review_helper_cross_role'] = ('method_review_helper', 'collaborationspawn_agent', 'method_helper')
         observed = {}
         for record in records:
@@ -823,13 +894,13 @@ class ResponsesFixture:
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--codex-version', default=VERSION, help='exact qualification pin, only 0.160.0')
+    parser.add_argument('--codex-version', default=VERSION, help=HOST_HELP)
     parser.add_argument('--codex', default='codex', help='CLI executable')
     parser.add_argument('--scratch-root', type=Path, default=os.environ.get('TMPDIR'))
     parser.add_argument('--log-dir', type=Path, help='optional additional summary location within scratch-root')
     parser.add_argument('--installer', type=Path, help='opt in to finalized repository scripts/install consumer')
     args = parser.parse_args()
-    require(args.codex_version == VERSION, 'this qualification is pinned to Codex ' + VERSION)
+    version = require_host_version(args.codex_version)
     require(args.scratch_root, 'set TMPDIR or --scratch-root; fixture never uses implicit user/home temp data')
     scratch_root = Path(args.scratch_root).resolve()
     scratch_root.mkdir(parents=True, exist_ok=True)
@@ -838,7 +909,7 @@ def main():
         args.log_dir.mkdir(parents=True, exist_ok=True)
     scratch = Path(tempfile.mkdtemp(prefix='codex-native-runtime-', dir=scratch_root)).resolve()
     evidence = {'status': 'failed', 'qualified': False, 'installed_end_to_end': False,
-                'pinned_version': VERSION, 'source_tag': 'rust-v' + VERSION,
+                'pinned_version': version, 'source_tag': 'rust-v' + version,
                 'model': MODEL, 'effort': EFFORT, 'root_sessions_started': 0,
                 'qualification_kind': 'deterministic-local-provider', 'production_model_validated': False,
                 'desktop_ui_validated': False,
@@ -850,9 +921,9 @@ def main():
         binary = shutil.which(args.codex, path=env['PATH'])
         require(binary, 'Codex CLI executable is missing')
         observed = run_logged([binary, '--version'], env, scratch, scratch, 'version').stdout.strip()
-        require(observed == 'codex-cli ' + VERSION, 'wrong CLI pin: ' + observed)
+        require(observed == 'codex-cli ' + version, 'wrong CLI pin: ' + observed)
         evidence['observed_version'] = observed
-        project, control_command, fake = prepare(binary, scratch, env, args.installer, evidence)
+        project, control_command, fake = prepare(binary, scratch, env, args.installer, evidence, version)
         fixture = ResponsesFixture(project, scratch, control_command, fake)
         phase = 'local-provider-bind'
         with fixture:
@@ -877,7 +948,9 @@ def main():
                 'web_search': 'disabled', 'check_for_update_on_startup': False,
                 'analytics.enabled': False, 'allow_login_shell': False,
                 'shell_environment_policy.inherit': 'none',
-                'shell_environment_policy.set': {key: env[key] for key in ('PATH', 'HOME', 'TMPDIR')},
+                'shell_environment_policy.set': {key: env[key] for key in
+                    ('PATH', 'HOME', 'TMPDIR', 'TMP', 'TEMP', 'SystemRoot', 'SYSTEMROOT',
+                     'WINDIR', 'COMSPEC', 'PATHEXT', 'PYTHONUTF8') if key in env},
                 'approval_policy': 'never'}
             command = [binary, 'exec', '--strict-config', '--ephemeral', '--json',
                        '-s', 'workspace-write', '-C', str(project), '-m', MODEL]
@@ -894,20 +967,21 @@ def main():
         evidence['installed_end_to_end'] = args.installer is not None
         evidence['status'] = 'passed' if args.installer else 'runtime-passed-consumer-missing'
     except Exception as error:
-        if phase == 'local-provider-bind' and isinstance(error, OSError):
+        if ((phase == 'local-provider-bind' and isinstance(error, OSError))
+                or isinstance(error, RuntimeBlocked)):
             evidence['status'] = 'blocked'
         evidence.update(blocker_phase=phase, error_type=type(error).__name__, error=str(error))
-        (scratch / 'failure.txt').write_text(traceback.format_exc())
+        (scratch / 'failure.txt').write_text(traceback.format_exc(), encoding='utf-8')
     finally:
         if fixture:
             evidence['provider_requests'] = len(fixture.requests)
             evidence['provider_errors'] = fixture.errors
-        (scratch / 'summary.json').write_text(json.dumps(evidence, indent=2) + '\n')
+        (scratch / 'summary.json').write_text(json.dumps(evidence, indent=2) + '\n', encoding='utf-8')
         # Keep empty traces on pre-session failures so absence is explicit evidence.
         for name in ('requests.jsonl', 'codex-events.stdout', 'codex-events.stderr'):
             (scratch / name).touch(exist_ok=True)
         if args.log_dir:
-            (args.log_dir / 'summary.json').write_text(json.dumps(evidence, indent=2) + '\n')
+            (args.log_dir / 'summary.json').write_text(json.dumps(evidence, indent=2) + '\n', encoding='utf-8')
         print(json.dumps(evidence))
     return 0 if evidence['qualified'] else 2 if evidence['status'] == 'blocked' else 1
 
@@ -916,6 +990,6 @@ if __name__ == '__main__':
     sys.dont_write_bytecode = True
     try:
         sys.exit(main())
-    except (AssertionError, OSError) as error:
+    except (AssertionError, OSError, Refusal) as error:
         print(json.dumps({'status': 'failed', 'qualified': False, 'error': str(error)}))
         sys.exit(1)

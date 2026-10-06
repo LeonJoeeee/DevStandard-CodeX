@@ -27,7 +27,10 @@ The [reviewer contract](reference/code-review-prompt.md) is the sole judging con
 
 ## Requirements and settings
 
-The supported host is Codex **0.160.0**, native V2; target probes qualify the mechanics below.
+The qualified hosts are Codex **0.160.0** and **0.160.1**, native V2, with captured Linux
+controlled-provider mechanics. The current Windows 0.160.1 installation also has authenticated
+startup/role-policy evidence; its isolated workspace-write probe remains blocked as described below.
+`scripts/host_contract.py` is the shared exact-version boundary; missing or unknown observations refuse.
 Every worker, reviewer, helper and
 arbitration uses explicit `gpt-6.1-sol` at `high`. The main session retains the human's model and
 service tier. [Model and effort](reference/orchestrator.md) states those role settings.
@@ -61,6 +64,23 @@ help and resulting skill discovery before relying on it. A role label alone does
 Codex skill. Missing required skills stop the dependent task with an explicit gap.
 
 ## Install and verify
+
+The repository includes a local native marketplace. For common rules in new chats, register
+and install it in the user config layer, then review and trust its current hook hashes:
+
+```sh
+codex plugin marketplace add /absolute/path/to/DevStandard-CodeX --json
+codex plugin add codex-method@codex-method --json
+```
+
+On Windows, Python 3.11+ must be available through `py -3`; hooks use `commandWindows`
+with explicit UTF-8 input/output. Invoke method scripts with `py -3`, for example
+`py -3 C:\path\to\DevStandard-CodeX\scripts\install --user --host-version 0.160.1`.
+Unix hook entry points retain Bash/Python. Installation enables the plugin but does not grant
+hook trust. Inspect the native engine's `hooks/list` in the intended chat directories for
+both enabled, trusted hooks; inspect the actual new-session context and typed role discovery.
+The shipped installer handles role/config files separately. A cache directory or success
+message alone proves neither trust nor delivery.
 
 The `.codex-plugin/plugin.json` package carries method hooks. Load that package through the
 qualified host's plugin facility and establish host trust. SessionStart uses one synchronous handler to deliver the whole orchestrator inline;
@@ -142,11 +162,23 @@ exemptions. See [the architecture](docs/architecture.md) for these dispositions.
 
 ## Evidence and layout
 
+The Windows installation work is recorded in [the accepted design](docs/specs/2026-10-06-windows-native-subscription.md)
+and [implementation plan](docs/plans/2026-10-06-windows-native-subscription.md), under
+[Issue 21](https://github.com/LeonJoeeee/DevStandard-CodeX/issues/21). Full regression and
+controlled-provider native CI run on Linux; Windows/macOS CI exercise critical portable
+entry points. Critical macOS script checks do not claim a real macOS native session.
+On the current Windows 0.160.1 host a fresh authenticated ChatGPT session completed all four
+typed roles, allowed cwd reads, and real worker-merge/reviewer-PowerShell-write refusals.
+Requested GPT/high routing is distinguished from unavailable independent provider telemetry.
+The isolated Windows controlled-provider probe reaches whole context and native role completion
+but its workspace-write subprocess execution is blocked by host policy; that probe is not a pass.
+Startup evidence does not qualify resume, clear, compact, restart recovery or the full remote lifecycle.
+
 Codex 0.160.0 target probes captured loaded native role discovery, complete worker/reviewer
 context bytes, explicit `gpt-6.1-sol`/`high`, `fork_turns="none"`, allowed `pwd`, and ordinary
 worker-merge, reviewer-write and reviewer-cross-role refusals. Those mechanics probes used a
 controlled provider. A separate production call with an explicitly
-active role-config layer ran a typed fresh reviewer at Sol/high, retained the supplied prompt
+active role-config layer ran a typed fresh reviewer at `gpt-6.1-sol`/`high`, retained the supplied prompt
 heading and end marker, and omitted a parent-only token; an earlier inactive-config discovery
 block remains recorded. This qualifies that reviewer call, not every account, worker execution,
 uncoached behavior, user-scope installation or the remote worker/PR/review/merge lifecycle.

@@ -147,7 +147,7 @@ class ProvenanceTest(unittest.TestCase):
 
     def test_a_verdict_for_another_head_is_refused(self):
         from review_packet import verdict_shape
-        body = ('Reviewer: Codex, gpt-6-astra at max, read-only — reviewed ' + 'b' * 40 + '\n\n'
+        body = ('Reviewer: Codex, gpt-6-astra at high, read-only — reviewed ' + 'b' * 40 + '\n\n'
                 '### Goal verdict\nYes — grounds here.\n\n'
                 '1. Evidence-backed completion claim: Pass — grounds.\n'
                 '2. Authorization and scope: Pass — grounds.\n\n'
@@ -156,7 +156,7 @@ class ProvenanceTest(unittest.TestCase):
 
     def test_a_verdict_without_grounds_is_refused(self):
         from review_packet import verdict_shape
-        body = ('Reviewer: Codex, gpt-6-astra at max, read-only — reviewed ' + 'a' * 40 + '\n\n'
+        body = ('Reviewer: Codex, gpt-6-astra at high, read-only — reviewed ' + 'a' * 40 + '\n\n'
                 '### Goal verdict\nYes\n\n'
                 '1. Evidence-backed completion claim: Pass\n'
                 '2. Authorization and scope: Pass\n\n'
@@ -165,7 +165,7 @@ class ProvenanceTest(unittest.TestCase):
 
     def test_a_well_formed_no_is_a_valid_return(self):
         from review_packet import verdict_shape
-        body = ('Reviewer: Codex, gpt-6-astra at max, read-only — reviewed ' + 'a' * 40 + '\n\n'
+        body = ('Reviewer: Codex, gpt-6-astra at high, read-only — reviewed ' + 'a' * 40 + '\n\n'
                 '### Goal verdict\nNo — the goal is unmet for the reason stated.\n\n'
                 '### Floor\n'
                 '1. Evidence-backed completion claim: Pass — the evidence is present.\n'

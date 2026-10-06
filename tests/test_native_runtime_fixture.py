@@ -1,5 +1,6 @@
 """Test the qualification fixture's refusal paths; these are not runtime qualification."""
 import importlib.util
+from concurrent.futures import ThreadPoolExecutor
 import json
 import os
 from pathlib import Path
@@ -57,9 +58,12 @@ class NativeRuntimeFixtureTest(unittest.TestCase):
         self.project = self.scratch / 'project'
         roles = self.project / '.codex/agents'
         roles.mkdir(parents=True)
-        (roles / 'method_reviewer.toml').write_text('developer_instructions="full review role"\n')
-        delivered = subprocess.run([str(ROOT / 'hooks/session-start'), 'orchestrator'],
-            capture_output=True, text=True, check=True)
+        (roles / 'method_reviewer.toml').write_text('developer_instructions="full review role"\n', encoding='utf-8')
+        session_command = ([os.sys.executable, '-X', 'utf8', str(ROOT / 'hooks/session-start.py'),
+                            str(ROOT), 'orchestrator'] if os.name == 'nt' else
+                           [str(ROOT / 'hooks/session-start'), 'orchestrator'])
+        delivered = subprocess.run(session_command,
+            capture_output=True, text=True, encoding='utf-8', check=True)
         self.whole_context = json.loads(delivered.stdout)['hookSpecificOutput']['additionalContext']
         self.session_record = {'payload': {'source': 'startup', 'hook_event_name': 'SessionStart'},
             'exit_code': delivered.returncode, 'stdout': delivered.stdout, 'stderr': delivered.stderr,
@@ -94,7 +98,7 @@ class NativeRuntimeFixtureTest(unittest.TestCase):
         self.assertEqual(installed.returncode, 0, installed.stderr)
         runtime = self.fixture.ResponsesFixture(self.project, self.scratch,
             'touch ' + str(self.project / 'inherited-permissions.txt'), self.project / 'gh')
-        contract = tomllib.loads((self.project / '.codex/agents/method_worker.toml').read_text())['developer_instructions']
+        contract = tomllib.loads((self.project / '.codex/agents/method_worker.toml').read_text(encoding='utf-8'))['developer_instructions']
         request = self.request(self.fixture.WORK_TASK)
         request['input'].extend([{'role': 'developer', 'content': contract},
                                  {'role': 'user', 'content': contract}])
@@ -169,7 +173,7 @@ class NativeRuntimeFixtureTest(unittest.TestCase):
         runtime.outputs.update(helper_material='Ordinary material; no repository lane or PR is assigned.',
                                review_helper_material='Ordinary material; no repository lane or PR is assigned.')
         probes = [('helper_merge', 'exec_command', {'cmd': 'git merge fixture-never-merge'}, 'method_helper'),
-                  ('review_helper_shell', 'exec_command', {'cmd': 'touch review-helper-shell.txt'}, 'method_review_helper'),
+                  ('review_helper_shell', 'exec_command', {'cmd': self.fixture.file_write_command('review-helper-shell.txt')}, 'method_review_helper'),
                   ('review_helper_cross_role', 'collaborationspawn_agent', {
                       'agent_type': 'method_helper', 'task_name': 'rejected_helper_cross_role',
                       'fork_turns': 'none', 'model': self.fixture.MODEL,
@@ -276,7 +280,7 @@ class NativeRuntimeFixtureTest(unittest.TestCase):
                              'hash': 'sha256:' + 'a' * 64}]):
                     project, command, fake = f.prepare('unused-codex', scratch, env, installer, {})
                 roles = project / '.codex/agents'
-                control = tomllib.loads((roles / 'runtime_readonly_control.toml').read_text())
+                control = tomllib.loads((roles / 'runtime_readonly_control.toml').read_text(encoding='utf-8'))
                 self.assertEqual(set(control), {
                     'name', 'description', 'developer_instructions', 'sandbox_mode'})
                 self.assertEqual(control['name'], 'runtime_readonly_control')
@@ -379,7 +383,7 @@ class NativeRuntimeFixtureTest(unittest.TestCase):
                                 'output': [{'type': 'text', 'text': str(self.project) + '\n'}]})
         self.runtime.root_stage = 8
         self.runtime.response_item(request)
-        self.assertEqual(json.loads((self.scratch / 'root.tools.json').read_text()),
+        self.assertEqual(json.loads((self.scratch / 'root.tools.json').read_text(encoding='utf-8')),
                          request['input'][1]['tools'])
         self.assertIn(str(self.project), self.runtime.outputs['previous_pwd'].splitlines())
 
@@ -411,8 +415,9 @@ class NativeRuntimeFixtureTest(unittest.TestCase):
     def hook_record(self, tool, inputs, role):
         payload = {'agent_type': role, 'agent_id': 'native-child',
                    'tool_name': tool, 'tool_input': inputs}
-        result = subprocess.run([str(ROOT / 'hooks/pre-tool-use')], input=json.dumps(payload),
-                                capture_output=True, text=True, check=True)
+        result = subprocess.run([os.sys.executable, '-X', 'utf8', str(ROOT / 'hooks/pre-tool-use')],
+                                input=json.dumps(payload), capture_output=True,
+                                text=True, encoding='utf-8', check=True)
         return {'payload': payload, 'exit_code': result.returncode, 'stdout': result.stdout,
                 'stderr': result.stderr, 'plugin_root': str(self.scratch), 'ungated_control': False}
 
@@ -420,15 +425,15 @@ class NativeRuntimeFixtureTest(unittest.TestCase):
         f, runtime = self.fixture, self.runtime
         runtime.root_stage = 8
         runtime.response_item(self.request(f.PRIVATE_PARENT))
-        (self.project / 'session-start-payloads.jsonl').write_text(json.dumps(self.session_record) + '\n')
+        (self.project / 'session-start-payloads.jsonl').write_text(json.dumps(self.session_record) + '\n', encoding='utf-8')
         runtime.handles = {role: '/root/' + role for role in ('worker', 'reviewer', 'control')}
         runtime.outputs.update(root_pwd=str(self.project), worker_lane_pwd=str(self.project / 'worker-lane'),
                                worker_session_pwd=str(self.project))
         (self.project / 'inherited-permissions.txt').touch()
-        (self.project / 'fake-gh-calls.jsonl').write_text('["--version"]\n')
+        (self.project / 'fake-gh-calls.jsonl').write_text('["--version"]\n', encoding='utf-8')
         records = [self.hook_record('apply_patch', {'input': '*** Begin Patch'}, 'method_reviewer')]
-        probes = [('reviewer_shell', 'touch reviewer-shell.txt', 'method_reviewer'),
-                  ('reviewer_remote', str(runtime.fake) + ' issue comment 1 --body fixture', 'method_reviewer'),
+        probes = [('reviewer_shell', f.file_write_command('reviewer-shell.txt'), 'method_reviewer'),
+                  ('reviewer_remote', f.fake_gh_command(runtime.fake, 'issue comment 1 --body fixture'), 'method_reviewer'),
                   ('worker_merge', 'git merge fixture-never-merge', 'method_worker')]
         for call, command, role in probes:
             records.append(self.hook_record(tool, {key: command}, role))
@@ -443,13 +448,13 @@ class NativeRuntimeFixtureTest(unittest.TestCase):
 
     def verify_records(self, records):
         (self.project / 'hook-payloads.jsonl').write_text(
-            ''.join(json.dumps(record) + '\n' for record in records))
+            ''.join(json.dumps(record) + '\n' for record in records), encoding='utf-8')
         return self.runtime.verify(self.fixture.DONE['root'])
 
     def test_extra_session_start_invocations_fail_runtime_verification(self):
         records = self.verification_records()
         path = self.project / 'session-start-payloads.jsonl'
-        path.write_text(path.read_text() * 8)
+        path.write_text(path.read_text(encoding='utf-8') * 8, encoding='utf-8')
         with self.assertRaisesRegex(AssertionError, 'one SessionStart invocation'):
             self.verify_records(records)
 
@@ -483,7 +488,10 @@ class NativeRuntimeFixtureTest(unittest.TestCase):
         request = self.request(self.fixture.PRIVATE_PARENT)
         for call, cwd in (('root_pwd', self.project), ('worker_lane_pwd', lane),
                           ('worker_session_pwd', self.project)):
-            result = subprocess.run(['pwd'], cwd=cwd, capture_output=True, text=True, check=True)
+            command = (['powershell.exe', '-NoProfile', '-Command', self.fixture.cwd_command()]
+                       if os.name == 'nt' else ['pwd'])
+            result = subprocess.run(command, cwd=cwd, capture_output=True,
+                                    text=True, encoding='utf-8', check=True)
             request['input'].append({'type': 'custom_tool_call_output', 'call_id': call,
                 'output': [
                     {'type': 'input_text', 'text': 'Script completed\nWall time 0.1 seconds\nOutput:\n'},
@@ -492,6 +500,15 @@ class NativeRuntimeFixtureTest(unittest.TestCase):
         checks = self.verify_records(records)
         self.assertTrue(checks['worker_explicit_lane_cwd'])
         self.assertEqual(checks['child_session_cwd'], str(self.project))
+
+    def test_host_policy_block_is_diagnosed_without_qualifying_partial_results(self):
+        for call in ('root_pwd', 'worker_lane_pwd', 'control_write', 'helper_material'):
+            with self.subTest(call=call):
+                records = self.verification_records()
+                self.runtime.outputs[call] = 'exec_command failed: CreateProcess { Rejected: blocked by policy }'
+                with self.assertRaisesRegex(self.fixture.RuntimeBlocked, call + ':.*host policy'):
+                    self.verify_records(records)
+                self.runtime.outputs.pop(call)
 
     def test_hook_denials_bind_to_shell_commands_for_both_payload_shapes(self):
         for tool, key in (('Bash', 'command'), ('exec_command', 'cmd')):
@@ -532,12 +549,10 @@ class NativeRuntimeFixtureTest(unittest.TestCase):
                     self.verify_records(altered)
 
     def test_observer_control_is_exact_for_both_shell_payload_shapes(self):
-        observer = self.scratch / 'pre-tool-use'
-        observer.write_text(self.fixture.HOOK_OBSERVER)
-        shutil.copy2(ROOT / 'hooks/pre-tool-use', self.scratch / 'pre-tool-use.shipped')
+        observer = self.prepare_observer()
         log = self.scratch / 'observer.jsonl'
-        (self.scratch / 'fixture-observer.json').write_text(json.dumps({
-            'control_command': self.runtime.control_command, 'log': str(log)}))
+        (observer.parent / 'fixture-observer.json').write_text(json.dumps({
+            'control_command': self.runtime.control_command, 'log': str(log)}), encoding='utf-8')
         for tool, key in (('Bash', 'command'), ('exec_command', 'cmd')):
             for role, command, expected in (
                 ('runtime_readonly_control', self.runtime.control_command, True),
@@ -547,12 +562,43 @@ class NativeRuntimeFixtureTest(unittest.TestCase):
                     result = subprocess.run([os.sys.executable, str(observer)], capture_output=True,
                         text=True, input=json.dumps({'tool_name': tool, 'tool_input': {key: command},
                                                      'agent_type': role, 'agent_id': 'native-child'}), check=True)
-                    record = json.loads(log.read_text().splitlines()[-1])
+                    record = json.loads(log.read_text(encoding='utf-8').splitlines()[-1])
                     self.assertIs(record['ungated_control'], expected)
                     if expected:
                         self.assertEqual(result.stdout, '')
                     else:
                         self.assertEqual(json.loads(result.stdout)['hookSpecificOutput']['permissionDecision'], 'deny')
+
+    def prepare_observer(self):
+        observer = self.scratch / 'hooks/pre-tool-use'
+        observer.parent.mkdir(exist_ok=True)
+        observer.write_text(self.fixture.HOOK_OBSERVER, encoding='utf-8')
+        shutil.copy2(ROOT / 'hooks/pre-tool-use', observer.with_name('pre-tool-use.shipped'))
+        scripts = self.scratch / 'scripts'
+        scripts.mkdir(exist_ok=True)
+        shutil.copy2(ROOT / 'scripts/filelock.py', scripts / 'filelock.py')
+        return observer
+
+    def test_observer_keeps_parallel_large_payload_receipts_whole(self):
+        observer = self.prepare_observer()
+        log = self.scratch / 'observer.jsonl'
+        (observer.parent / 'fixture-observer.json').write_text(json.dumps({
+            'control_command': self.runtime.control_command, 'log': str(log)}), encoding='utf-8')
+        def invoke(index):
+            payload = {'tool_name': 'apply_patch', 'tool_input': {'input': 'x' * 100000},
+                       'agent_type': 'method_reviewer', 'agent_id': 'native-child-' + str(index)}
+            result = subprocess.run([os.sys.executable, '-X', 'utf8', str(observer)],
+                input=json.dumps(payload), text=True, encoding='utf-8', capture_output=True,
+                check=True, timeout=15)
+            self.assertEqual(json.loads(result.stdout)['hookSpecificOutput']['permissionDecision'], 'deny')
+            return payload
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            payloads = list(pool.map(invoke, range(16)))
+        records = [json.loads(line) for line in log.read_text(encoding='utf-8').splitlines()]
+        self.assertEqual(len(records), len(payloads))
+        self.assertEqual({row['payload']['agent_id'] for row in records},
+                         {payload['agent_id'] for payload in payloads})
+        self.assertTrue(all(len(row['payload']['tool_input']['input']) == 100000 for row in records))
 
     def test_shipped_hook_blocks_nested_reviewer_writes_and_worker_merge(self):
         for tool, key in (('Bash', 'command'), ('exec_command', 'cmd')):
@@ -713,7 +759,7 @@ class NativeRuntimeFixtureTest(unittest.TestCase):
         with tempfile.TemporaryDirectory(dir=os.environ.get('TMPDIR')) as directory:
             scratch = Path(directory)
             (scratch / '.codex').mkdir()
-            (scratch / '.codex/config.toml').write_text('unrelated parent config')
+            (scratch / '.codex/config.toml').write_text('unrelated parent config', encoding='utf-8')
             project = scratch / 'project'
             project.mkdir()
             subprocess.run(['git', 'init', '--quiet', str(project)], check=True,
@@ -722,6 +768,6 @@ class NativeRuntimeFixtureTest(unittest.TestCase):
             home.mkdir()
             self.assertEqual(f.inventory(project, home)['external_layers'], [])
             (project / '.codex').mkdir()
-            (project / '.codex/hooks.json').write_text('{}')
+            (project / '.codex/hooks.json').write_text('{}', encoding='utf-8')
             with self.assertRaisesRegex(AssertionError, 'external'):
                 f.inventory(project, home)

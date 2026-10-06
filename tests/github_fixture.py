@@ -2,6 +2,7 @@
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -129,8 +130,28 @@ class GitHubFixture:
                               'app':{'id':15368, 'slug':'github-actions'}}]})
         bins = self.root / 'bin'
         bins.mkdir()
-        (bins / 'gh').write_text(FAKE_GH)
+        (bins / 'gh').write_text(FAKE_GH, encoding='utf-8')
         (bins / 'gh').chmod(0o755)
+        self.executable = bins / 'gh'
+        self.env['GH_FIXTURE_SCRIPT'] = str(self.executable)
+        self.env['PYTHONUTF8'] = '1'
+        if os.name == 'nt':
+            # Existing tests also launch consumers directly with this environment.
+            # Startup must intercept those subprocesses before their first gh call.
+            bootstrap = self.root / 'python-bootstrap'
+            bootstrap.mkdir()
+            (bootstrap / 'sitecustomize.py').write_text(
+                'import importlib.util, sys\n'
+                'try:\n'
+                '    spec = importlib.util.spec_from_file_location("fixture_gh_boundary", '
+                + repr(str(ROOT / 'tests/github_fixture_runner.py')) + ')\n'
+                '    module = importlib.util.module_from_spec(spec)\n'
+                '    spec.loader.exec_module(module)\n'
+                '    module.install_boundary()\n'
+                'except BaseException as error:\n'
+                '    raise SystemExit("GitHub fixture startup refused: " + str(error))\n',
+                encoding='utf-8')
+            self.env['PYTHONPATH'] = str(bootstrap)
         self.env['PATH'] = str(bins) + os.pathsep + os.environ['PATH']
         self.output = self.root / 'packet'
         installed = self.command('install', '--host-version', '0.160.0')
@@ -148,9 +169,25 @@ class GitHubFixture:
         Path(self.env['GH_FIXTURE']).write_text(json.dumps(state))
 
     def command(self, script, *args):
-        return subprocess.run([sys.executable, str(ROOT / 'scripts' / script), *map(str, args),
+        self.assert_boundary()
+        bootstrap = [str(ROOT / 'tests/github_fixture_runner.py')] if os.name == 'nt' else []
+        return subprocess.run([sys.executable, '-X', 'utf8', *bootstrap,
+                               str(ROOT / 'scripts' / script), *map(str, args),
                                '--project', str(self.project)], cwd=self.project,
-                              env=self.env, text=True, capture_output=True)
+                              env=self.env, text=True, encoding='utf-8', capture_output=True)
+
+    def assert_boundary(self):
+        """Never permit PATH fallback to the authenticated user's real gh."""
+        if (Path(self.env['GH_FIXTURE_SCRIPT']).resolve() != self.executable.resolve()
+                or not self.executable.is_file()
+                or self.executable.is_symlink()
+                or not self.executable.read_text(encoding='utf-8').startswith('#!/usr/bin/env python3\n')
+                or 'GH_FIXTURE' not in self.executable.read_text(encoding='utf-8')):
+            raise AssertionError('GitHub fixture executable is missing or changed')
+        if os.name != 'nt':
+            selected = shutil.which('gh', path=self.env['PATH'])
+            if not selected or Path(selected).resolve() != self.executable.resolve():
+                raise AssertionError('GitHub fixture executable was not selected')
 
     def start(self):
         return self.command('review-packet','start',1,'--issue',2,

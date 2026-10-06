@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prepare fresh Codex 0.160.0 V2 spawn arguments; no agent process is executed.
+"""Prepare fresh spawn arguments for an observed known Codex V2 host; no agent is executed.
 
 The caller uses native spawn_agent, records its returned task_name with --record-spawn, and
 captures list_agents output with --record-status. Receipts are caller-supplied observations, not
@@ -9,7 +9,6 @@ isolation is unsupported. Every child command must use the brief's worktree as w
 import argparse
 from contextlib import contextmanager
 from datetime import datetime, timezone
-import fcntl
 import json
 import re
 import runpy
@@ -23,7 +22,9 @@ from urllib.parse import quote
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'scripts'))
 from hard_edges import Refusal, anchored_roles, filled, require, resolved, run
+from host_contract import HOST_HELP, require_host_version
 from review_state import digest, save as durable_save
+import filelock
 
 
 def route_setting(purpose, model=None, effort=None):
@@ -43,7 +44,7 @@ def now():
 
 def read_json(path):
     require(path and path.is_file(), f'evidence file is required: {path}')
-    return json.loads(path.read_text())
+    return json.loads(path.read_text(encoding='utf-8'))
 
 
 def write_json(path, data):
@@ -142,7 +143,7 @@ def record_language(project):
     path = project / 'AGENTS.md'
     if not path.exists():
         return 'English'
-    text = path.read_text()
+    text = path.read_text(encoding='utf-8')
     headings = list(re.finditer(r'^##[ \t]+(?:Record language|记录语言)[ \t]*$', text, re.M | re.I))
     if not headings:
         return 'English'
@@ -170,31 +171,29 @@ def locked(project, issue, purpose):
     lanes = lanes_directory(project)
     lanes.mkdir(parents=True, exist_ok=True)
     with (lanes / 'ownership.lock').open('a') as lock:
-        try:
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
+        if not filelock.try_lock(lock.fileno()):
             raise Refusal('lane ownership is locked; inspect the originating dispatch before retrying')
         reconcile_legacy(project, lanes)
         yield lanes / record_name(issue, purpose)
 
 
 def qualify(project, version):
-    require(version == '0.160.0', 'only an observed Codex 0.160.0 V2 host is qualified; upgrade and use --host-version')
+    require_host_version(version)
     installer = runpy.run_path(str(ROOT / 'scripts/install'))
     expected = installer['planned'](project)
     roles = [path for path in expected if path.parent.name == 'agents']
     if any(path.exists() for path in roles):
-        require(all(path.is_file() and path.read_text() == text for path, text in expected.items()),
+        require(all(path.is_file() and path.read_text(encoding='utf-8') == text for path, text in expected.items()),
                 'project roles or V2 config are missing/stale; repair project installation, never hide drift with user roles')
     else:
         config = project / '.codex/config.toml'
-        features = (tomllib.loads(config.read_text()).get('features', {}).get('multi_agent_v2', {})
+        features = (tomllib.loads(config.read_text(encoding='utf-8')).get('features', {}).get('multi_agent_v2', {})
                     if config.exists() else {})
         require(all(key not in features or features[key] is True
                     for key in ('enabled', 'expose_spawn_agent_model_overrides')),
                 'project disables native V2/overrides; repair that declaration before using user roles')
         expected = installer['planned_user'](installer['user_directory']())
-        require(all(path.is_file() and path.read_text() == text for path, text in expected.items()),
+        require(all(path.is_file() and path.read_text(encoding='utf-8') == text for path, text in expected.items()),
                 'native user roles or V2 config are missing/stale; run scripts/install --user or install project roles')
     return installer
 
@@ -263,7 +262,7 @@ def observe(record, path, spawn=False):
 
 def direct_ref(project, ref):
     symbolic = subprocess.run(['git', 'symbolic-ref', '-q', ref], cwd=project,
-                              capture_output=True, text=True)
+                              capture_output=True, text=True, encoding='utf-8')
     require(symbolic.returncode == 1, f'{ref} is symbolic or unreadable; preserve its target')
     lines = run('git', 'for-each-ref', '--format=%(refname) %(objectname)', ref, cwd=project).splitlines()
     matches = [line.split(' ', 1)[1] for line in lines if line.startswith(ref + ' ')]
@@ -273,7 +272,7 @@ def direct_ref(project, ref):
 
 def ancestor(project, head, base):
     result = subprocess.run(['git', 'merge-base', '--is-ancestor', head, base], cwd=project,
-                            capture_output=True, text=True)
+                            capture_output=True, text=True, encoding='utf-8')
     require(result.returncode in (0, 1), f'integration ancestry unavailable: {result.stderr}')
     return result.returncode == 0
 
@@ -323,7 +322,7 @@ def cleanup_proof(project, record, number):
     require(route == 'ancestor' or trees['head_tree'] == trees['integration_tree'],
             'integration content differs from exact lane head; preserve original commits')
     local = subprocess.run(['git', 'rev-parse', '--verify', base_ref + '^{commit}'], cwd=project,
-                           capture_output=True, text=True)
+                           capture_output=True, text=True, encoding='utf-8')
     local_base = local.stdout.strip() if local.returncode == 0 else None
     return pr, dict(local_base_sha=local_base, local_base_stale=local_base != base_sha,
                     repo=repo, pr=record['pr'], lane_id=record['lane_id'], branch=record['branch'],
@@ -383,12 +382,12 @@ def cleanup_upstream(project, record, intent):
     branch, ref, head = record['branch'], intent['archive_ref'], intent['head']
     remote = 'codex-method-cleanup-' + record['lane_id']
     values = subprocess.run(['git', 'config', '--get-all', f'branch.{branch}.merge'], cwd=project,
-                            capture_output=True, text=True)
+                            capture_output=True, text=True, encoding='utf-8')
     require(values.returncode in (0, 1), 'effective branch merge configuration is unreadable')
     sources = values.stdout.splitlines()
     require(len(sources) <= 1, 'multiple effective branch merge sources; preserve lane')
     collision = subprocess.run(['git', 'config', '--get-regexp', '^remote\\.' + re.escape(remote) + r'\.' ],
-                               cwd=project, capture_output=True, text=True)
+                               cwd=project, capture_output=True, text=True, encoding='utf-8')
     require(collision.returncode == 1, 'cleanup logical remote conflicts with effective configuration')
     source = sources[0] if sources else intent['base_ref']
     run('git', 'check-ref-format', source, cwd=project)
@@ -550,7 +549,7 @@ def prepare(project, record, args, installer):
     packet = ''
     if purpose == 'reviewer':
         require(args.packet and args.packet.is_file(), 'reviewer requires the whole canonical filled --packet')
-        packet = args.packet.read_text()
+        packet = args.packet.read_text(encoding='utf-8')
         require(packet.strip(), 'review packet is empty')
     if args.adopt:
         require(branch and worktree, 'adoption requires explicit --branch and --worktree')
@@ -597,7 +596,7 @@ def prepare(project, record, args, installer):
         text += '\n' + label + ' (verbatim):\n' + extra + '\n'
     if packet:
         text += '\nReview packet (verbatim):\n' + packet + '\n'
-    brief.write_text(text)
+    brief.write_text(text, encoding='utf-8')
     task_name = 'issue_' + str(args.issue) + '_' + purpose + '_' + uuid.uuid4().hex[:12]
     spawn = {'task_name': task_name, 'message': text, 'agent_type': role_name,
              'fork_turns': 'none', 'model': model, 'reasoning_effort': effort}
@@ -640,7 +639,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('issue', type=int, nargs='?')
     parser.add_argument('--project', type=Path, default=Path.cwd())
-    parser.add_argument('--host-version', help='observed host version; only 0.160.0 is qualified')
+    parser.add_argument('--host-version', help=HOST_HELP)
     parser.add_argument('--purpose', choices=['worker', 'reviewer'])
     parser.add_argument('--base')
     parser.add_argument('--branch')
@@ -659,6 +658,7 @@ def main():
     parser.add_argument('--native-status', type=Path, help='fresh native list_agents capture for cleanup')
     args = parser.parse_args()
     require(args.issue and args.issue > 0, 'an issue number is required')
+    require_host_version(args.host_version)
     project = resolved(args.project, 'project')
     require(project.is_dir(), 'target project does not exist')
     require(resolved(run('git', 'rev-parse', '--show-toplevel', cwd=project).strip(), 'project root') == project,

@@ -39,7 +39,7 @@ def refusing(read, *args):
 def run(*args, cwd=None, env=None, input=None):
     """Run a command; a non-zero exit is a refusal carrying the command's own output."""
     proc = subprocess.run([str(a) for a in args], cwd=cwd, env=env, input=input,
-                          text=True, capture_output=True)
+                          text=True, capture_output=True, encoding='utf-8')
     if proc.returncode != 0:
         raise Refusal(f'{args[0]} exited {proc.returncode}: {proc.stderr or proc.stdout}')
     return proc.stdout
@@ -54,7 +54,7 @@ def page(root=None):
     """The one page that states a model and effort, read whole."""
     base = Path(root) if root else ROOT
     target = base if base.suffix == '.md' else base / 'reference/orchestrator.md'
-    return target.read_text()
+    return target.read_text(encoding='utf-8')
 
 
 def anchored_roles(root=None):

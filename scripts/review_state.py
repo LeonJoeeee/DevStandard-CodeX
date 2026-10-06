@@ -7,7 +7,6 @@ and filesystem access. Missing local receipts block acceptance rather than guess
 """
 from contextlib import contextmanager
 from copy import deepcopy
-import fcntl
 import hashlib
 import json
 import os
@@ -17,6 +16,7 @@ import uuid
 
 from hard_edges import Refusal, require, run
 from review_packet import decision_line, floor_results, normalize, verdict_shape
+import filelock
 
 FORMAT = 'codex-method-attempt-v2'
 MARKER = re.compile(r'\A## Merge check 1 — round (\d+)\n<!-- codex-method-attempt-v2 (\{[^\n]+\}) -->\n\n')
@@ -49,7 +49,7 @@ def load(path, repo, pr):
     if not path.exists():
         return {'format': FORMAT, 'repo': repo, 'pr': pr, 'attempts': []}
     try:
-        body = json.loads(path.read_text())
+        body = json.loads(path.read_text(encoding='utf-8'))
     except (OSError, ValueError) as error:
         raise Refusal(f'unreadable review ledger: {error}')
     require(body.get('format') == FORMAT and body.get('repo') == repo and body.get('pr') == pr,
@@ -65,11 +65,13 @@ def save(path, body):
         stream.flush()
         os.fsync(stream.fileno())
     os.replace(temporary, path)
-    fd = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
-    try:
-        os.fsync(fd)
-    finally:
-        os.close(fd)
+    # Directory fsync is a POSIX durability step; Windows has no O_DIRECTORY.
+    if hasattr(os, 'O_DIRECTORY'):
+        fd = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(fd)
+        finally:
+            os.close(fd)
 
 
 @contextmanager
@@ -79,9 +81,7 @@ def locked(project, repo, pr):
     lock = path.with_suffix('.lock')
     fd = os.open(lock, os.O_RDWR | os.O_CREAT, 0o600)
     try:
-        try:
-            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
+        if not filelock.try_lock(fd):
             raise Refusal('review ledger is locked; inspect the originating run, never launch a second one')
         body = load(path, repo, pr)
         yield body

@@ -281,7 +281,7 @@ under the harness page's recovery rule. A live or uncertain child blocks reuse a
 in the Git common directory under `codex-method/lanes`; all checkouts share writer ownership.
 Legacy checkout-local records are conservatively imported only when uniquely consistent, with
 original bytes and hashes retained. Conflicting records or later legacy changes refuse. An
-old-version run preserves its host identity; a new 0.160.0 child requires current qualification
+old-version run preserves its host identity; a new child requires current exact-host qualification
 and fresh actual completion evidence for the old handle, never a force option.
 
 #### What it returns
@@ -454,7 +454,8 @@ boundary; reviewers and review helpers obey the nonediting boundary. Unknown rol
 be treated as proof that a reviewer restriction ran.
 
 The hook checks actual ordinary tool names and command argv segments. It resolves leading
-assignments, `command`/`env` wrappers and absolute executable paths before recognizing `git`,
+assignments, `command`/`env` wrappers and absolute executable paths (including Windows
+separators, executable extensions and PowerShell invocation) before recognizing `git`,
 `gh` and the guard; inert search prose is not treated as an executed command. Native spawn is
 recognized by the actual `collaboration_spawn_agent` alias and known tool names, never an
 arbitrary MCP suffix. It recognizes roles from `agent_type`; an unknown type or an identified

@@ -6,7 +6,9 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-python3 - "$ROOT" "$@" <<'PYTHON'
+# -X utf8 keeps the embedded Python's output UTF-8 on every platform, including
+# Git Bash on Windows where Python would otherwise use a legacy code page.
+python3 -X utf8 - "$ROOT" "$@" <<'PYTHON'
 import json, sys
 from pathlib import Path
 
