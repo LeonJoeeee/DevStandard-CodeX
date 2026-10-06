@@ -75,8 +75,8 @@ through an explicit source disposition, never a silent loss.
 
 ## Constraints
 
-Codex 0.160.0 native V2 is the supported host with the captured target mechanics in the
-architecture. Every worker, reviewer, helper
+Codex 0.160.0 and 0.160.1 native V2 are the qualified hosts within the captured Linux and
+Windows evidence limits in the architecture and native harness. Every worker, reviewer, helper
 and arbitration uses explicit `gpt-6.1-sol`/`high` unless a direct, specific human instruction
 overrides its named dispatch; no automatic model ladder exists. Main-session settings remain
 the human's choice. Exact role bindings are in the orchestrator page. Account
