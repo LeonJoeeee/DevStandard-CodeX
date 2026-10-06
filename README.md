@@ -43,6 +43,23 @@ use Codex's built-in tools.
 The commands need git, an authenticated `gh`, and a GitHub repository for the full lifecycle.
 Native dispatch, review start, and project-role installation need Python 3.11+ (`tomllib`);
 review assembly/publication and guard need Python 3.9+.
+
+For safe lane cleanup on Linux, Git must preserve an existing dangling symbolic ref during
+create-only `update-ref --no-deref` transactions. **Git 2.52.0 is the tested fixed stable
+release.** System Git 2.43.0 failed the existing archive safety regression: a symbolic ref whose
+target is missing was treated as absent when checking an expected zero object ID, allowing the
+transaction to replace the symbolic archive ref. The [official Git fix](https://github.com/git/git/commit/450fc2bace48ce7ba07a2431175923bf2d610635)
+distinguishes that existing ref and refuses the write; the [2.52.0 release notes](https://github.com/git/git/blob/v2.52.0/Documentation/RelNotes/2.52.0.adoc)
+describe the related dangling-symbolic-ref fetch fix. With Git 2.52.0, the Linux regression and
+all 302 tests passed without implementation or test changes. This is a tested compatibility
+point, not an exhaustive minimum for vendor backports or every platform.
+
+The lifecycle commands also require an authenticated GitHub CLI whose `gh api` supports
+`--paginate --slurp` for collecting complete ordered API records. System gh 2.45.0 rejected
+`--slurp`; [gh 2.102.0](https://github.com/cli/cli/releases/tag/v2.102.0) is the tested Linux
+compatibility point, not an exhaustive minimum for other versions or platforms. The
+[official `gh api` manual](https://cli.github.com/manual/gh_api) describes these options.
+
 The native host owns authentication, trust, permissions, and sandbox prerequisites. A child
 inherits parent cwd and permissions; the assigned worktree is a role instruction. Independent
 nonediting review has a fresh context and ordinary-path hook, with no per-child OS read-only
@@ -64,6 +81,34 @@ help and resulting skill discovery before relying on it. A role label alone does
 Codex skill. Missing required skills stop the dependent task with an explicit gap.
 
 ## Install and verify
+
+Before accepting a Linux installation, run these from the source checkout in the same
+environment used to launch method commands:
+
+```sh
+command -v git
+git --version
+python3 -m unittest -v tests.test_dispatch_native.DispatchNativeTest.test_cleanup_cas_refuses_dangling_symbolic_winner_at_transaction
+python3 -m unittest discover -s tests -t .
+```
+
+Both test commands must exit 0. The targeted regression verifies refusal and preservation when
+a dangling symbolic archive ref wins the transaction race. Select a complete fixed Git
+installation through the launcher's `PATH`; a shell alias does not select subprocess Git.
+Verify the behavior for other versions or vendor backports rather than relying on the version
+number alone. These Linux checks do not extend the native host or platform qualification below.
+
+Verify GitHub CLI capability in that same launcher environment, replacing `OWNER`, `REPO`
+and `ISSUE` with an existing issue accessible to the authenticated account:
+
+```sh
+command -v gh
+gh --version
+gh api --paginate --slurp repos/OWNER/REPO/issues/ISSUE/comments
+```
+
+The API command must exit 0 and return an outer JSON array of pages. Select the verified CLI
+through the launcher's `PATH` so method subprocesses use it too.
 
 The repository includes a local native marketplace. For common rules in new chats, register
 and install it in the user config layer, then review and trust its current hook hashes:

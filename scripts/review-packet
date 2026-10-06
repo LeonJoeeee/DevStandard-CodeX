@@ -97,7 +97,8 @@ def packet_text(project, issue, number, architecture, output, model, effort,
              + json.dumps(pr_comments, indent=2))
     text += '\n\n## Pinned diff captures\n' + json.dumps(captures, indent=2)
     text += '\n\n## Supplied worktree status captures\n' + json.dumps(snapshots, indent=2)
-    text += '\n\n## Observed checks\n' + json.dumps(checks, indent=2)
+    # Terminate before copies and digest reservation so newline-counted reads include EOF.
+    text += '\n\n## Observed checks\n' + json.dumps(checks, indent=2) + '\n'
     before = (head, base, pr['body'])
     after = pr_of(project, number)
     require(before == (after['headRefOid'], after['baseRefOid'], after['body']),
@@ -137,6 +138,7 @@ def prepare_native(project, output, attempt, text, model, effort):
     bundle.chmod(0o600)
     require(hashlib.sha256(bundle.read_bytes()).hexdigest() == attempt['packet_sha256'],
             'retained evidence bundle differs from the reserved packet')
+    line_count = text.count('\n')
     message = (f'Role references resolve from: {ROOT}\n'
                f'Issue: {attempt["issue"]}\nReview base: {attempt["base"]}\n'
                f'Head: {attempt["head"]}\nReviewer identity: {attempt["identity"]}\n'
@@ -144,9 +146,11 @@ def prepare_native(project, output, attempt, text, model, effort):
                'never uncommitted checkout contents. Your discovered native role supplies the '
                'complete reviewer contract and harness; missing role context is Floor 1 FAIL.\n\n'
                f'Evidence bundle: {bundle}\nSHA256: {attempt["packet_sha256"]}\n'
+               f'Numbered lines: {line_count}\n'
                'The complete filled judging contract begins this bundle, followed by the whole '
-               'collected material. Read its entirety through sequential numbered chunks with no '
-               'missing or truncated output. Verify its SHA256 before and after reading and review. '
+               f'collected material. Read lines 1 through {line_count}, including final line {line_count}. '
+               'Use sequential numbered chunks with no missing or truncated output. '
+               'Verify its SHA256 before and after reading and review. '
                'Compare the filled contract head/base and reviewer identity with these bindings; '
                'disclose the path, verified digest and complete-read coverage in Floor 1 grounds. '
                'Missing, changed, '

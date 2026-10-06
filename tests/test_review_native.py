@@ -1,6 +1,7 @@
 """The actual review-start consumer prepares a fresh native call, never an executor."""
 import json
 import hashlib
+import re
 import subprocess
 import sys
 import unittest
@@ -113,6 +114,48 @@ class ReviewNativeTest(unittest.TestCase):
                 self.assertLessEqual(abs(len(message) - len(small_message)), 128,
                                      'material length must not grow native transport')
 
+    def test_start_delivers_the_final_line_through_newline_counted_numbered_reads(self):
+        result = self.start()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        data = json.loads(result.stdout)
+        packet = Path(data['packet'])
+        original = packet.read_bytes()
+        counted = subprocess.run(['wc', '-l', str(packet)], capture_output=True, text=True)
+        self.assertEqual(counted.returncode, 0, counted.stderr)
+        total = int(counted.stdout.split()[0])
+        numbered = subprocess.run(['nl', '-ba', str(packet)], capture_output=True)
+        self.assertEqual(numbered.returncode, 0, numbered.stderr)
+        bounded = subprocess.run(['sed', '-n', f'1,{total}p'], input=numbered.stdout,
+                                 capture_output=True)
+        self.assertEqual(bounded.returncode, 0, bounded.stderr)
+        rows = [line.split(b'\t', 1) for line in bounded.stdout.split(b'\n')[:-1]]
+        self.assertEqual([int(number) for number, _ in rows], list(range(1, total + 1)))
+        delivered = b''.join(content + b'\n' for _, content in rows)
+        self.assertEqual(delivered, original, 'newline-bounded reads must deliver the final original line')
+        self.assertEqual(rows[-1][1], b']', 'the last evidence array must be read')
+        self.assertEqual(original, (self.fx.output / 'packet.md').read_bytes())
+        attempt = json.loads(self.fx.ledger.read_text())['attempts'][-1]
+        self.assertEqual(attempt['packet_sha256'], hashlib.sha256(delivered).hexdigest())
+
+    def test_start_binds_the_physical_line_total_and_inclusive_final_line(self):
+        state = self.fx.state()
+        state['description'] += '\nLine-count evidence: café \u2028 separator\n\n'
+        self.fx.save(state)
+        result = self.start()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        data = json.loads(result.stdout)
+        original = Path(data['packet']).read_bytes()
+        physical = original.split(b'\n')
+        if original.endswith(b'\n'):
+            physical.pop()
+        message = json.loads(Path(data['instruction']).read_text())['message']
+        binding = re.search(r'^Numbered lines: ([0-9]+)$', message, re.M)
+        self.assertIsNotNone(binding, 'the short native instruction must bind the actual line total')
+        self.assertEqual(int(binding[1]), len(physical))
+        self.assertIn(f'Read lines 1 through {len(physical)}, including final line {len(physical)}.',
+                      message)
+        self.assertNotIn(original.decode('utf-8'), message)
+
     def test_old_prepared_file_carrier_recovers_exact_inline_instruction_without_rerender(self):
         started = self.start()
         self.assertEqual(started.returncode, 0, started.stderr)
@@ -128,7 +171,8 @@ class ReviewNativeTest(unittest.TestCase):
         original = instruction.read_bytes()
         ledger = json.loads(self.fx.ledger.read_text())
         ledger['attempts'][-1]['native_instruction_sha256'] = hashlib.sha256(original).hexdigest()
-        self.fx.ledger.write_text(json.dumps(ledger))
+        self.fx.ledger.write_text(json.dumps(ledger, indent=2) + '\n')
+        receipt = self.fx.ledger.read_bytes()
         before = self.fx.state()['comments']
         # Preparation diagnostics are not required to recover a reserved historical request.
         (self.fx.output / 'packet.json').write_text('{invalid and stale assembly diagnostics')
@@ -140,6 +184,7 @@ class ReviewNativeTest(unittest.TestCase):
             self.assertEqual(recovered['next'], 'awaiting-verdict')
             self.assertEqual(instruction.read_bytes(), original)
             self.assertEqual(packet.read_bytes(), bundle)
+            self.assertEqual(self.fx.ledger.read_bytes(), receipt)
         self.assertEqual(self.fx.state()['comments'], before)
         mutations = [call for call in self.fx.state()['calls'] if '-X' in call]
         self.assertEqual(len(mutations), 1, 'status never repeats the historical reservation')
@@ -209,9 +254,11 @@ class ReviewNativeTest(unittest.TestCase):
         published = self.fx.command('review-packet', 'publish', 1, '--issue', 2,
                                     '--attempt', data['comment_id'], '--verdict', verdict)
         self.assertEqual(published.returncode, 0, published.stderr)
+        receipt = self.fx.ledger.read_bytes()
         status = self.fx.command('review-packet', 'status', 1, '--issue', 2)
         self.assertEqual(json.loads(status.stdout)['next'], 'accepted')
         self.assertEqual(self.fx.guard().returncode, 0)
+        self.assertEqual(self.fx.ledger.read_bytes(), receipt)
 
     def test_missing_bundle_does_not_block_whole_floor1_fail_publication(self):
         started = self.start()
