@@ -31,7 +31,7 @@ class HostContractTest(unittest.TestCase):
                 for p in self.project.rglob('*') if p.is_file()}
 
     def test_installer_and_dispatcher_admit_each_explicit_known_host(self):
-        for version, qualification in (('0.160.0', 'qualified'), ('0.160.1', 'candidate')):
+        for version, qualification in (('0.160.0', 'qualified'), ('0.160.1', 'qualified')):
             with self.subTest(version=version):
                 result = self.install(version)
                 self.assertEqual(result.returncode, 0, result.stderr)
@@ -64,7 +64,7 @@ class HostContractTest(unittest.TestCase):
             instructions = tomllib.loads(body)['developer_instructions']
             self.assertIn('0.160.1', instructions)
 
-    def test_candidate_preserves_main_settings_and_unrelated_bytes(self):
+    def test_patch_host_preserves_main_settings_and_unrelated_bytes(self):
         config = self.project / '.codex/config.toml'
         config.parent.mkdir()
         prior = ('# Keep 主会话 settings\nmodel = "main-model"\n'
@@ -80,7 +80,7 @@ class HostContractTest(unittest.TestCase):
         self.assertEqual(data['model_reasoning_effort'], 'xhigh')
         self.assertEqual(data['service_tier'], 'fast')
 
-    def test_candidate_upgrades_each_legacy_owned_marker_with_exact_backup(self):
+    def test_patch_host_upgrades_each_legacy_owned_marker_with_exact_backup(self):
         role = self.project / '.codex/agents/method_worker.toml'
         role.parent.mkdir(parents=True)
         for version in ('0.159.2', '0.160.0'):
@@ -98,7 +98,7 @@ class HostContractTest(unittest.TestCase):
                 self.assertEqual(matching[0].read_bytes(), before)
                 self.assertNotIn(role.parent, matching[0].parents)
 
-    def test_candidate_keeps_collision_refusal_before_any_write(self):
+    def test_patch_host_keeps_collision_refusal_before_any_write(self):
         role = self.project / '.codex/agents/method_worker.toml'
         role.parent.mkdir(parents=True)
         role.write_text('name="method_worker"\ndescription="mine"\n'
@@ -109,7 +109,7 @@ class HostContractTest(unittest.TestCase):
         self.assertIn('collision', result.stderr)
         self.assertEqual(self.snapshot(), before)
 
-    def test_candidate_keeps_project_drift_visible_with_current_user_roles(self):
+    def test_patch_host_keeps_project_drift_visible_with_current_user_roles(self):
         self.assertEqual(self.install('0.160.0').returncode, 0)
         role = self.project / '.codex/agents/method_helper.toml'
         role.write_text(role.read_text(encoding='utf-8') + '\nmodel_verbosity="low"\n', encoding='utf-8')

@@ -27,7 +27,7 @@ def windows_syntax(text, shell='', tool=''):
     if sys.platform == 'win32' and tool != 'Bash':
         return True
     # Compatibility payloads have no shell field. A direct drive/UNC path is unambiguous.
-    return bool(re.search(r'''(?:^|[;&|\n])\s*&?\s*['"]?(?:[A-Za-z]:[\\/]|\\\\)''', text))
+    return bool(re.search(r'''(?:^|[;&|\n])\s*(?:&\s*|\.\s+)?['"]?(?:[A-Za-z]:[\\/]|\\\\)''', text))
 
 
 def shell_commands(text, windows=False):
@@ -37,8 +37,11 @@ def shell_commands(text, windows=False):
     # Split separators first while retaining their quote/escape context, then parse each argv.
     segments, current, quote, escaped, commented = [], [], None, False, False
     redirects = False
+    skip_to = 0
     escape = '`' if windows else '\\'
     for index, character in enumerate(text + '\n'):
+        if index < skip_to:
+            continue
         if commented:
             if character != '\n':
                 continue
@@ -56,6 +59,13 @@ def shell_commands(text, windows=False):
         elif character in ("'", '"'):
             current.append(character)
             quote = character
+        elif (windows and text.startswith('--%', index)
+              and (not current or current[-1].isspace())
+              and (index + 3 == len(text) or text[index + 3].isspace())):
+            # PowerShell consumes this unquoted native argv marker, not Git's -C value.
+            # Quoted/search prose stays argv; no interpreter body is opened here.
+            current.append(' ')
+            skip_to = index + 3
         elif character == '#' and (not current or current[-1].isspace()):
             commented = True
         elif character == '>':
@@ -81,7 +91,11 @@ def shell_commands(text, windows=False):
     commands = []
     for argv in segments:
         while argv:
-            if re.match(r'^[A-Za-z_][A-Za-z_0-9]*=', argv[0]):
+            if windows and argv[0] == '.':
+                # PowerShell dot invocation can directly call a native executable.
+                # Unix dot/source and the bodies of invoked scripts remain out of scope.
+                argv = argv[1:]
+            elif re.match(r'^[A-Za-z_][A-Za-z_0-9]*=', argv[0]):
                 argv = argv[1:]
             elif executable_name(argv[0]) == 'command':
                 argv = argv[1:]

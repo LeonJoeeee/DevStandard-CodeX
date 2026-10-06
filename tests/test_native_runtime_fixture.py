@@ -1,5 +1,6 @@
 """Test the qualification fixture's refusal paths; these are not runtime qualification."""
 import importlib.util
+from concurrent.futures import ThreadPoolExecutor
 import json
 import os
 from pathlib import Path
@@ -548,11 +549,9 @@ class NativeRuntimeFixtureTest(unittest.TestCase):
                     self.verify_records(altered)
 
     def test_observer_control_is_exact_for_both_shell_payload_shapes(self):
-        observer = self.scratch / 'pre-tool-use'
-        observer.write_text(self.fixture.HOOK_OBSERVER, encoding='utf-8')
-        shutil.copy2(ROOT / 'hooks/pre-tool-use', self.scratch / 'pre-tool-use.shipped')
+        observer = self.prepare_observer()
         log = self.scratch / 'observer.jsonl'
-        (self.scratch / 'fixture-observer.json').write_text(json.dumps({
+        (observer.parent / 'fixture-observer.json').write_text(json.dumps({
             'control_command': self.runtime.control_command, 'log': str(log)}), encoding='utf-8')
         for tool, key in (('Bash', 'command'), ('exec_command', 'cmd')):
             for role, command, expected in (
@@ -569,6 +568,37 @@ class NativeRuntimeFixtureTest(unittest.TestCase):
                         self.assertEqual(result.stdout, '')
                     else:
                         self.assertEqual(json.loads(result.stdout)['hookSpecificOutput']['permissionDecision'], 'deny')
+
+    def prepare_observer(self):
+        observer = self.scratch / 'hooks/pre-tool-use'
+        observer.parent.mkdir(exist_ok=True)
+        observer.write_text(self.fixture.HOOK_OBSERVER, encoding='utf-8')
+        shutil.copy2(ROOT / 'hooks/pre-tool-use', observer.with_name('pre-tool-use.shipped'))
+        scripts = self.scratch / 'scripts'
+        scripts.mkdir(exist_ok=True)
+        shutil.copy2(ROOT / 'scripts/filelock.py', scripts / 'filelock.py')
+        return observer
+
+    def test_observer_keeps_parallel_large_payload_receipts_whole(self):
+        observer = self.prepare_observer()
+        log = self.scratch / 'observer.jsonl'
+        (observer.parent / 'fixture-observer.json').write_text(json.dumps({
+            'control_command': self.runtime.control_command, 'log': str(log)}), encoding='utf-8')
+        def invoke(index):
+            payload = {'tool_name': 'apply_patch', 'tool_input': {'input': 'x' * 100000},
+                       'agent_type': 'method_reviewer', 'agent_id': 'native-child-' + str(index)}
+            result = subprocess.run([os.sys.executable, '-X', 'utf8', str(observer)],
+                input=json.dumps(payload), text=True, encoding='utf-8', capture_output=True,
+                check=True, timeout=15)
+            self.assertEqual(json.loads(result.stdout)['hookSpecificOutput']['permissionDecision'], 'deny')
+            return payload
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            payloads = list(pool.map(invoke, range(16)))
+        records = [json.loads(line) for line in log.read_text(encoding='utf-8').splitlines()]
+        self.assertEqual(len(records), len(payloads))
+        self.assertEqual({row['payload']['agent_id'] for row in records},
+                         {payload['agent_id'] for payload in payloads})
+        self.assertTrue(all(len(row['payload']['tool_input']['input']) == 100000 for row in records))
 
     def test_shipped_hook_blocks_nested_reviewer_writes_and_worker_merge(self):
         for tool, key in (('Bash', 'command'), ('exec_command', 'cmd')):

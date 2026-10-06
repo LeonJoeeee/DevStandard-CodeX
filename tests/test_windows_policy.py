@@ -36,6 +36,35 @@ class WindowsPolicyTest(unittest.TestCase):
             with self.subTest(command=command):
                 self.assertDenied(command)
 
+    def test_powershell_dot_invocation_keeps_ordinary_executable_policy(self):
+        for command in ('. git.exe merge feature',
+                        r'. "C:\Program Files\Git\bin\git.exe" merge feature'):
+            with self.subTest(command=command):
+                self.assertDenied(command, 'method_worker')
+        self.assertDenied('. Set-Content sample.txt change')
+        self.assertAllowed('. git.exe diff HEAD')
+        # A dot-drive path also identifies Windows syntax without host/shell metadata.
+        self.assertDenied(r'. "C:\Program Files\Git\bin\git.exe" merge feature',
+                          'method_worker', shell='')
+        # Unix dot/source bodies remain outside direct-command inspection.
+        self.assertAllowed('. git.exe merge feature', 'method_worker', '/bin/bash')
+        self.assertAllowed(r'rg.exe ". git.exe merge feature" .')
+
+    def test_powershell_stop_parsing_marker_does_not_consume_git_option_values(self):
+        for command in (r'git.exe -C --% "C:\my repo" merge feature',
+                        r'git.exe --% -C "C:\my repo" merge feature'):
+            with self.subTest(command=command):
+                self.assertDenied(command, 'method_worker')
+        self.assertDenied(r'git.exe -C --% "C:\my repo" commit -am change')
+        self.assertDenied('gh.exe -R --% owner/repo pr merge 12', 'method_worker')
+        self.assertAllowed(r'git.exe -C --% "C:\my repo" diff HEAD')
+        self.assertAllowed(r'rg.exe "--% . git.exe merge feature" .')
+        self.assertAllowed(r'rg.exe --% "git.exe merge feature" .')
+        # Quoted markers are literal arguments; Unix shells do not consume this token.
+        self.assertAllowed('git.exe -C "--%" ordinary merge feature', 'method_worker')
+        self.assertAllowed(r'git.exe -C --% "C:\my repo" merge feature',
+                           'method_worker', '/bin/bash')
+
     def test_powershell_direct_mutators_and_aliases_are_denied(self):
         for executable in ('Set-Content', 'Add-Content', 'Clear-Content', 'Out-File',
                            'New-Item', 'Remove-Item', 'Move-Item', 'Copy-Item', 'Rename-Item',

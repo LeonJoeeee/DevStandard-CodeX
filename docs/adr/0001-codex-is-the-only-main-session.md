@@ -248,9 +248,11 @@ Windows runtime checks and separate macOS qualification before claiming a native
 Use the native local marketplace and exact current hook trust rather than treating cached files
 as installation. User-role configuration and plugin registration remain separate paths.
 
-`scripts/host_contract.py` is the shared exact observed-host admission. 0.160.0 remains qualified;
-0.160.1 is an explicit candidate until its captured qualification is accepted. Admission does
-not synthesize native success. Windows hooks use explicit Python/UTF-8 entry points; ordinary
+`scripts/host_contract.py` is the shared exact observed-host admission. 0.160.0 and 0.160.1
+have captured Linux controlled-provider mechanics; authenticated Windows 0.160.1 startup and
+ordinary role refusals are separate scoped evidence. The isolated Windows workspace-write
+probe remains blocked by host subprocess policy. Admission does not synthesize native success.
+Windows hooks use explicit Python/UTF-8 entry points; ordinary
 role checks normalize executable extensions/separators and direct PowerShell mutations. Native
 children still inherit parent permissions, and the stated ordinary-path threat boundary remains.
 Portable file locks use platform primitives; Windows skips unsupported directory fsync without

@@ -347,8 +347,10 @@ def run_logged(command, env, cwd, directory, name, **kwargs):
 
 
 HOOK_OBSERVER = '''#!/usr/bin/env python3
-import json, os, subprocess, sys
+import json, os, subprocess, sys, time
 from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
+from filelock import try_lock
 payload_text = sys.stdin.read()
 payload = json.loads(payload_text)
 settings = json.loads((Path(__file__).parent / 'fixture-observer.json').read_text())
@@ -366,8 +368,17 @@ else:
 record = {'payload': payload, 'exit_code': code, 'stdout': out, 'stderr': err,
           'ungated_control': ungated, 'plugin_root': os.environ.get('PLUGIN_ROOT'),
           'plugin_data': os.environ.get('PLUGIN_DATA')}
-with open(settings['log'], 'a', encoding='utf-8') as stream:
-    stream.write(json.dumps(record) + '\\n')
+lock_fd = os.open(settings['log'] + '.lock', os.O_CREAT | os.O_RDWR, 0o600)
+try:
+    deadline = time.monotonic() + 5
+    while not try_lock(lock_fd):
+        if time.monotonic() >= deadline:
+            raise TimeoutError('native fixture observer log lock was busy for 5 seconds')
+        time.sleep(0.01)
+    with open(settings['log'], 'a', encoding='utf-8') as stream:
+        stream.write(json.dumps(record) + '\\n')
+finally:
+    os.close(lock_fd)
 sys.stdout.write(out)
 sys.stderr.write(err)
 sys.exit(code)

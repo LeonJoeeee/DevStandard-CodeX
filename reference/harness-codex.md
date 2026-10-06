@@ -7,8 +7,10 @@ the filled review packet owns formal PR judgment. Task-local helpers keep their 
 
 ## Qualified host and role delivery
 
-The qualified host is Codex **0.160.0**, native V2. Exact **0.160.1** is admitted as a candidate
-for real qualification. Installer, dispatcher and native probes share `scripts/host_contract.py`;
+The qualified hosts are Codex **0.160.0** and **0.160.1**, native V2, with captured Linux
+controlled-provider mechanics and scoped authenticated Windows 0.160.1 startup/role evidence.
+The isolated Windows workspace-write probe remains blocked by host subprocess policy.
+Installer, dispatcher and native probes share `scripts/host_contract.py`;
 unknown or missing observed host identities refuse. Windows uses Python hook entry points via
 `commandWindows`; Unix retains the shell entry. Admission and successful installation do not
 establish a passing native probe, trusted hooks or model access.
@@ -99,7 +101,7 @@ Gating review uses `method_reviewer`; its native message follows the formal tran
 <!-- BEGIN NATIVE HELPER MECHANICS -->
 ## Native helper mechanics
 
-Inspect the actual native schema before invoking it. Qualified Codex 0.160.0 V2 accepts
+Inspect the actual native schema before invoking it. Qualified Codex 0.160.0/0.160.1 V2 accepts
 `task_name`, `message`, `agent_type`, `fork_turns="none"`, `model` and `reasoning_effort`.
 Ordinary task helpers use `method_helper`; fresh design challenge and pre-PR arbitration use
 `method_review_helper`. A reviewer's helpers keep `method_review_helper` and its nonediting

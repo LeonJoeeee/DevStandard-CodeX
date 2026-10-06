@@ -5,8 +5,8 @@ qualification. Promote a candidate only after capturing its real native evidence
 """
 from hard_edges import require
 
-QUALIFIED_HOST_VERSIONS = ('0.160.0',)
-CANDIDATE_HOST_VERSIONS = ('0.160.1',)
+QUALIFIED_HOST_VERSIONS = ('0.160.0', '0.160.1')
+CANDIDATE_HOST_VERSIONS = ()
 HOST_VERSIONS = QUALIFIED_HOST_VERSIONS + CANDIDATE_HOST_VERSIONS
 
 HOST_HELP = ('explicit observed Codex version; qualified: '

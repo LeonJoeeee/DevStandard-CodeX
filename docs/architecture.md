@@ -49,8 +49,9 @@ review/CI identity checks gate integration. Evidence truth, goal fulfillment, de
 irreversible authorization and nonconvergence still require judgment. A hard gate is not lowered
 because its tool or model is unavailable.
 
-Codex **0.160.0**, native V2 is qualified; exact **0.160.1** is admitted as a candidate for
-captured qualification. `scripts/host_contract.py` owns the shared exact-version admission for
+Codex **0.160.0** and **0.160.1**, native V2 have captured Linux controlled-provider
+qualification. Scoped Windows authenticated evidence and its sandbox-specific blocker are
+recorded below. `scripts/host_contract.py` owns the shared exact-version admission for
 installer, dispatcher and probes; unknown or missing observations refuse. Native roles
 must be discovered before dispatch: the schema exposes `agent_type` only when roles are loaded.
 Project installation remains explicitly scoped; `scripts/install --user` opts into roles under

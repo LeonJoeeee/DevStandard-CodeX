@@ -27,8 +27,9 @@ The [reviewer contract](reference/code-review-prompt.md) is the sole judging con
 
 ## Requirements and settings
 
-The qualified host is Codex **0.160.0**, native V2. The installer and dispatcher also admit
-the **0.160.1 candidate** for explicit qualification; admission does not claim a passing probe.
+The qualified hosts are Codex **0.160.0** and **0.160.1**, native V2, with captured Linux
+controlled-provider mechanics. The current Windows 0.160.1 installation also has authenticated
+startup/role-policy evidence; its isolated workspace-write probe remains blocked as described below.
 `scripts/host_contract.py` is the shared exact-version boundary; missing or unknown observations refuse.
 Every worker, reviewer, helper and
 arbitration uses explicit `gpt-6.1-sol` at `high`. The main session retains the human's model and
