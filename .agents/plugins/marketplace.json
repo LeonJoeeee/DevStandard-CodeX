@@ -1,0 +1,20 @@
+{
+  "name": "codex-method",
+  "interface": {
+    "displayName": "DevStandard-CodeX"
+  },
+  "plugins": [
+    {
+      "name": "codex-method",
+      "source": {
+        "source": "local",
+        "path": "."
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    }
+  ]
+}

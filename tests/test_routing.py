@@ -14,35 +14,35 @@ from hard_edges import (anchored_roles, arbitration_settings, helper_line, helpe
 class RoutingTest(unittest.TestCase):
     def test_worker_and_reviewer_share_the_anchored_tier(self):
         rows = {role: (model, effort) for role, model, effort in anchored_roles(ROOT)}
-        self.assertEqual(rows['worker'], ('gpt-6.1-sol', 'high'))
-        self.assertEqual(rows['reviewer'], ('gpt-6.1-sol', 'high'))
+        self.assertEqual(rows['worker'], ('deepseek-v4.1-flash', 'max'))
+        self.assertEqual(rows['reviewer'], ('deepseek-v4.1-flash', 'max'))
 
     def test_arbitration_uses_the_fixed_child_setting(self):
-        self.assertEqual(arbitration_settings(ROOT), ('gpt-6.1-sol', 'high'))
+        self.assertEqual(arbitration_settings(ROOT), ('deepseek-v4.1-flash', 'max'))
 
     def test_every_helper_uses_the_fixed_child_setting(self):
         rows = {work: (model, effort) for work, model, effort in helper_rows(ROOT)}
         self.assertEqual(rows['Its conclusion directly decides a merge or a design '
                               '(checking a worker\'s diff, challenging a design)'],
-                         ('gpt-6.1-sol', 'high'))
+                         ('deepseek-v4.1-flash', 'max'))
         self.assertEqual(rows['Ordinary judgment (research, checking)'],
-                         ('gpt-6.1-sol', 'high'))
+                         ('deepseek-v4.1-flash', 'max'))
         self.assertEqual(rows['Mechanical (scans, first-pass triage, evidence gathering, '
                               'fixed-field extraction, lists, format conversion)'],
-                         ('gpt-6.1-sol', 'high'))
+                         ('deepseek-v4.1-flash', 'max'))
 
     def test_the_default_subagent_is_the_ordinary_judgment_row(self):
-        self.assertEqual(ordinary_judgment_setting(ROOT), ('gpt-6.1-sol', 'high'))
+        self.assertEqual(ordinary_judgment_setting(ROOT), ('deepseek-v4.1-flash', 'max'))
 
     def test_the_helper_line_names_every_row(self):
         line = helper_line(ROOT)
-        self.assertIn('gpt-6.1-sol', line)
+        self.assertIn('deepseek-v4.1-flash', line)
         for work, model, effort in helper_rows(ROOT):
             self.assertIn(f'{work}: `{model}` at `{effort}`', line)
 
     def test_hook_config_carries_the_default_helper_tier(self):
         config = hook_config(ROOT, 'worker')
-        self.assertIn('gpt-6.1-sol', config)
+        self.assertIn('deepseek-v4.1-flash', config)
         self.assertIn('hooks.PreToolUse', config)
 
     def test_a_reworded_row_refuses_instead_of_stale_routing(self):

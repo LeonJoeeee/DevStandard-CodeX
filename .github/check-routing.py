@@ -12,10 +12,10 @@ rows = anchored_roles(ROOT)
 helpers = helper_rows(ROOT)
 arb = arbitration_settings(ROOT)
 assert {r[0] for r in rows} == {'worker', 'reviewer'}, rows
-assert arb == ('gpt-6.1-sol', 'high'), arb
-assert ordinary_judgment_setting(ROOT) == ('gpt-6.1-sol', 'high')
+assert arb == ('deepseek-v4.1-flash', 'max'), arb
+assert ordinary_judgment_setting(ROOT) == ('deepseek-v4.1-flash', 'max')
 assert len(helpers) >= 3, helpers
 names = sorted({r[1] for r in rows} | {r[1] for r in helpers} | {arb[0]})
-assert names == ['gpt-6.1-sol'], names
-assert all((row[1], row[2]) == ('gpt-6.1-sol', 'high') for row in rows + helpers)
+assert names == ['deepseek-v4.1-flash'], names
+assert all((row[1], row[2]) == ('deepseek-v4.1-flash', 'max') for row in rows + helpers)
 print('static assertions OK; models', names)

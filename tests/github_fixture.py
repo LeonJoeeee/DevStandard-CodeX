@@ -7,8 +7,8 @@ import sys
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
-MODEL = 'gpt-6.1-sol'
-IDENTITY = 'Codex, gpt-6.1-sol at high, read-only'
+MODEL = 'deepseek-v4.1-flash'
+IDENTITY = 'Codex, deepseek-v4.1-flash at max, read-only'
 
 FAKE_GH = r'''#!/usr/bin/env python3
 import json, os, signal, sys
@@ -155,7 +155,7 @@ class GitHubFixture:
     def start(self):
         return self.command('review-packet','start',1,'--issue',2,
                             '--architecture-level','yes','--output',self.output,
-                            '--model',MODEL,'--effort','high','--host-version','0.160.0')
+                            '--model',MODEL,'--effort','max','--host-version','0.160.0')
 
     def publish(self, verdict=None):
         started = self.start()

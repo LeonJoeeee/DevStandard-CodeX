@@ -125,7 +125,8 @@ def pinned_git(project, env=None):
     """Read-only git reader returning raw bytes; env is pinned by sanitizing callers."""
     def git(*args):
         result = subprocess.run(['git', '-C', str(project), *args], capture_output=True, env=env)
-        require(result.returncode == 0, 'cannot read pinned version diff: ' + result.stderr.decode(errors='replace'))
+        require(result.returncode == 0,
+                'cannot read pinned version diff: ' + result.stderr.decode('utf-8', errors='replace'))
         return result.stdout
     return git
 
@@ -178,7 +179,7 @@ def issue_contract(body):
 
 def template():
     matches = re.findall(r'\n```\n(.*?)\n```\n',
-                         (ROOT / 'reference/code-review-prompt.md').read_text(), re.S)
+                         (ROOT / 'reference/code-review-prompt.md').read_text(encoding='utf-8'), re.S)
     require(len(matches) == 1, 'current reviewer contract must have exactly one prompt fence')
     return matches[0]
 
@@ -195,7 +196,7 @@ def predicate(text=None):
     never reaches the one reader whose job is to catch that.
     """
     if text is None:
-        text = (ROOT / 'reference/in-repo-writes.md').read_text()
+        text = (ROOT / 'reference/in-repo-writes.md').read_text(encoding='utf-8')
     if text.count(PREDICATE_BEGIN) != 1 or len(re.findall(PREDICATE_END, text)) != 1:
         return '', 'the predicate needs exactly one start marker and one counted end marker'
     match = re.search(re.escape(PREDICATE_BEGIN) + r'\n(.*?)\n' + PREDICATE_END, text, re.S)

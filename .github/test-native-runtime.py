@@ -45,8 +45,8 @@ import tomllib
 
 ROOT = Path(__file__).resolve().parents[1]
 VERSION = '0.160.0'
-MODEL = 'gpt-6.1-sol'
-EFFORT = 'high'
+MODEL = 'deepseek-v4.1-flash'
+EFFORT = 'max'
 PRIVATE_PARENT = 'NATIVE_FIXTURE_PARENT_PRIVATE_1600'
 PRIVATE_WORKER = 'NATIVE_FIXTURE_WORKER_PRIVATE_1600'
 WORK_TASK = 'NATIVE_FIXTURE_WORK_TASK_1600'
@@ -514,7 +514,7 @@ class ResponsesFixture:
                     outer.errors.append('unexpected GET or authentication')
                     self.send_error(403)
                     return
-                # Use the actual CLI's bundled advertised gpt-6.1-sol metadata.
+                # Use the actual CLI's bundled advertised deepseek-v4.1-flash metadata.
                 body = b'{"models":[]}'
                 self.send_response(200)
                 self.send_header('Content-Type', 'application/json')

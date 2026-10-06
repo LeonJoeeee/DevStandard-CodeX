@@ -88,7 +88,7 @@ def packet_text(project, issue, number, architecture, output, model, effort,
     snapshots = {}
     for name, path in [('pre-write', pre_write), ('delivery', delivery)]:
         if path:
-            snapshots[name] = Path(path).read_text()
+            snapshots[name] = Path(path).read_text(encoding='utf-8')
         else:
             gaps.append(f'{name} worktree status: not supplied; current status cannot establish past state')
     text = render(packet, identity)
@@ -103,8 +103,8 @@ def packet_text(project, issue, number, architecture, output, model, effort,
     require(before == (after['headRefOid'], after['baseRefOid'], after['body']),
             'PR head, base or description moved while assembling; assemble again')
     Path(output).mkdir(parents=True, exist_ok=True)
-    (Path(output) / 'packet.md').write_text(text)
-    (Path(output) / 'packet.json').write_text(json.dumps(packet, indent=2) + '\n')
+    (Path(output) / 'packet.md').write_text(text, encoding='utf-8')
+    (Path(output) / 'packet.json').write_text(json.dumps(packet, indent=2) + '\n', encoding='utf-8')
     return text, head, base, identity
 
 
@@ -159,7 +159,7 @@ def prepare_native(project, output, attempt, text, model, effort):
     instruction = directory / 'native-spawn.json'
     save(instruction, request)
     attempt['native_instruction'] = str(instruction)
-    attempt['native_instruction_sha256'] = digest(instruction.read_text())
+    attempt['native_instruction_sha256'] = digest(instruction.read_text(encoding='utf-8'))
     attempt['packet_path'] = str(bundle)
     attempt['packet_carrier'] = 'file-sha256-v1'
     return instruction
@@ -167,7 +167,7 @@ def prepare_native(project, output, attempt, text, model, effort):
 
 def native_instruction(attempt):
     instruction = Path(attempt['native_instruction'])
-    require(digest(instruction.read_text()) == attempt['native_instruction_sha256'],
+    require(digest(instruction.read_text(encoding='utf-8')) == attempt['native_instruction_sha256'],
             'native instruction differs from the reserved receipt; retain it and do not launch')
     validate_packet_carrier(attempt)
     return str(instruction)

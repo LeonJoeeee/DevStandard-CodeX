@@ -83,8 +83,8 @@ class TableContractTest(unittest.TestCase):
         (scratch / 'reference').mkdir()
         (scratch / 'reference/orchestrator.md').write_text(
             '| Role | Model at effort |\n|---|---|\n'
-            '| worker | `gpt-6.1-sol` at `high` |\n'
-            '| reviewer | `gpt-6.1-sol` at `high` |\n')
+            '| worker | `deepseek-v4.1-flash` at `max` |\n'
+            '| reviewer | `deepseek-v4.1-flash` at `max` |\n')
         with self.assertRaises(Refusal):
             helper_rows(scratch)
 

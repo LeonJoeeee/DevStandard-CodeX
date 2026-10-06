@@ -247,7 +247,7 @@ class NativeRuntimeFixtureTest(unittest.TestCase):
         args = json.loads(item['arguments'])
         self.assertEqual(args['agent_type'], 'method_worker')
         self.assertEqual((args['model'], args['reasoning_effort'], args['fork_turns']),
-                         ('gpt-6.1-sol', 'high', 'none'))
+                         ('deepseek-v4.1-flash', 'max', 'none'))
 
     def test_prepare_registers_declared_readonly_control_without_rejected_cwd(self):
         f = self.fixture

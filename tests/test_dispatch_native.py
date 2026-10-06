@@ -382,7 +382,7 @@ class DispatchNativeTest(unittest.TestCase):
         self.assertEqual(set(spawn), {'task_name','message','agent_type','fork_turns','model','reasoning_effort'})
         self.assertEqual(spawn['agent_type'], 'method_worker')
         self.assertEqual(spawn['fork_turns'], 'none')
-        self.assertEqual((spawn['model'],spawn['reasoning_effort']), ('gpt-6.1-sol','high'))
+        self.assertEqual((spawn['model'],spawn['reasoning_effort']), ('deepseek-v4.1-flash','max'))
         installed = tomllib.loads((self.f.project / '.codex/agents/method_worker.toml').read_text())['developer_instructions']
         source = (ROOT / 'reference/worker.md').read_text()
         self.assertEqual(installed.count(source), 1)

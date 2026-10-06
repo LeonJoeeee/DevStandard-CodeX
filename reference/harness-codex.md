@@ -9,10 +9,10 @@ the filled review packet owns formal PR judgment. Task-local helpers keep their 
 
 The supported host is Codex **0.160.0**, native V2; the probes below qualify its mechanics.
 Target probes
-captured loaded role discovery, full worker/reviewer role bytes, explicit `gpt-6.1-sol`/`high`,
+captured loaded role discovery, full worker/reviewer role bytes, explicit `deepseek-v4.1-flash`/`max`,
 `fork_turns="none"`, allowed `pwd`, and ordinary worker merge, reviewer write and reviewer
 cross-role refusals. A controlled provider establishes host mechanics rather than production
-worker execution or uncoached compliance. A separate production Sol/high typed reviewer call with
+worker execution or uncoached compliance. A separate production `gpt-6.1-sol`/`high` typed reviewer call with
 an explicitly active role-config layer retained prompt heading/end marker and omitted a parent-only
 token; an earlier inactive-config discovery block remains recorded. This establishes that call
 rather than universal account access or user-level installation. The earlier 0.159.2 source
@@ -30,7 +30,7 @@ V2 exposes
 roles. Role files
 carry `developer_instructions` only. The native call supplies model and effort explicitly;
 Codex applies role settings after call overrides; omit model settings from TOML and state the
-default `gpt-6.1-sol`/`high` explicitly in every native child call, unless a direct, specific human
+default `deepseek-v4.1-flash`/`max` explicitly in every native child call, unless a direct, specific human
 instruction overrides its named dispatch. Role files do not supply effective per-role `cwd`, sandbox,
 or hook settings. Child permissions and cwd are inherited from the
 parent. The package hook resolves from the host-provided `PLUGIN_ROOT` and uses actual `agent_type`
@@ -71,8 +71,8 @@ qualified argument shape, shown as data:
   "message": "<complete dispatcher brief>",
   "agent_type": "method_worker",
   "fork_turns": "none",
-  "model": "gpt-6.1-sol",
-  "reasoning_effort": "high"
+  "model": "deepseek-v4.1-flash",
+  "reasoning_effort": "max"
 }
 ```
 

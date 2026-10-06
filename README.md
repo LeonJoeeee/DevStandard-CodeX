@@ -29,7 +29,7 @@ The [reviewer contract](reference/code-review-prompt.md) is the sole judging con
 
 The supported host is Codex **0.160.0**, native V2; target probes qualify the mechanics below.
 Every worker, reviewer, helper and
-arbitration uses explicit `gpt-6.1-sol` at `high`. The main session retains the human's model and
+arbitration uses explicit `deepseek-v4.1-flash` at `max`. The main session retains the human's model and
 service tier. [Model and effort](reference/orchestrator.md) states those role settings.
 A direct, specific human instruction may override a child setting for
 that dispatch; there is no automatic model or effort escalation. A requested model's absence or
@@ -143,10 +143,10 @@ exemptions. See [the architecture](docs/architecture.md) for these dispositions.
 ## Evidence and layout
 
 Codex 0.160.0 target probes captured loaded native role discovery, complete worker/reviewer
-context bytes, explicit `gpt-6.1-sol`/`high`, `fork_turns="none"`, allowed `pwd`, and ordinary
+context bytes, explicit `deepseek-v4.1-flash`/`max`, `fork_turns="none"`, allowed `pwd`, and ordinary
 worker-merge, reviewer-write and reviewer-cross-role refusals. Those mechanics probes used a
 controlled provider. A separate production call with an explicitly
-active role-config layer ran a typed fresh reviewer at Sol/high, retained the supplied prompt
+active role-config layer ran a typed fresh reviewer at `gpt-6.1-sol`/`high`, retained the supplied prompt
 heading and end marker, and omitted a parent-only token; an earlier inactive-config discovery
 block remains recorded. This qualifies that reviewer call, not every account, worker execution,
 uncoached behavior, user-scope installation or the remote worker/PR/review/merge lifecycle.

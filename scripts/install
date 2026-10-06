@@ -25,7 +25,7 @@ FEATURES = ('enabled', 'expose_spawn_agent_model_overrides')
 
 
 def shared_agreements():
-    source = (ROOT / 'reference/orchestrator.md').read_text()
+    source = (ROOT / 'reference/orchestrator.md').read_text(encoding='utf-8')
     start = '<!-- BEGIN SHARED COLLABORATION AGREEMENTS -->'
     end = '<!-- END SHARED COLLABORATION AGREEMENTS -->'
     require(source.count(start) == source.count(end) == 1,
@@ -39,7 +39,7 @@ def shared_agreements():
 
 
 def native_helper_mechanics():
-    source = (ROOT / 'reference/harness-codex.md').read_text()
+    source = (ROOT / 'reference/harness-codex.md').read_text(encoding='utf-8')
     start = '<!-- BEGIN NATIVE HELPER MECHANICS -->'
     end = '<!-- END NATIVE HELPER MECHANICS -->'
     require(source.count(start) == source.count(end) == 1,
@@ -54,10 +54,10 @@ def native_helper_mechanics():
 
 def role_files():
     shared = shared_agreements()
-    helper = (ROOT / 'reference/task-helper.md').read_text()
+    helper = (ROOT / 'reference/task-helper.md').read_text(encoding='utf-8')
     require(helper.strip(), 'task-local helper source is empty')
     excerpt = native_helper_mechanics()
-    harness = (ROOT / 'reference/harness-codex.md').read_text()
+    harness = (ROOT / 'reference/harness-codex.md').read_text(encoding='utf-8')
     native = ('\nNative interface: Codex 0.160.0 V2 spawn_agent accepts task_name, message, '
               'agent_type, fork_turns="none", model, reasoning_effort. Use method_helper for '
               'worker helpers and method_review_helper for reviewer helpers. Reviewer helpers '
@@ -96,7 +96,7 @@ def role_files():
             boundary = review_boundary if role == 'method_review_helper' else worker_boundary
             instructions = shared + '\n' + helper + boundary + '\n' + settings + excerpt
         else:
-            instructions = shared + '\n' + (ROOT / 'reference' / source).read_text() + native + settings + '\n' + harness
+            instructions = shared + '\n' + (ROOT / 'reference' / source).read_text(encoding='utf-8') + native + settings + '\n' + harness
             if role == 'method_reviewer':
                 instructions += ('\nReviewer policy: do not edit files or repository state, run shell '
                                  'mutations, or publish GitHub writes. Return the whole verdict to the '
@@ -146,7 +146,7 @@ def planned_directory(directory):
     require(not directory.is_symlink(), 'Codex configuration directory must not be a symlink')
     config = directory / 'config.toml'
     require(not config.is_symlink(), 'project config must not be a symlink')
-    original = config.read_text() if config.exists() else ''
+    original = config.read_text(encoding='utf-8') if config.exists() else ''
     parsed = tomllib.loads(original)
     agents = directory / 'agents'
     require(not agents.is_symlink(), 'project agents directory must not be a symlink')
@@ -155,7 +155,7 @@ def planned_directory(directory):
     require(not names.intersection(parsed.get('agents', {})), 'method role collides with config agents')
     for path in agents.rglob('*.toml'):
         require(not path.is_symlink(), 'agent file must not be a symlink')
-        body = path.read_text()
+        body = path.read_text(encoding='utf-8')
         name = tomllib.loads(body).get('name')
         if name in names or path.name in roles:
             require(path.parent == agents and path.name in roles and body.startswith(OWNED_MARKERS),
@@ -186,7 +186,7 @@ def main():
     directory = user_directory() if args.user else project / '.codex'
     writes = planned_user(directory) if args.user else planned(project)
     drift = [str(path) for path, body in writes.items()
-             if not path.is_file() or path.read_text() != body]
+             if not path.is_file() or path.read_text(encoding='utf-8') != body]
     backups = []
     if args.check:
         require(not drift, 'installation drift: ' + ', '.join(drift))
@@ -205,7 +205,7 @@ def main():
         for path, body in writes.items():
             if str(path) in drift:
                 path.parent.mkdir(parents=True, exist_ok=True)
-                path.write_text(body)
+                path.write_text(body, encoding='utf-8')
     print(json.dumps({'scope': 'user' if args.user else 'project',
                       'project': str(project) if project is not None else None,
                       'codex_home': str(directory) if args.user else None,

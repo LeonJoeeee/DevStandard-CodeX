@@ -34,7 +34,7 @@ class ReviewNativeTest(unittest.TestCase):
                                        'model', 'reasoning_effort'})
         self.assertEqual(request['agent_type'], 'method_reviewer')
         self.assertEqual(request['fork_turns'], 'none')
-        self.assertEqual((request['model'], request['reasoning_effort']), ('gpt-6.1-sol', 'high'))
+        self.assertEqual((request['model'], request['reasoning_effort']), ('deepseek-v4.1-flash', 'max'))
         packet = Path(data['packet'])
         saved = json.loads((self.fx.output / 'packet.json').read_text())
         self.assertTrue(packet.read_text().startswith(render(saved, data['identity'])))

@@ -217,15 +217,15 @@ rows encode the default explicit child model and effort; they are not proof of l
 
 | Role | Model at effort |
 |---|---|
-| worker | `gpt-6.1-sol` at `high` |
-| reviewer | `gpt-6.1-sol` at `high` |
+| worker | `deepseek-v4.1-flash` at `max` |
+| reviewer | `deepseek-v4.1-flash` at `max` |
 
 `scripts/dispatch` reads those two rows, so keep the cell form. Arbitration—a genuine dilemma, an
-irreversible judgment, or an architecture-level acceptance—uses `gpt-6.1-sol` at `high`,
+irreversible judgment, or an architecture-level acceptance—uses `deepseek-v4.1-flash` at `max`,
 read-only. It informs the decision; a direction decision or irreversible judgment remains the
 human's. With a PR, commission it through the ordinary reviewer path. Before a PR exists,
-commission a fresh native `method_review_helper` with `fork_turns="none"`, model `gpt-6.1-sol`,
-and `reasoning_effort="high"`. Supply a self-contained question, real alternatives, decision
+commission a fresh native `method_review_helper` with `fork_turns="none"`, model `deepseek-v4.1-flash`,
+and `reasoning_effort="max"`. Supply a self-contained question, real alternatives, decision
 bounds and pinned evidence, then publish the whole answer on the issue. Its answer grants no
 human authorization or merge authority.
 
@@ -235,9 +235,9 @@ work labels remain the packet's task descriptions, not routes to different model
 
 | Helpers' work | Model at effort |
 |---|---|
-| Its conclusion directly decides a merge or a design (checking a worker's diff, challenging a design) | `gpt-6.1-sol` at `high` |
-| Ordinary judgment (research, checking) | `gpt-6.1-sol` at `high` |
-| Mechanical (scans, first-pass triage, evidence gathering, fixed-field extraction, lists, format conversion) | `gpt-6.1-sol` at `high` |
+| Its conclusion directly decides a merge or a design (checking a worker's diff, challenging a design) | `deepseek-v4.1-flash` at `max` |
+| Ordinary judgment (research, checking) | `deepseek-v4.1-flash` at `max` |
+| Mechanical (scans, first-pass triage, evidence gathering, fixed-field extraction, lists, format conversion) | `deepseek-v4.1-flash` at `max` |
 
 Every native child and helper states both settings in its call. The installer carries these
 rows in the installed role's native `Helpers:` binding, and the worker role states the same fixed setting. Keep the
@@ -637,7 +637,7 @@ results, retained state and feasible next step. The caller coordinates the admit
 never change tools to bypass approval, hooks or sandbox limits. Pause only the dependent work
 and continue independent authorized work.
 
-**Child settings.** Every worker, reviewer and helper uses explicit `gpt-6.1-sol` at `high` through
+**Child settings.** Every worker, reviewer and helper uses explicit `deepseek-v4.1-flash` at `max` through
 an interface that actually supports these parameters; only a direct, specific human instruction
 changes its named dispatch. Before starting or reusing a child, inspect supported invocation
 settings, availability and any observable live model/effort metadata. Distinguish requested or
