@@ -1,6 +1,6 @@
 # 0001 — Codex is the only main session, and every worker is its own built-in subagent
 
-Status: Accepted (2026-09-29); Amended (2026-10-03); Amended (2026-10-04); Amended (2026-10-05).
+Status: Accepted (2026-09-29); Amended (2026-10-03); Amended (2026-10-04); Amended (2026-10-05); Amended (2026-10-06).
 
 *This ADR decides what this method ships. A reader in any seeded project should take it as method.*
 
@@ -239,3 +239,22 @@ engine, forced cleanup or hostile-peer isolation. The design was independently c
 root accepted the reachable spec blob before implementation; its canonical detail lives in
 `docs/specs/2026-10-05-squash-lane-cleanup.md`. Implementation, native qualification, hosted CI,
 formal judging, product merge approval and live rehearsal remain distinct evidence obligations.
+
+**Amendment (2026-10-06, Issue 21 native Windows installation):** The human selected global
+common-rule delivery and the native ChatGPT subscription, restoring the abandoned local
+DeepSeek route to explicit GPT/high children. The main session retains its chosen settings.
+Windows is a temporary host; maintain one portable core, full Linux suite/native CI, critical
+Windows runtime checks and separate macOS qualification before claiming a native macOS result.
+Use the native local marketplace and exact current hook trust rather than treating cached files
+as installation. User-role configuration and plugin registration remain separate paths.
+
+`scripts/host_contract.py` is the shared exact observed-host admission. 0.160.0 remains qualified;
+0.160.1 is an explicit candidate until its captured qualification is accepted. Admission does
+not synthesize native success. Windows hooks use explicit Python/UTF-8 entry points; ordinary
+role checks normalize executable extensions/separators and direct PowerShell mutations. Native
+children still inherit parent permissions, and the stated ordinary-path threat boundary remains.
+Portable file locks use platform primitives; Windows skips unsupported directory fsync without
+claiming identical power-loss durability. Test GitHub doubles use an explicit Python bootstrap
+on Windows and fail closed rather than falling through to real GitHub. Keep authenticated
+production execution, deterministic provider mechanics, script tests and host-policy blockers
+distinct. The accepted scope is `docs/specs/2026-10-06-windows-native-subscription.md`.

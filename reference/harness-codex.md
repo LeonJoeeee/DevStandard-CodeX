@@ -7,9 +7,13 @@ the filled review packet owns formal PR judgment. Task-local helpers keep their 
 
 ## Qualified host and role delivery
 
-The supported host is Codex **0.160.0**, native V2; the probes below qualify its mechanics.
+The qualified host is Codex **0.160.0**, native V2. Exact **0.160.1** is admitted as a candidate
+for real qualification. Installer, dispatcher and native probes share `scripts/host_contract.py`;
+unknown or missing observed host identities refuse. Windows uses Python hook entry points via
+`commandWindows`; Unix retains the shell entry. Admission and successful installation do not
+establish a passing native probe, trusted hooks or model access.
 Target probes
-captured loaded role discovery, full worker/reviewer role bytes, explicit `deepseek-v4.1-flash`/`max`,
+captured loaded role discovery, full worker/reviewer role bytes, explicit `gpt-6.1-sol`/`high`,
 `fork_turns="none"`, allowed `pwd`, and ordinary worker merge, reviewer write and reviewer
 cross-role refusals. A controlled provider establishes host mechanics rather than production
 worker execution or uncoached compliance. A separate production `gpt-6.1-sol`/`high` typed reviewer call with
@@ -30,7 +34,7 @@ V2 exposes
 roles. Role files
 carry `developer_instructions` only. The native call supplies model and effort explicitly;
 Codex applies role settings after call overrides; omit model settings from TOML and state the
-default `deepseek-v4.1-flash`/`max` explicitly in every native child call, unless a direct, specific human
+default `gpt-6.1-sol`/`high` explicitly in every native child call, unless a direct, specific human
 instruction overrides its named dispatch. Role files do not supply effective per-role `cwd`, sandbox,
 or hook settings. Child permissions and cwd are inherited from the
 parent. The package hook resolves from the host-provided `PLUGIN_ROOT` and uses actual `agent_type`
@@ -71,8 +75,8 @@ qualified argument shape, shown as data:
   "message": "<complete dispatcher brief>",
   "agent_type": "method_worker",
   "fork_turns": "none",
-  "model": "deepseek-v4.1-flash",
-  "reasoning_effort": "max"
+  "model": "gpt-6.1-sol",
+  "reasoning_effort": "high"
 }
 ```
 

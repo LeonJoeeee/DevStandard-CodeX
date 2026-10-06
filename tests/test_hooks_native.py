@@ -3,6 +3,7 @@ import json
 import os
 import subprocess
 import shutil
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -14,8 +15,8 @@ def hook(tool, inputs, role=None):
     payload = {'tool_name': tool, 'tool_input': inputs}
     if role:
         payload.update(agent_type=role, agent_id='native-child')
-    return subprocess.run([str(ROOT / 'hooks/pre-tool-use')], input=json.dumps(payload),
-                          capture_output=True, text=True)
+    return subprocess.run([sys.executable, str(ROOT / 'hooks/pre-tool-use')],
+                          input=json.dumps(payload), capture_output=True, text=True, encoding='utf-8')
 
 
 class NativeHookTest(unittest.TestCase):

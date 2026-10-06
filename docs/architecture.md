@@ -49,7 +49,9 @@ review/CI identity checks gate integration. Evidence truth, goal fulfillment, de
 irreversible authorization and nonconvergence still require judgment. A hard gate is not lowered
 because its tool or model is unavailable.
 
-Codex **0.160.0**, native V2 is the supported host; target probes qualify the mechanics below. Native roles
+Codex **0.160.0**, native V2 is qualified; exact **0.160.1** is admitted as a candidate for
+captured qualification. `scripts/host_contract.py` owns the shared exact-version admission for
+installer, dispatcher and probes; unknown or missing observations refuse. Native roles
 must be discovered before dispatch: the schema exposes `agent_type` only when roles are loaded.
 Project installation remains explicitly scoped; `scripts/install --user` opts into roles under
 `~/.codex/agents`. Active configuration layers still govern discovery; user files alone do not
@@ -63,7 +65,8 @@ Target probes captured complete worker/reviewer role bytes, explicit `gpt-6.1-so
 refusals. The hook normalizes the actual native spawn alias before role checks. Ordinary command checks
 use executable argv segments, including assignment/wrapper/absolute-path normalization, without
 interpreting search prose as a command. Worker pushes need an explicit remote and branch refspec;
-implicit/default targets refuse. Interactive stdin and arbitrary MCP/script writes remain outside
+implicit/default targets refuse. Windows executable extensions, path separators and direct
+PowerShell mutators/redirects use the same ordinary-path role boundary. Interactive stdin and arbitrary MCP/script writes remain outside
 this ordinary-path boundary. These mechanics captures use the actual host with a controlled provider. A separate production
 Sol/high typed fresh-reviewer call, with its role-config layer explicitly active, retained the
 prompt heading/end marker and omitted a parent-only token. Its earlier inactive-config discovery
@@ -250,6 +253,15 @@ model availability, main-session resume/clear/compaction delivery, handle recove
 and a live remote lifecycle still need separate evidence before broader readiness claims. Test the
 ordinary shipped paths against the declared threat boundary; fixtures establish only the properties
 they actually reach. Do not claim the source's runtime success as the target's.
+
+The current Windows 0.160.1 installation additionally has actual global plugin registration,
+trusted hash discovery, user-role installation and a fresh authenticated ChatGPT startup probe
+with all four typed roles, allowed reads and ordinary role refusals. The isolated controlled
+provider reaches context/role completion but Windows workspace-write subprocess policy blocks
+its actual I/O controls; it remains blocked, not qualified. Full suite/native CI belongs to Linux;
+Windows and macOS critical script checks do not claim complete Unix-fixture portability or
+native macOS qualification. The accepted platform priority and evidence boundary live in
+`docs/specs/2026-10-06-windows-native-subscription.md`.
 
 ## Key quality goals
 

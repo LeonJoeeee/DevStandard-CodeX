@@ -31,9 +31,13 @@ jobs:
         run: python3 .github/check-adr-index.py
 
   native:
-    name: native-runtime / Codex 0.160.0
+    name: native-runtime / Codex ${{ matrix.codex }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        codex: ['0.160.0', '0.160.1']
     steps:
       - uses: actions/checkout@v7
       - name: Install Linux sandbox prerequisites
@@ -47,28 +51,44 @@ jobs:
           sudo apparmor_parser -r /etc/apparmor.d/bwrap-userns-restrict
           bwrap --unshare-user --unshare-net --ro-bind / / /bin/true
       - name: Install the qualified native host
-        run: npm install --global @openai/codex@0.160.0
+        run: npm install --global @openai/codex@${{ matrix.codex }}
       - name: Exercise installed roles and hooks with an auth-free local provider
         env:
           TMPDIR: ${{ runner.temp }}/codex-method-native
-        run: python3 .github/test-native-runtime.py --installer scripts/install --log-dir "$TMPDIR/evidence"
+        run: python3 .github/test-native-runtime.py --codex-version ${{ matrix.codex }} --installer scripts/install --log-dir "$TMPDIR/evidence"
       - name: Retain qualification evidence, including a failed run
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: native-runtime-evidence
+          name: native-runtime-evidence-${{ matrix.codex }}
           path: ${{ runner.temp }}/codex-method-native
+
+  portable:
+    name: critical runtime / ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Portable delivery, fixture refusal, locking, installation and hook policy
+        run: python -X utf8 -m unittest tests.test_windows_runtime tests.test_native_runtime_fixture tests.test_host_contract tests.test_install tests.test_windows_policy
 
   test:
     if: ${{ always() }}
-    needs: [suite, native]
+    needs: [suite, native, portable]
     runs-on: ubuntu-latest
     steps:
-      - name: Require both the suite and native runtime
+      - name: Require the full suite, native versions and portable critical checks
         env:
           SUITE_RESULT: ${{ needs.suite.result }}
           NATIVE_RESULT: ${{ needs.native.result }}
-        run: test "$SUITE_RESULT" = success && test "$NATIVE_RESULT" = success
+          PORTABLE_RESULT: ${{ needs.portable.result }}
+        run: test "$SUITE_RESULT" = success && test "$NATIVE_RESULT" = success && test "$PORTABLE_RESULT" = success
 
   merged-result:
     name: merged-result / ${{ github.event.pull_request.base.sha }} / ${{ github.event.pull_request.head.sha }}

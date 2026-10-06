@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prepare fresh Codex 0.160.0 V2 spawn arguments; no agent process is executed.
+"""Prepare fresh spawn arguments for an observed known Codex V2 host; no agent is executed.
 
 The caller uses native spawn_agent, records its returned task_name with --record-spawn, and
 captures list_agents output with --record-status. Receipts are caller-supplied observations, not
@@ -22,6 +22,7 @@ from urllib.parse import quote
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'scripts'))
 from hard_edges import Refusal, anchored_roles, filled, require, resolved, run
+from host_contract import HOST_HELP, require_host_version
 from review_state import digest, save as durable_save
 import filelock
 
@@ -177,7 +178,7 @@ def locked(project, issue, purpose):
 
 
 def qualify(project, version):
-    require(version == '0.160.0', 'only an observed Codex 0.160.0 V2 host is qualified; upgrade and use --host-version')
+    require_host_version(version)
     installer = runpy.run_path(str(ROOT / 'scripts/install'))
     expected = installer['planned'](project)
     roles = [path for path in expected if path.parent.name == 'agents']
@@ -638,7 +639,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('issue', type=int, nargs='?')
     parser.add_argument('--project', type=Path, default=Path.cwd())
-    parser.add_argument('--host-version', help='observed host version; only 0.160.0 is qualified')
+    parser.add_argument('--host-version', help=HOST_HELP)
     parser.add_argument('--purpose', choices=['worker', 'reviewer'])
     parser.add_argument('--base')
     parser.add_argument('--branch')
@@ -657,6 +658,7 @@ def main():
     parser.add_argument('--native-status', type=Path, help='fresh native list_agents capture for cleanup')
     args = parser.parse_args()
     require(args.issue and args.issue > 0, 'an issue number is required')
+    require_host_version(args.host_version)
     project = resolved(args.project, 'project')
     require(project.is_dir(), 'target project does not exist')
     require(resolved(run('git', 'rev-parse', '--show-toplevel', cwd=project).strip(), 'project root') == project,

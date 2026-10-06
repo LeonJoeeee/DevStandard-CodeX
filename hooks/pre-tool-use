@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """The role hook.
 
-Checks ordinary command argv, including command/env wrappers and executable paths. Search
-arguments are not commands. This is a policy hook, not a shell interpreter or OS isolation;
+Checks ordinary Unix/Windows command argv, including wrappers, executable paths and direct
+PowerShell mutators. Search arguments are not commands. This is a policy hook, not a shell
+interpreter or OS isolation;
 interpreter bodies, runtime-built operations and arbitrary MCP writes remain outside its boundary.
 """
 import json
@@ -13,23 +14,31 @@ import sys
 NATIVE_PAYLOAD = False
 
 
-def strip_noise(text):
-    """Here-doc bodies and command substitution go; quoted prose goes; quoted single words stay."""
-    text = re.sub(r"<<-?\s*'?(\w+)'?\n.*?\n\1", ' ', text, flags=re.S)
-    text = re.sub(r"`[^`\n]*`", ' ', text)
-    text = re.sub(r"'[^'\n]*'|\x22[^\x22\n]*\x22",
-                  lambda m: ' ' if any(c.isspace() for c in m.group(0)[1:-1]) else m.group(0)[1:-1],
-                  text)
-    return text
+def executable_name(value):
+    """Normalize ordinary executable paths and PowerShell module-qualified cmdlets."""
+    name = re.split(r'[/\\]', value)[-1].lower()
+    return re.sub(r'\.(?:exe|cmd|bat|com)$', '', name)
 
 
-def shell_commands(text):
-    """Parse ordinary command segments; keep argv quoted arguments without treating them as code."""
+def windows_syntax(text, shell='', tool=''):
+    # An explicitly selected Unix shell retains POSIX escapes, even on a Windows host.
+    if shell:
+        return executable_name(shell) in ('powershell', 'pwsh', 'cmd')
+    if sys.platform == 'win32' and tool != 'Bash':
+        return True
+    # Compatibility payloads have no shell field. A direct drive/UNC path is unambiguous.
+    return bool(re.search(r'''(?:^|[;&|\n])\s*&?\s*['"]?(?:[A-Za-z]:[\\/]|\\\\)''', text))
+
+
+def shell_commands(text, windows=False):
+    """Parse direct command segments and redirects, not interpreter bodies or expressions."""
     text = re.sub(r"<<-?\s*'?(\w+)'?\n.*?\n\1", ' ', text, flags=re.S)
     # shlex's punctuation tokens discard whether a quoted ";" was an argv value.
     # Split separators first while retaining their quote/escape context, then parse each argv.
     segments, current, quote, escaped, commented = [], [], None, False, False
-    for character in text + '\n':
+    redirects = False
+    escape = '`' if windows else '\\'
+    for index, character in enumerate(text + '\n'):
         if commented:
             if character != '\n':
                 continue
@@ -37,7 +46,7 @@ def shell_commands(text):
         if escaped:
             current.append(character)
             escaped = False
-        elif character == '\\' and quote != "'":
+        elif character == escape and quote != "'":
             current.append(character)
             escaped = True
         elif quote:
@@ -49,12 +58,21 @@ def shell_commands(text):
             quote = character
         elif character == '#' and (not current or current[-1].isspace()):
             commented = True
+        elif character == '>':
+            # Stream routing (2>&1) and quoted/escaped prose do not write a file.
+            if index + 1 >= len(text) or text[index + 1] != '&':
+                redirects = True
+            current.append(character)
         elif character in ';&|\n':
             if current:
                 try:
-                    argv = shlex.split(''.join(current))
+                    lexer = shlex.shlex(''.join(current), posix=True)
+                    lexer.whitespace_split = True
+                    lexer.commenters = ''
+                    lexer.escape = escape
+                    argv = list(lexer)
                 except ValueError:
-                    return []
+                    return [], redirects
                 if argv:
                     segments.append(argv)
             current = []
@@ -65,11 +83,11 @@ def shell_commands(text):
         while argv:
             if re.match(r'^[A-Za-z_][A-Za-z_0-9]*=', argv[0]):
                 argv = argv[1:]
-            elif argv[0].rsplit('/', 1)[-1] == 'command':
+            elif executable_name(argv[0]) == 'command':
                 argv = argv[1:]
                 while argv and argv[0] in ('-p', '--'):
                     argv = argv[1:]
-            elif argv[0].rsplit('/', 1)[-1] == 'env':
+            elif executable_name(argv[0]) == 'env':
                 argv = argv[1:]
                 while argv and argv[0].startswith('-'):
                     option = argv.pop(0)
@@ -80,8 +98,8 @@ def shell_commands(text):
             else:
                 break
         if argv:
-            commands.append((argv[0].rsplit('/', 1)[-1].lower(), argv[1:]))
-    return commands
+            commands.append((executable_name(argv[0]), argv[1:]))
+    return commands, redirects
 
 
 def subcommand(args, value_options):
@@ -216,12 +234,11 @@ def main():
                  'Spawn method_review_helper with fork_turns="none".')
     if not isinstance(text, str):
         deny(role, 'unrecognized command', 'Supply the native command string.')
-    commands = shell_commands(text)
+    commands, redirects = shell_commands(text, windows_syntax(text, inputs.get('shell', ''), tool))
     git_argv = [subcommand(args, ('-C', '-c', '--git-dir', '--work-tree', '--namespace', '--config-env'))
                 for executable, args in commands if executable == 'git']
     gh_argv = [subcommand(args, ('-R', '--repo', '--hostname'))
                for executable, args in commands if executable == 'gh']
-    clean_text = strip_noise(text)
 
     # The REST merge endpoints merge a PR or write a merge commit straight onto a branch. Neither
     # goes through the guard, so neither is admitted for anyone.
@@ -253,8 +270,18 @@ def main():
         # OS-per-child security boundary. Scripts and runtime-built operations remain residuals.
         if (any(git_write(command, args) for command, args in git_argv)
                 or any(executable in {'rm', 'mv', 'cp', 'touch', 'mkdir', 'rmdir', 'tee',
-                                      'truncate', 'chmod', 'chown'} for executable, _ in commands)
-                or re.search(r'(?<![<])>{1,2}(?![&])', clean_text)
+                                      'truncate', 'chmod', 'chown',
+                                      'set-content', 'add-content', 'clear-content', 'out-file',
+                                      'new-item', 'remove-item', 'move-item', 'copy-item', 'rename-item',
+                                      'set-item', 'clear-item', 'set-itemproperty', 'new-itemproperty',
+                                      'remove-itemproperty', 'clear-itemproperty', 'rename-itemproperty',
+                                      'copy-itemproperty', 'move-itemproperty', 'set-acl',
+                                      'export-csv', 'export-clixml', 'tee-object', 'export-pssession',
+                                      'sc', 'ac', 'clc', 'ni', 'ri', 'rni', 'mi', 'ci', 'si', 'sp',
+                                      'cli', 'clp', 'cpi', 'rp', 'rip', 'rnp', 'mp', 'cpp', 'epcsv',
+                                      'del', 'erase', 'ren', 'rename', 'copy', 'move', 'md', 'rd',
+                                      'mklink', 'attrib'} for executable, _ in commands)
+                or redirects
                 or any((executable == 'sed' and any(arg == '-i' or arg.startswith('--in-place')
                                                   or arg.startswith('-i') for arg in args))
                        or (executable == 'perl' and any(re.match(r'-\w*i', arg) for arg in args))

@@ -34,7 +34,7 @@ class ReviewNativeTest(unittest.TestCase):
                                        'model', 'reasoning_effort'})
         self.assertEqual(request['agent_type'], 'method_reviewer')
         self.assertEqual(request['fork_turns'], 'none')
-        self.assertEqual((request['model'], request['reasoning_effort']), ('deepseek-v4.1-flash', 'max'))
+        self.assertEqual((request['model'], request['reasoning_effort']), ('gpt-6.1-sol', 'high'))
         packet = Path(data['packet'])
         saved = json.loads((self.fx.output / 'packet.json').read_text())
         self.assertTrue(packet.read_text().startswith(render(saved, data['identity'])))
@@ -231,13 +231,13 @@ class ReviewNativeTest(unittest.TestCase):
         self.assertNotEqual(self.fx.guard().returncode, 0)
 
     def test_arbitration_override_survives_the_actual_native_request(self):
-        result = self.start('--model', 'gpt-6-astra', '--effort', 'max')
+        result = self.start('--model', 'gpt-6-astra', '--effort', 'high')
         self.assertEqual(result.returncode, 0, result.stderr)
         data = json.loads(result.stdout)
         self.assertIn('instruction', data)
         request = json.loads(Path(data['instruction']).read_text())
-        self.assertEqual((request['model'], request['reasoning_effort']), ('gpt-6-astra', 'max'))
-        self.assertEqual(data['identity'], 'Codex, gpt-6-astra at max, read-only')
+        self.assertEqual((request['model'], request['reasoning_effort']), ('gpt-6-astra', 'high'))
+        self.assertEqual(data['identity'], 'Codex, gpt-6-astra at high, read-only')
 
     def test_missing_host_or_stale_roles_refuse_before_remote_reservation(self):
         result = self.fx.command('review-packet', 'start', 1, '--issue', 2,
